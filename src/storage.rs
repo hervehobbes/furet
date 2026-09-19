@@ -1,8 +1,10 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use thiserror::Error;
+
+use crate::clock::Timestamp;
 
 /// Failure to resolve the database location, or to open, configure, or
 /// migrate the database file.
@@ -106,11 +108,100 @@ fn migrate(conn: &mut Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
+/// One `dirs` row flattened for ranking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirEntry {
+    /// Canonical displayable path.
+    pub path: String,
+    /// Most recent visit, or `first_seen` when no visit exists yet.
+    pub last_visit: Timestamp,
+    /// Whether `missing_since` is set (soft delete, SPEC section 10).
+    pub missing: bool,
+}
+
+/// Inserts a `dirs` row for `key` and returns its id; an existing row is
+/// returned untouched, its `path` and `first_seen` never change.
+pub fn upsert_dir(
+    conn: &Connection,
+    path: &str,
+    key: &str,
+    first_seen: Timestamp,
+) -> Result<i64, StorageError> {
+    conn.execute(
+        "INSERT INTO dirs (path, key, first_seen) VALUES (?1, ?2, ?3)
+         ON CONFLICT (key) DO NOTHING",
+        params![path, key, first_seen.unix_seconds()],
+    )?;
+    conn.query_row("SELECT id FROM dirs WHERE key = ?1", params![key], |row| {
+        row.get(0)
+    })
+    .map_err(StorageError::from)
+}
+
+/// The id of the `dirs` row matching `key`, or `None` when no such row
+/// exists; this lookup never creates a row.
+pub fn dir_id_by_key(conn: &Connection, key: &str) -> Result<Option<i64>, StorageError> {
+    let mut stmt = conn.prepare("SELECT id FROM dirs WHERE key = ?1")?;
+    let mut rows = stmt.query(params![key])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// Inserts one `visits` row; `source` must satisfy the table CHECK.
+pub fn insert_visit(
+    conn: &Connection,
+    dir_id: i64,
+    ts: Timestamp,
+    source: &str,
+    session: &str,
+    from_dir_id: Option<i64>,
+) -> Result<(), StorageError> {
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session, from_dir_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![dir_id, ts.unix_seconds(), source, session, from_dir_id],
+    )?;
+    Ok(())
+}
+
+/// Reads every `dirs` row with its most recent visit and its soft-delete
+/// flag, ready to be turned into ranking candidates.
+pub fn dir_entries(conn: &Connection) -> Result<Vec<DirEntry>, StorageError> {
+    // WHY: a dir upserted before any visit falls back to first_seen.
+    let mut stmt = conn.prepare(
+        "SELECT dirs.path,
+                COALESCE(latest.ts, dirs.first_seen),
+                dirs.missing_since IS NOT NULL
+         FROM dirs
+         LEFT JOIN (SELECT dir_id, MAX(ts) AS ts
+                    FROM visits
+                    GROUP BY dir_id) AS latest
+           ON latest.dir_id = dirs.id",
+    )?;
+    let entries = stmt
+        .query_map([], |row| {
+            Ok(DirEntry {
+                path: row.get(0)?,
+                last_visit: Timestamp::from_unix_seconds(row.get(1)?),
+                missing: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{db_path, open, open_at};
+    use super::{db_path, dir_entries, dir_id_by_key, insert_visit, open, open_at, upsert_dir};
+    use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
     use std::path::{Path, PathBuf};
+
+    fn at(seconds: i64) -> Timestamp {
+        Timestamp::from_unix_seconds(1_000_000 + seconds)
+    }
 
     fn temp_db() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("a fresh temporary directory");
@@ -351,5 +442,91 @@ mod tests {
         let conn = connection.expect("open works under FURET_DATA_DIR");
         assert_eq!(user_version(&conn), 1);
         assert!(nested.join("furet.db").exists());
+    }
+
+    #[test]
+    fn upsert_dir_reuses_the_existing_row_without_touching_it() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let first = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the first upsert runs");
+        let second = upsert_dir(&conn, "C:\\Dev\\TOKIO", "c:\\dev\\tokio", at(200))
+            .expect("the second upsert runs");
+        assert_eq!(first, second);
+        assert_eq!(row_count(&conn, "dirs"), 1);
+        let (path, first_seen): (String, i64) = conn
+            .query_row("SELECT path, first_seen FROM dirs", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("the single dirs row reads back");
+        assert_eq!(path, "c:\\dev\\tokio");
+        assert_eq!(first_seen, at(100).unix_seconds());
+    }
+
+    #[test]
+    fn dir_id_by_key_reports_known_and_unknown_keys() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let inserted = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture upsert runs");
+        let known = dir_id_by_key(&conn, "c:\\dev\\tokio").expect("the known lookup runs");
+        let unknown = dir_id_by_key(&conn, "c:\\dev\\nope").expect("the unknown lookup runs");
+        assert_eq!(known, Some(inserted));
+        assert_eq!(unknown, None);
+    }
+
+    #[test]
+    fn insert_visit_stores_every_column() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let dir = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        let origin = upsert_dir(&conn, "c:\\dev\\helix", "c:\\dev\\helix", at(100))
+            .expect("the fixture origin upserts");
+        insert_visit(&conn, dir, at(150), "jump", "session-7", Some(origin))
+            .expect("the visit inserts");
+        let (ts, source, session, from_dir_id): (i64, String, String, Option<i64>) = conn
+            .query_row(
+                "SELECT ts, source, session, from_dir_id FROM visits",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("the single visits row reads back");
+        assert_eq!(ts, at(150).unix_seconds());
+        assert_eq!(source, "jump");
+        assert_eq!(session, "session-7");
+        assert_eq!(from_dir_id, Some(origin));
+    }
+
+    #[test]
+    fn dir_entries_take_the_latest_visit_and_report_missing() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        insert_visit(&conn, tokio, at(110), "hook", "s", None).expect("the first visit inserts");
+        insert_visit(&conn, tokio, at(140), "hook", "s", None).expect("the second visit inserts");
+        upsert_dir(&conn, "c:\\dev\\orphan", "c:\\dev\\orphan", at(120))
+            .expect("the visit-less dir upserts");
+        conn.execute(
+            "UPDATE dirs SET missing_since = 900 WHERE id = ?1",
+            params![tokio],
+        )
+        .expect("the fixture marks the dir missing");
+        let mut entries = dir_entries(&conn).expect("the entries read");
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "c:\\dev\\orphan");
+        assert_eq!(entries[0].last_visit, at(120));
+        assert!(!entries[0].missing);
+        assert_eq!(entries[1].path, "c:\\dev\\tokio");
+        assert_eq!(entries[1].last_visit, at(140));
+        assert!(entries[1].missing);
+    }
+
+    fn row_count(conn: &Connection, table: &str) -> i64 {
+        let sql = format!("SELECT COUNT(*) FROM {table}");
+        conn.query_row(&sql, [], |row| row.get(0))
+            .expect("the count reads")
     }
 }

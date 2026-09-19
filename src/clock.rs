@@ -39,9 +39,30 @@ impl Clock for FixedClock {
     }
 }
 
+/// The real wall clock of this process, reading the system time in UTC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SystemClock;
+
+impl SystemClock {
+    /// Builds the process clock; it holds no state.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Clock for SystemClock {
+    fn now(&self) -> Timestamp {
+        let seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(elapsed) => i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
+            Err(earlier) => -i64::try_from(earlier.duration().as_secs()).unwrap_or(i64::MAX),
+        };
+        Timestamp::from_unix_seconds(seconds)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Clock, FixedClock, Timestamp};
+    use super::{Clock, FixedClock, SystemClock, Timestamp};
 
     #[test]
     fn a_timestamp_keeps_the_seconds_it_was_built_from() {
@@ -62,5 +83,27 @@ mod tests {
         let clock = FixedClock::new(Timestamp::from_unix_seconds(1_700_000_000));
         assert_eq!(clock.now(), Timestamp::from_unix_seconds(1_700_000_000));
         assert_eq!(clock.now(), clock.now());
+    }
+
+    #[test]
+    fn the_system_clock_reads_the_current_wall_time() {
+        let before = std::time::SystemTime::now();
+        let read = SystemClock::new().now();
+        let after = std::time::SystemTime::now();
+        let floor = i64::try_from(
+            before
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the test runs after 1970")
+                .as_secs(),
+        )
+        .unwrap_or(0);
+        let ceiling = i64::try_from(
+            after
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the test runs after 1970")
+                .as_secs(),
+        )
+        .unwrap_or(i64::MAX);
+        assert!((floor..=ceiling).contains(&read.unix_seconds()));
     }
 }

@@ -1,4 +1,16 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 5 — SPEC §6 paths in `src/paths.rs` (separator unification, `dunce`
+canonicalization, lowercased `key`, `name`/`folder` split), storage CRUD
+(`upsert_dir`, `dir_id_by_key`, `insert_visit`, `dir_entries`), `SystemClock`,
+and the real CLI (`furet add`, `furet query [--list]`, working `--version`)
+covered by 11 assert_cmd tests under `FURET_DATA_DIR`.
+Decisions: storage helpers take `clock::Timestamp` (lot 4 deferred typed rows
+to this lot); a drive root splits to an empty `name` and no `folder`;
+`upsert_dir` keeps the first `path`/`first_seen` via `ON CONFLICT DO NOTHING`;
+`dunce` returns on-disk casing, so case-variant inputs share one row.
+Next: lot 6, `init pwsh`, the hook and the shell functions.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 4 — SQLite storage (SPEC §5) in `src/storage.rs`: `db_path` (honors
 `FURET_DATA_DIR`, else the platform local data dir), `open` (WAL, foreign
 keys, ordered `user_version` migrations), the `dirs`/`visits`/`queries`
