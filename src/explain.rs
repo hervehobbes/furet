@@ -29,6 +29,13 @@ pub enum Evaluation<'a> {
     },
 }
 
+/// Where a report's candidates came from (SPEC section 11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    Database,
+    Fallback,
+}
+
 /// Everything SPEC section 14 reports about one query; no jump is performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report<'a> {
@@ -36,11 +43,17 @@ pub struct Report<'a> {
     pub evaluations: Vec<Evaluation<'a>>,
     pub decision: Decision<'a>,
     pub deciding_criterion: Option<TieBreak>,
+    pub origin: Origin,
 }
 
 /// Ranks and decides exactly as `furet query` would, keeping the score
 /// detail of every candidate and the reason behind every exclusion.
-pub fn explain<'a>(query: &str, current_dir: &str, candidates: &'a [Candidate]) -> Report<'a> {
+pub fn explain<'a>(
+    query: &str,
+    current_dir: &str,
+    candidates: &'a [Candidate],
+    origin: Origin,
+) -> Report<'a> {
     let ranked = rank::rank(query, current_dir, candidates);
     let mut evaluations: Vec<Evaluation<'a>> = Vec::with_capacity(candidates.len());
     for scored in &ranked {
@@ -79,6 +92,7 @@ pub fn explain<'a>(query: &str, current_dir: &str, candidates: &'a [Candidate]) 
         decision: decision::decide(&ranked),
         deciding_criterion: rank::deciding_criterion(&ranked),
         evaluations,
+        origin,
     }
 }
 
@@ -99,6 +113,9 @@ fn eliminate(query: &str, current_dir: &str, candidate: &Candidate) -> Eliminati
 /// stable, so it can be snapshot tested.
 pub fn render(report: &Report) -> String {
     let mut rendered = format!("normalized query: {}\n", report.normalized_query);
+    if report.origin == Origin::Fallback {
+        rendered.push_str("origin: fallback\n");
+    }
     rendered.push_str("evaluated candidates:\n");
     let mut evaluated = 0usize;
     for evaluation in &report.evaluations {
@@ -227,7 +244,7 @@ fn decision_label(decision: &Decision) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Elimination, Evaluation, Report, explain, render};
+    use super::{Elimination, Evaluation, Origin, Report, explain, render};
     use crate::clock::Timestamp;
     use crate::decision::Decision;
     use crate::rank::{Candidate, Stage, TieBreak};
@@ -288,7 +305,7 @@ mod tests {
     #[test]
     fn every_candidate_is_evaluated_exactly_once() {
         let candidates = world();
-        let report = explain("tokio", "/dev/helix", &candidates);
+        let report = explain("tokio", "/dev/helix", &candidates, Origin::Database);
         assert_eq!(report.evaluations.len(), candidates.len());
         assert_eq!(report.normalized_query, "tokio");
     }
@@ -296,7 +313,7 @@ mod tests {
     #[test]
     fn the_current_directory_is_eliminated_before_anything_else() {
         let candidates = world();
-        let report = explain("helix", "/DEV/Helix", &candidates);
+        let report = explain("helix", "/DEV/Helix", &candidates, Origin::Database);
         assert_eq!(
             reason(&report, "/dev/helix"),
             Some(Elimination::CurrentDirectory)
@@ -307,7 +324,7 @@ mod tests {
     fn a_missing_candidate_is_eliminated_as_disappeared() {
         let mut candidates = world();
         candidates[0].missing = true;
-        let report = explain("tokio", "", &candidates);
+        let report = explain("tokio", "", &candidates, Origin::Database);
         assert_eq!(
             reason(&report, "/dev/tokio"),
             Some(Elimination::Disappeared)
@@ -319,7 +336,7 @@ mod tests {
     fn a_candidate_missing_and_current_reports_the_current_directory_first() {
         let mut candidates = world();
         candidates[0].missing = true;
-        let report = explain("tokio", "/dev/tokio", &candidates);
+        let report = explain("tokio", "/dev/tokio", &candidates, Origin::Database);
         assert_eq!(
             reason(&report, "/dev/tokio"),
             Some(Elimination::CurrentDirectory)
@@ -329,7 +346,7 @@ mod tests {
     #[test]
     fn a_query_too_short_for_stage_two_eliminates_on_no_subsequence() {
         let candidates = world();
-        let report = explain("tok", "", &candidates);
+        let report = explain("tok", "", &candidates, Origin::Database);
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 68)));
         assert_eq!(
             reason(&report, "/dev/helix"),
@@ -344,7 +361,7 @@ mod tests {
     #[test]
     fn a_name_too_far_from_the_query_reports_its_distance() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates);
+        let report = explain("tokio", "", &candidates, Origin::Database);
         assert_eq!(
             reason(&report, "/dev/zellij"),
             Some(Elimination::DistanceTooFar { distance: 4 })
@@ -358,7 +375,7 @@ mod tests {
     #[test]
     fn stage_one_wins_before_stage_two_and_both_keep_their_detail() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates);
+        let report = explain("tokio", "", &candidates, Origin::Database);
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 90)));
         assert_eq!(matched(&report, "/dev/tokei"), Some((Stage::Two, 1)));
         let detail: Vec<(bool, bool)> = report
@@ -379,10 +396,10 @@ mod tests {
     #[test]
     fn the_decision_and_the_tie_break_match_the_ranking() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates);
+        let report = explain("tokio", "", &candidates, Origin::Database);
         assert_eq!(report.decision, Decision::Jump(&candidates[0]));
         assert_eq!(report.deciding_criterion, Some(TieBreak::Score));
-        let empty = explain("zigzag", "", &candidates);
+        let empty = explain("zigzag", "", &candidates, Origin::Database);
         assert_eq!(empty.decision, Decision::None);
         assert_eq!(empty.deciding_criterion, None);
     }
@@ -393,7 +410,7 @@ mod tests {
             dir("/aaa/tokio", "tokio", "/aaa", 1),
             dir("/zzz/tokio", "tokio", "/zzz", 2),
         ];
-        let report = explain("tokoi", "", &candidates);
+        let report = explain("tokoi", "", &candidates, Origin::Database);
         assert_eq!(
             report.decision,
             Decision::Menu(vec![&candidates[0], &candidates[1]])
@@ -404,7 +421,12 @@ mod tests {
     #[test]
     fn render_lays_out_every_section_in_a_stable_order() {
         let candidates = world();
-        let rendered = render(&explain("tokio", "/dev/helix", &candidates));
+        let rendered = render(&explain(
+            "tokio",
+            "/dev/helix",
+            &candidates,
+            Origin::Database,
+        ));
         let expected = "normalized query: tokio\n\
             evaluated candidates:\n\
             \x20 stage 1 score 90 /dev/tokio\n\
@@ -426,13 +448,22 @@ mod tests {
     fn render_names_the_floor_and_an_empty_report() {
         let long = format!("a{}z", "b".repeat(50));
         let candidates = [dir("/dev/long", &long, "/dev", 1)];
-        let rendered = render(&explain("az", "", &candidates));
+        let rendered = render(&explain("az", "", &candidates, Origin::Database));
         assert!(rendered.contains("floor raises"), "{rendered}");
         assert!(rendered.contains("stage 1 score 4 /dev/long"), "{rendered}");
         let nothing: [Candidate; 0] = [];
         assert_eq!(
-            render(&explain("tokio", "", &nothing)),
+            render(&explain("tokio", "", &nothing, Origin::Database)),
             "normalized query: tokio\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
         );
+    }
+
+    #[test]
+    fn a_fallback_origin_renders_an_extra_origin_line() {
+        let candidates = [dir("/dev/tokio", "tokio", "/dev", 1)];
+        let database = render(&explain("tokio", "", &candidates, Origin::Database));
+        assert!(!database.contains("origin:"), "{database}");
+        let fallback = render(&explain("tokio", "", &candidates, Origin::Fallback));
+        insta::assert_snapshot!(fallback);
     }
 }

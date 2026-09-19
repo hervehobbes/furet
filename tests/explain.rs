@@ -149,7 +149,9 @@ fn explain_beats_list_when_both_flags_are_passed() {
 #[test]
 fn explain_exits_zero_when_nothing_matches() {
     let world = scored_world();
-    let cwd = world.tree.path().to_path_buf();
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
     let rendered = world.explain("zigzag", &cwd);
     assert!(rendered.contains("decision: none\n"), "{rendered}");
     assert!(

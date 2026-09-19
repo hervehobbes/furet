@@ -88,6 +88,25 @@ fn query_answering(sandbox: &Sandbox, query: &str, cwd: &Path, answer: &str) -> 
     run(&mut cmd)
 }
 
+fn visited_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
+    let canonical = paths::canonical(path)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    let updated = db(sandbox)
+        .execute(
+            "UPDATE visits SET ts = ?2
+             WHERE dir_id = (SELECT id FROM dirs WHERE path = ?1)",
+            params![canonical, seconds],
+        )
+        .expect("the visit timestamp is forced");
+    assert_eq!(
+        updated,
+        1,
+        "exactly one visit belongs to {}",
+        path.display()
+    );
+}
+
 fn ambiguous_world() -> (Sandbox, String, String) {
     let world = sandbox(&["aaa/tokio", "zzz/tokio"]);
     let far = world.child("zzz").join("tokio");
@@ -239,9 +258,12 @@ fn add_rejects_a_path_that_does_not_exist() {
 }
 
 #[test]
-fn query_with_no_recorded_directory_fails_on_stderr() {
+fn query_with_no_recorded_directory_and_no_fallback_hit_fails_on_stderr() {
     let world = sandbox(&["tokio"]);
-    let out = query(&world, "tokio", world.tree.path(), false);
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
+    let out = query(&world, "zigzagnonexistent", &cwd, false);
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
     assert!(!out.stderr.is_empty());
@@ -299,7 +321,10 @@ fn query_list_prints_every_ranked_candidate_best_first() {
 #[test]
 fn query_list_with_no_candidate_prints_nothing_and_exits_zero() {
     let world = sandbox(&[]);
-    let out = query(&world, "anything", world.tree.path(), true);
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
+    let out = query(&world, "zigzagnonexistent", &cwd, true);
     assert!(out.status.success());
     assert_eq!(text(&out.stdout), "");
 }
@@ -406,6 +431,9 @@ fn query_never_returns_the_current_directory() {
 fn a_directory_deleted_from_disk_is_soft_deleted_then_reactivated_by_readding() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
     assert!(
         add(&world, &tokio, "session-1", None, None)
             .status
@@ -418,7 +446,7 @@ fn a_directory_deleted_from_disk_is_soft_deleted_then_reactivated_by_readding() 
         })
         .expect("the original visit reads back");
     std::fs::remove_dir_all(&tokio).expect("the recorded directory vanishes from disk");
-    let out = query(&world, "tokio", world.tree.path(), true);
+    let out = query(&world, "tokio", &cwd, true);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "");
     let missing_since: Option<i64> = conn
@@ -451,7 +479,7 @@ fn a_directory_deleted_from_disk_is_soft_deleted_then_reactivated_by_readding() 
         first_ts, original_ts,
         "the original visit must survive the vanish-and-return cycle"
     );
-    let out = query(&world, "tokio", world.tree.path(), true);
+    let out = query(&world, "tokio", &cwd, true);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     let expected = paths::canonical(&tokio)
         .expect("the reactivated directory canonicalizes")
@@ -463,13 +491,16 @@ fn a_directory_deleted_from_disk_is_soft_deleted_then_reactivated_by_readding() 
 fn a_reappeared_directory_is_reactivated_by_the_next_query_alone() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
     assert!(
         add(&world, &tokio, "session-1", None, None)
             .status
             .success()
     );
     std::fs::remove_dir_all(&tokio).expect("the recorded directory vanishes from disk");
-    let vanished = query(&world, "tokio", world.tree.path(), true);
+    let vanished = query(&world, "tokio", &cwd, true);
     assert!(
         vanished.status.success(),
         "stderr: {}",
@@ -477,7 +508,7 @@ fn a_reappeared_directory_is_reactivated_by_the_next_query_alone() {
     );
     assert_eq!(text(&vanished.stdout), "");
     std::fs::create_dir_all(&tokio).expect("the directory reappears on disk");
-    let out = query(&world, "tokio", world.tree.path(), true);
+    let out = query(&world, "tokio", &cwd, true);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     let expected = paths::canonical(&tokio)
         .expect("the reactivated directory canonicalizes")
@@ -614,9 +645,158 @@ fn init_pwsh_never_bakes_in_a_session_id() {
 }
 
 #[test]
+fn init_pwsh_defines_fi_with_an_fzf_branch_and_a_console_menu_branch() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+    assert!(script.contains("function global:fi "));
+    assert!(script.contains("fzf"));
+    assert!(script.contains("Choose a directory:"));
+    assert!(script.contains("Enter to confirm, Esc to cancel"));
+}
+
+#[test]
 fn version_prints_a_nonempty_string() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("--version"));
     assert!(out.status.success());
     assert!(!text(&out.stdout).trim().is_empty());
+}
+
+#[test]
+fn query_finds_an_unindexed_directory_through_disk_fallback_and_records_it() {
+    let world = sandbox(&["projects/tokio"]);
+    let cwd = world.child("projects");
+    let out = query(&world, "tokio", &cwd, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&cwd.join("tokio"))
+        .expect("the fallback hit canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    let conn = db(&world);
+    let source: String = conn
+        .query_row(
+            "SELECT source FROM visits WHERE source = 'fallback'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("a fallback visit row was recorded for the winning path");
+    assert_eq!(source, "fallback");
+}
+
+#[test]
+fn query_list_color_wraps_every_path_in_the_ls_colors_directory_code() {
+    let world = sandbox(&["stock", "tokio"]);
+    let stock = world.child("stock");
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &stock, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = run(world
+        .furet()
+        .arg("query")
+        .arg("tok")
+        .arg("--list")
+        .arg("--color")
+        .env("LS_COLORS", "di=01;34:ln=01;36")
+        .current_dir(world.tree.path()));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let first = paths::canonical(&tokio)
+        .expect("the best match canonicalizes")
+        .path;
+    let second = paths::canonical(&stock)
+        .expect("the second match canonicalizes")
+        .path;
+    assert_eq!(
+        text(&out.stdout),
+        format!("\x1b[01;34m{first}\x1b[0m\n\x1b[01;34m{second}\x1b[0m\n")
+    );
+}
+
+#[test]
+fn query_list_color_is_a_noop_without_ls_colors() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let colored = run(world
+        .furet()
+        .arg("query")
+        .arg("tokio")
+        .arg("--list")
+        .arg("--color")
+        .env_remove("LS_COLORS")
+        .current_dir(world.tree.path()));
+    let plain = query(&world, "tokio", world.tree.path(), true);
+    assert!(colored.status.success());
+    assert_eq!(text(&colored.stdout), text(&plain.stdout));
+}
+
+#[test]
+fn query_list_with_an_empty_query_lists_by_recency_then_breaks_a_tie_on_path() {
+    let world = sandbox(&["tokio", "tokei", "bbb", "aaa"]);
+    let tokio = world.child("tokio");
+    let tokei = world.child("tokei");
+    let bbb = world.child("bbb");
+    let aaa = world.child("aaa");
+    for child in [&tokio, &tokei, &bbb, &aaa] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    visited_at(&world, &tokio, 1_700_000_003);
+    visited_at(&world, &tokei, 1_700_000_002);
+    visited_at(&world, &bbb, 1_700_000_001);
+    visited_at(&world, &aaa, 1_700_000_001);
+    let out = query(&world, "", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let lines: Vec<String> = [&tokio, &tokei, &aaa, &bbb]
+        .iter()
+        .map(|path| {
+            paths::canonical(path)
+                .expect("the recorded directory canonicalizes")
+                .path
+        })
+        .collect();
+    assert_eq!(text(&out.stdout), format!("{}\n", lines.join("\n")));
+}
+
+#[test]
+fn query_list_with_an_empty_query_excludes_missing_and_current_directories() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &gone, "session-1", None, None).status.success());
+    std::fs::remove_dir_all(&gone).expect("the recorded directory vanishes");
+    let out = query(&world, "", &tokio, true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
+#[test]
+fn query_with_an_empty_query_and_no_list_fails_exactly_as_before() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = query(&world, "", world.tree.path(), false);
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
 }

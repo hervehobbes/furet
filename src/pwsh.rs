@@ -84,6 +84,46 @@ function global:__FURET_CMD__ {
     Set-Location -LiteralPath $target
     __furet_record $target $from 'jump'
 }
+
+function global:fi {
+    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
+
+    $query = ($FuretArgs -join ' ') -replace '/', '\'
+    $from = (Get-Location).Path
+
+    if (Get-Command fzf -ErrorAction SilentlyContinue) {
+        $initial = furet query --list --color
+        $selection = $initial | fzf --disabled --ansi --bind "change:reload:furet query --list --color {q}"
+        if ([string]::IsNullOrEmpty($selection)) {
+            return
+        }
+        $target = $selection -replace "`e\[[0-9;]*m", ''
+        Set-Location -LiteralPath $target
+        __furet_record $target $from 'jump'
+        return
+    }
+
+    $candidates = @(furet query --list $query | Select-Object -First 9)
+    if ($candidates.Count -eq 0) {
+        return
+    }
+    Write-Host 'Choose a directory:'
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        Write-Host "  $($i + 1)) $($candidates[$i])"
+    }
+    Write-Host 'Enter to confirm, Esc to cancel'
+    $answer = Read-Host
+    if ($answer -notmatch '^[1-9][0-9]*$') {
+        return
+    }
+    $index = [int]$answer
+    if ($index -lt 1 -or $index -gt $candidates.Count) {
+        return
+    }
+    $target = $candidates[$index - 1]
+    Set-Location -LiteralPath $target
+    __furet_record $target $from 'jump'
+}
 "#;
 
 /// Renders the PowerShell integration script for the jump function `cmd`.
@@ -106,5 +146,19 @@ mod tests {
         let rendered = script("f");
         assert!(rendered.contains("[guid]::NewGuid()"));
         assert!(!rendered.contains("00000000-0000-0000-0000-000000000000"));
+    }
+
+    #[test]
+    fn script_defines_fi_and_reaches_for_fzf() {
+        let rendered = script("f");
+        assert!(rendered.contains("function global:fi "));
+        assert!(rendered.contains("fzf"));
+    }
+
+    #[test]
+    fn script_renders_the_spec_section_9_menu_wording_for_the_no_fzf_branch() {
+        let rendered = script("f");
+        assert!(rendered.contains("Choose a directory:"));
+        assert!(rendered.contains("Enter to confirm, Esc to cancel"));
     }
 }

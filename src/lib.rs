@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod decision;
 pub mod explain;
+pub mod fallback;
 pub mod normalize;
 pub mod paths;
 pub mod rank;

@@ -7,11 +7,13 @@ use std::process;
 use clap::{Parser, Subcommand, ValueEnum};
 use furet::clock::{Clock, SystemClock};
 use furet::decision::{self, Decision};
-use furet::explain;
+use furet::explain::{self, Origin};
+use furet::fallback;
 use furet::paths;
 use furet::rank::{self, Candidate};
 use furet::soft_delete;
 use furet::storage;
+use rusqlite::Connection;
 
 mod pwsh;
 
@@ -52,6 +54,12 @@ enum Command {
         /// Print the scoring report on stderr and jump nowhere.
         #[arg(long)]
         explain: bool,
+        /// Wrap every `--list` path in its `LS_COLORS` directory color.
+        #[arg(long)]
+        color: bool,
+        /// Disable gitignore rules in the disk fallback walk (SPEC section 11).
+        #[arg(long)]
+        no_ignore: bool,
     },
     /// Print the ancestor `n` levels above the current directory.
     Up {
@@ -117,7 +125,9 @@ fn main() {
             query,
             list,
             explain,
-        } => report(query_directories(&query, list, explain)),
+            color,
+            no_ignore,
+        } => report(query_directories(&query, list, explain, color, no_ignore)),
         Command::Up { n } => report(up(n)),
         Command::Back { session } => report(back(&session)),
         Command::Init { shell } => match shell {
@@ -166,7 +176,16 @@ fn add(
     Ok(())
 }
 
-fn query_directories(query: &str, list: bool, explain: bool) -> Result<(), Box<dyn Error>> {
+// WHY: distinct from any real shell GUID, so `back` never sees this visit.
+const FALLBACK_SESSION: &str = "fallback";
+
+fn query_directories(
+    query: &str,
+    list: bool,
+    explain: bool,
+    color: bool,
+    no_ignore: bool,
+) -> Result<(), Box<dyn Error>> {
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
@@ -193,16 +212,26 @@ fn query_directories(query: &str, list: bool, explain: bool) -> Result<(), Box<d
             }
         })
         .collect();
+    if list && query.trim().is_empty() {
+        print_lines(&list_by_recency(&candidates, &current.path, color));
+        return Ok(());
+    }
+    let (pool, is_fallback) = resolve_pool(query, &current.path, candidates, no_ignore);
     if explain {
-        let report = explain::explain(query, &current.path, &candidates);
+        let origin = if is_fallback {
+            Origin::Fallback
+        } else {
+            Origin::Database
+        };
+        let report = explain::explain(query, &current.path, &pool, origin);
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
-    let ranked = rank::rank(query, &current.path, &candidates);
+    let ranked = rank::rank(query, &current.path, &pool);
     if list {
-        let lines: Vec<&str> = ranked
+        let lines: Vec<String> = ranked
             .iter()
-            .map(|scored| scored.candidate.path.as_str())
+            .map(|scored| colorize(&scored.candidate.path, color))
             .collect();
         print_lines(&lines);
         return Ok(());
@@ -210,6 +239,9 @@ fn query_directories(query: &str, list: bool, explain: bool) -> Result<(), Box<d
     match decision::decide(&ranked) {
         Decision::None => Err(format!("no directory matches '{query}'").into()),
         Decision::Jump(candidate) => {
+            if is_fallback {
+                record_fallback_visit(&conn, &candidate.path, &clock)?;
+            }
             print_result(&candidate.path);
             Ok(())
         }
@@ -219,10 +251,88 @@ fn query_directories(query: &str, list: bool, explain: bool) -> Result<(), Box<d
             io::stdin().read_line(&mut answer)?;
             let index = decision::selection(&answer, shown.len()).ok_or("no directory selected")?;
             let chosen = shown.get(index - 1).ok_or("no directory selected")?;
+            if is_fallback {
+                record_fallback_visit(&conn, &chosen.path, &clock)?;
+            }
             print_result(&chosen.path);
             Ok(())
         }
     }
+}
+
+/// The database candidates, ranked; when that ranking is empty for a
+/// non-empty query, the disk fallback candidates instead (SPEC section 11).
+fn resolve_pool(
+    query: &str,
+    current_path: &str,
+    db_candidates: Vec<Candidate>,
+    no_ignore: bool,
+) -> (Vec<Candidate>, bool) {
+    if query.trim().is_empty() || !rank::rank(query, current_path, &db_candidates).is_empty() {
+        return (db_candidates, false);
+    }
+    (
+        fallback::discover(Path::new(current_path), !no_ignore),
+        true,
+    )
+}
+
+/// Every reconciled, non-missing, non-current candidate, most recent first
+/// then path ascending, for an empty-query `--list` (SPEC section 12).
+fn list_by_recency(candidates: &[Candidate], current_path: &str, color: bool) -> Vec<String> {
+    let current_key = current_path.to_lowercase();
+    let mut listed: Vec<&Candidate> = candidates
+        .iter()
+        .filter(|candidate| !candidate.missing && candidate.path.to_lowercase() != current_key)
+        .collect();
+    listed.sort_by(|left, right| {
+        right
+            .last_visit
+            .cmp(&left.last_visit)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    listed
+        .iter()
+        .map(|candidate| colorize(&candidate.path, color))
+        .collect()
+}
+
+/// Wraps `path` in its `LS_COLORS` `di=` color; a no-op without `--color` or
+/// without a `di=` entry.
+fn colorize(path: &str, color: bool) -> String {
+    if !color {
+        return path.to_owned();
+    }
+    match ls_colors_directory_code() {
+        Some(code) => format!("\x1b[{code}m{path}\x1b[0m"),
+        None => path.to_owned(),
+    }
+}
+
+fn ls_colors_directory_code() -> Option<String> {
+    let value = env::var("LS_COLORS").ok()?;
+    value
+        .split(':')
+        .find_map(|entry| entry.strip_prefix("di=").map(str::to_owned))
+}
+
+/// Records the fallback discovery of `path` as the SPEC section 11 winner.
+fn record_fallback_visit(
+    conn: &Connection,
+    path: &str,
+    clock: &SystemClock,
+) -> Result<(), Box<dyn Error>> {
+    let key = path.to_lowercase();
+    let dir_id = storage::upsert_dir(conn, path, &key, clock.now())?;
+    storage::insert_visit(
+        conn,
+        dir_id,
+        clock.now(),
+        "fallback",
+        FALLBACK_SESSION,
+        None,
+    )?;
+    Ok(())
 }
 
 fn up(n: u32) -> Result<(), Box<dyn Error>> {
@@ -268,7 +378,7 @@ fn print_result(path: &str) {
 }
 
 #[allow(clippy::print_stdout)]
-fn print_lines(lines: &[&str]) {
+fn print_lines(lines: &[String]) {
     for line in lines {
         println!("{line}");
     }

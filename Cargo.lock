@@ -347,6 +347,7 @@ dependencies = [
  "clap",
  "dirs",
  "dunce",
+ "ignore",
  "insta",
  "proptest",
  "rusqlite",

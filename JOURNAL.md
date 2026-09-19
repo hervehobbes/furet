@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 10 — SPEC §11 disk fallback + §12 `fi`: new `src/fallback.rs`
+(`ignore::WalkBuilder`), `furet query` gains `--no-ignore`, `--color`,
+empty-query `--list` (recency then path), and records the fallback winner
+(`source = 'fallback'`); `explain::Report` gains `origin`; `fi` added to the
+pwsh script (fzf `--disabled` reload, or a §9 console menu).
+Decisions: fallback visits use a fixed `session = "fallback"` (no `--session`
+on `query`) — flagged for review; `.gitignore` needs a real `.git` dir to
+take effect (`require_git` default), matching git itself, left untouched.
+Next: lot 11, on Hervé's go.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 9 — SPEC §14 `--explain`: `stage1::explain` (per-token bonuses),
 `stage2::explain` (raw distance past `MAX_DISTANCE`), `rank::TieBreak` +
 `deciding_criterion`, new `src/explain.rs` (`Report`, `Elimination`, pure

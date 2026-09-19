@@ -1,0 +1,15 @@
+---
+source: src/explain.rs
+expression: fallback
+---
+normalized query: tokio
+origin: fallback
+evaluated candidates:
+  stage 1 score 90 /dev/tokio
+    token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85
+    order bonus +5
+    folder bonus +0
+eliminated candidates:
+  (none)
+deciding criterion: none (no runner-up)
+decision: jump /dev/tokio
