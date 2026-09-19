@@ -1,0 +1,36 @@
+[package]
+name = "furet"
+version = "0.1.0"
+edition = "2024"
+description = "A zoxide-like fuzzy directory jumper, Windows-first"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+dirs = "7.0.0"
+dunce = "1.0.5"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.20"
+toml = "1.1.6"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = "0.3.23"
+unicode-normalization = "0.1.25"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+assert_fs = "1.1.4"
+insta = "1.48.0"
+proptest = "1.11.0"
+tempfile = "3.27.0"
+
+[profile.release]
+lto = true
+strip = true
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+print_stdout = "deny"
+let_underscore_must_use = "deny"

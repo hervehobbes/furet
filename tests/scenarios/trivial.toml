@@ -1,0 +1,5 @@
+[[case]]
+name = "exact query matches the only known directory"
+dirs = ["/sandbox/furet"]
+query = "furet"
+jump = "/sandbox/furet"

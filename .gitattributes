@@ -1,0 +1,13 @@
+# Line-ending normalization for a cross-platform (Windows-first) repo.
+* text=auto
+
+# Hook scripts must keep LF endings so Git's bundled sh can run them.
+*.sh text eol=lf
+
+# PowerShell sources are native to Windows.
+*.ps1 text eol=crlf
+
+# Binaries.
+*.exe binary
+*.pdb binary
+*.png binary

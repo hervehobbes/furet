@@ -1,0 +1,4 @@
+# Clippy configuration for furet.
+# expect_used is denied in [lints.clippy] (Cargo.toml); this option exempts
+# test code per clippy's allow-in-tests convention.
+allow-expect-in-tests = true

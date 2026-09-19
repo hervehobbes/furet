@@ -1,0 +1,139 @@
+#!/bin/sh
+# furet pre-commit hook. Checks the STAGED content, not the working tree.
+#
+#   1. warn only : French words in staged .rs files (never blocks).
+#   2. block     : comment policy in staged .rs files. A standalone //
+#                  comment must be exactly a "// WHY: ..." line, a ///
+#                  doc-comment block may not exceed 2 lines, and trailing
+#                  // comments after code are rejected when they are
+#                  unambiguously outside string literals.
+#   3. block     : any whole word listed in tools/forbidden-words.txt
+#                  (read from the working tree at commit time) in any
+#                  staged file, any extension. Skipped silently when the
+#                  file does not exist.
+#
+# String literals are handled with a conservative line-based scanner:
+# when in doubt a // is treated as code and left alone.
+
+words_file="tools/forbidden-words.txt"
+exit_code=0
+
+french_words='le|la|les|de|des|du|un|une|au|aux|et|ce|cette|ces|dans|sur|est|ou|où|dossier|dossiers|fichier|fichiers|requête|requêtes|chemin|chemins|faute|fautes|erreur|erreurs|utilisateur|utilisateurs|répertoire|répertoires'
+
+staged_files=$(git diff --cached --name-only -z --diff-filter=d | tr '\0' '\n')
+
+check_rust_comments() {
+    git show ":$1" | awk -v f="$1" -v sq="'" '
+        BEGIN { st = "none"; docn = 0; bad = 0 }
+        function endblock() {
+            if (docn > 2) {
+                printf "%s:%d: /// doc-comment block is %d lines (max 2)\n", f, docstart, docn > "/dev/stderr"
+                bad = 1
+            }
+            docn = 0
+        }
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            cidx = 0
+            i = 1; n = length(line)
+            while (i <= n) {
+                c = substr(line, i, 1)
+                if (st == "dq") {
+                    if (c == "\\") { i += 2; continue }
+                    if (c == "\"") st = "none"
+                } else if (st == "sq") {
+                    if (c == "\\") { i += 2; continue }
+                    if (c == sq) st = "none"
+                } else if (st == "raw") {
+                    if (c == "\"") {
+                        ok = 1
+                        for (k = 1; k <= rawn; k++) {
+                            if (substr(line, i + k, 1) != "#") { ok = 0; break }
+                        }
+                        if (ok) { st = "none"; i += 1 + rawn; continue }
+                    }
+                } else {
+                    if (c == "r") {
+                        j = i + 1; h = 0
+                        while (substr(line, j, 1) == "#") { h++; j++ }
+                        if (substr(line, j, 1) == "\"") { st = "raw"; rawn = h; i = j + 1; continue }
+                    }
+                    if (c == "\"") st = "dq"
+                    else if (c == sq) st = "sq"
+                    else if (c == "/" && substr(line, i + 1, 1) == "/") { cidx = i; break }
+                }
+                i++
+            }
+            rest = (cidx > 0) ? substr(line, cidx) : ""
+            before = (cidx > 0) ? substr(line, 1, cidx - 1) : ""
+            isdoc = rest ~ /^\/\/\/([^\/]|$)/
+            if (isdoc) {
+                docn++
+                if (docn == 1) docstart = NR
+                if (before !~ /^[ \t]*$/) {
+                    printf "%s:%d: /// must start its own line\n", f, NR > "/dev/stderr"
+                    bad = 1
+                }
+            } else {
+                endblock()
+                if (cidx > 0) {
+                    r = rest
+                    sub(/[ \t]+$/, "", r)
+                    if (before ~ /^[ \t]*$/) {
+                        if (r !~ /^\/\/ WHY: [^ \t]/) {
+                            printf "%s:%d: standalone // comment must be exactly \"// WHY: ...\": %s\n", f, NR, r > "/dev/stderr"
+                            bad = 1
+                        }
+                    } else {
+                        printf "%s:%d: trailing // comment is not allowed\n", f, NR > "/dev/stderr"
+                        bad = 1
+                    }
+                }
+            }
+        }
+        END { endblock(); if (bad) exit 1 }
+    '
+}
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in
+    *.rs)
+        hits=$(git show ":$f" | grep -niEw -e "$french_words" || true)
+        if [ -n "$hits" ]; then
+            echo "warning: possible French words (non-blocking) in $f:" >&2
+            printf '%s\n' "$hits" | sed 's/^/  /' >&2
+        fi
+        if ! check_rust_comments "$f"; then
+            exit_code=1
+        fi
+        ;;
+    esac
+done <<EOF
+$staged_files
+EOF
+
+if [ -f "$words_file" ]; then
+    patfile=$(mktemp 2>/dev/null) || patfile=".git/furet-words.$$"
+    tr -d '\r' < "$words_file" | grep -v '^[[:space:]]*$' > "$patfile" || true
+    if [ -s "$patfile" ]; then
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            hits=$(git show ":$f" | grep -nFw -f "$patfile" || true)
+            if [ -n "$hits" ]; then
+                echo "forbidden word found in $f (see $words_file):" >&2
+                printf '%s\n' "$hits" | sed 's/^/  /' >&2
+                exit_code=1
+            fi
+        done <<EOF
+$staged_files
+EOF
+    fi
+    rm -f "$patfile"
+fi
+
+if [ "$exit_code" -ne 0 ]; then
+    echo "pre-commit: blocking checks failed, commit rejected" >&2
+fi
+exit "$exit_code"
