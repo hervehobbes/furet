@@ -5,12 +5,13 @@ use std::path::Path;
 use std::process;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock};
 use furet::decision::{self, Decision};
 use furet::explain::{self, Origin};
 use furet::fallback;
 use furet::paths;
-use furet::rank::{self, Candidate};
+use furet::rank::{self, Candidate, Stage};
 use furet::soft_delete;
 use furet::storage;
 use rusqlite::Connection;
@@ -77,6 +78,12 @@ enum Command {
         #[command(subcommand)]
         shell: InitShell,
     },
+    /// Inspect the query journal (SPEC section 15).
+    Queries {
+        /// List queries whose jump was probably a mistake.
+        #[arg(long)]
+        failures: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -133,6 +140,7 @@ fn main() {
         Command::Init { shell } => match shell {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
+        Command::Queries { failures } => report(queries_command(failures)),
     };
     process::exit(code);
 }
@@ -236,16 +244,69 @@ fn query_directories(
         print_lines(&lines);
         return Ok(());
     }
-    match decision::decide(&ranked) {
-        Decision::None => Err(format!("no directory matches '{query}'").into()),
+    let decision = decision::decide(&ranked);
+    // WHY: SPEC section 15 never logs the empty-query-without-list regression case.
+    let logged_query = !query.trim().is_empty();
+    let stage = if is_fallback {
+        "fallback".to_owned()
+    } else if matches!(decision, Decision::Menu(_)) {
+        "menu".to_owned()
+    } else {
+        match ranked.first() {
+            Some(scored) => match scored.stage {
+                Stage::One => "1".to_owned(),
+                Stage::Two => "2".to_owned(),
+            },
+            None => unreachable!("a non-fallback empty query never reaches decide"),
+        }
+    };
+    match decision {
+        Decision::None => {
+            if logged_query {
+                storage::insert_query(
+                    &conn,
+                    clock.now(),
+                    &current.path,
+                    query,
+                    None,
+                    &stage,
+                    "none",
+                )?;
+            }
+            Err(format!("no directory matches '{query}'").into())
+        }
         Decision::Jump(candidate) => {
-            if is_fallback {
-                record_fallback_visit(&conn, &candidate.path, &clock)?;
+            let result_dir_id = if is_fallback {
+                Some(record_fallback_visit(&conn, &candidate.path, &clock)?)
+            } else {
+                storage::dir_id_by_key(&conn, &candidate.path.to_lowercase())?
+            };
+            if logged_query {
+                storage::insert_query(
+                    &conn,
+                    clock.now(),
+                    &current.path,
+                    query,
+                    result_dir_id,
+                    &stage,
+                    "jump",
+                )?;
             }
             print_result(&candidate.path);
             Ok(())
         }
         Decision::Menu(shown) => {
+            if logged_query {
+                storage::insert_query(
+                    &conn,
+                    clock.now(),
+                    &current.path,
+                    query,
+                    None,
+                    &stage,
+                    "menu",
+                )?;
+            }
             eprint!("{}", decision::render_menu(&shown));
             let mut answer = String::new();
             io::stdin().read_line(&mut answer)?;
@@ -316,12 +377,13 @@ fn ls_colors_directory_code() -> Option<String> {
         .find_map(|entry| entry.strip_prefix("di=").map(str::to_owned))
 }
 
-/// Records the fallback discovery of `path` as the SPEC section 11 winner.
+/// Records the fallback discovery of `path` as the SPEC section 11 winner,
+/// returning the `dirs.id` it upserted.
 fn record_fallback_visit(
     conn: &Connection,
     path: &str,
     clock: &SystemClock,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<i64, Box<dyn Error>> {
     let key = path.to_lowercase();
     let dir_id = storage::upsert_dir(conn, path, &key, clock.now())?;
     storage::insert_visit(
@@ -332,7 +394,7 @@ fn record_fallback_visit(
         FALLBACK_SESSION,
         None,
     )?;
-    Ok(())
+    Ok(dir_id)
 }
 
 fn up(n: u32) -> Result<(), Box<dyn Error>> {
@@ -369,6 +431,35 @@ fn back(session: &str) -> Result<(), Box<dyn Error>> {
 
 fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {
     print_result(&pwsh::script(cmd));
+    Ok(())
+}
+
+// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
+    if !failures {
+        return Err("furet queries requires --failures".into());
+    }
+    let conn = storage::open()?;
+    let queries = storage::query_log(&conn)?;
+    let visits = storage::visit_log(&conn)?;
+    let mut lines = Vec::new();
+    for failure in calibration::probable_failures(&queries, &visits) {
+        let result_path = match failure.query.result_dir_id {
+            Some(dir_id) => {
+                storage::dir_path_by_id(&conn, dir_id)?.unwrap_or_else(|| "(unknown)".to_owned())
+            }
+            None => "(unknown)".to_owned(),
+        };
+        let reason = match failure.reason {
+            FailureReason::Backtrack => "backtrack",
+            FailureReason::MovedElsewhere => "moved",
+        };
+        lines.push(format!(
+            "{}\t{}\t{}\t{}",
+            failure.query.cwd, failure.query.query, result_path, reason
+        ));
+    }
+    print_lines(&lines);
     Ok(())
 }
 

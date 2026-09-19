@@ -800,3 +800,176 @@ fn query_with_an_empty_query_and_no_list_fails_exactly_as_before() {
     assert!(out.stdout.is_empty());
     assert!(!out.stderr.is_empty());
 }
+
+#[test]
+fn a_jumping_query_records_its_stage_outcome_and_result_dir_id() {
+    let world = sandbox(&["tokei", "tokio"]);
+    let tokei = world.child("tokei");
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokei, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = query(&world, "tokio", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let expected = paths::canonical(&tokio)
+        .expect("the winning candidate canonicalizes")
+        .path;
+    let (query_text, stage, outcome, result_path): (String, String, String, String) = conn
+        .query_row(
+            "SELECT query, stage, outcome, (SELECT path FROM dirs WHERE id = result_dir_id) FROM queries",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the single queries row reads back");
+    assert_eq!(query_text, "tokio");
+    assert_eq!(stage, "1");
+    assert_eq!(outcome, "jump");
+    assert_eq!(result_path, expected);
+}
+
+#[test]
+fn query_list_records_no_queries_row() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = query(&world, "tokio", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn query_explain_records_no_queries_row() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = run(world
+        .furet()
+        .arg("query")
+        .arg("tokio")
+        .arg("--explain")
+        .current_dir(world.tree.path()));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn the_bare_empty_query_without_list_regression_case_records_no_queries_row() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = query(&world, "", world.tree.path(), false);
+    assert!(!out.status.success());
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn queries_without_failures_fails_on_stderr() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("queries"));
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
+}
+
+#[test]
+fn queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("queries").arg("--failures"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty());
+}
+
+#[test]
+fn queries_failures_prints_exactly_the_probable_failure_and_ignores_the_benign_jump() {
+    let world = sandbox(&["tokio", "helix"]);
+    let tokio = world.child("tokio");
+    let helix = world.child("helix");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &helix, "session-1", None, None)
+            .status
+            .success()
+    );
+    let conn = db(&world);
+    let tokio_id: i64 = conn
+        .query_row(
+            "SELECT id FROM dirs WHERE path = ?1",
+            params![paths::canonical(&tokio).expect("tokio canonicalizes").path],
+            |row| row.get(0),
+        )
+        .expect("the tokio dir row reads back");
+    let helix_id: i64 = conn
+        .query_row(
+            "SELECT id FROM dirs WHERE path = ?1",
+            params![paths::canonical(&helix).expect("helix canonicalizes").path],
+            |row| row.get(0),
+        )
+        .expect("the helix dir row reads back");
+    conn.execute(
+        "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+         VALUES (1_700_000_000, 'c:\\dev', 'tok', ?1, '1', 'jump')",
+        params![tokio_id],
+    )
+    .expect("the probable-failure query inserts");
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session)
+         VALUES (?1, 1_700_000_010, 'jump', 'session-1')",
+        params![tokio_id],
+    )
+    .expect("the landing visit inserts");
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session)
+         VALUES (?1, 1_700_000_015, 'back', 'session-1')",
+        params![helix_id],
+    )
+    .expect("the backtrack visit inserts");
+    conn.execute(
+        "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+         VALUES (1_700_001_000, 'c:\\dev', 'hel', ?1, '1', 'jump')",
+        params![helix_id],
+    )
+    .expect("the benign query inserts");
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session)
+         VALUES (?1, 1_700_001_010, 'jump', 'session-1')",
+        params![helix_id],
+    )
+    .expect("the benign landing visit inserts");
+    let out = run(world.furet().arg("queries").arg("--failures"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    let tokio_path = paths::canonical(&tokio).expect("tokio canonicalizes").path;
+    assert_eq!(
+        text(&out.stdout),
+        format!("c:\\dev\ttok\t{tokio_path}\tbacktrack\n")
+    );
+}

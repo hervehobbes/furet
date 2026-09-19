@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 use thiserror::Error;
 
+use crate::calibration;
 use crate::clock::Timestamp;
 
 /// Failure to resolve the database location, or to open, configure, or
@@ -227,11 +228,77 @@ pub fn last_visited_dir(conn: &Connection, session: &str) -> Result<Option<Strin
     }
 }
 
+/// Inserts one `queries` row, journaling a real query decision (SPEC section 15).
+pub fn insert_query(
+    conn: &Connection,
+    ts: Timestamp,
+    cwd: &str,
+    query: &str,
+    result_dir_id: Option<i64>,
+    stage: &str,
+    outcome: &str,
+) -> Result<(), StorageError> {
+    conn.execute(
+        "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![ts.unix_seconds(), cwd, query, result_dir_id, stage, outcome],
+    )?;
+    Ok(())
+}
+
+/// Reads every `queries` row oldest first, ready for calibration (SPEC section 15).
+pub fn query_log(conn: &Connection) -> Result<Vec<calibration::QueryRecord>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, ts, cwd, query, result_dir_id, stage, outcome FROM queries ORDER BY ts ASC",
+    )?;
+    let records = stmt
+        .query_map([], |row| {
+            Ok(calibration::QueryRecord {
+                id: row.get(0)?,
+                ts: Timestamp::from_unix_seconds(row.get(1)?),
+                cwd: row.get(2)?,
+                query: row.get(3)?,
+                result_dir_id: row.get(4)?,
+                stage: row.get(5)?,
+                outcome: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(records)
+}
+
+/// Reads every `visits` row oldest first, ready for calibration (SPEC section 15).
+pub fn visit_log(conn: &Connection) -> Result<Vec<calibration::VisitRecord>, StorageError> {
+    let mut stmt =
+        conn.prepare("SELECT dir_id, ts, source, session FROM visits ORDER BY ts ASC")?;
+    let records = stmt
+        .query_map([], |row| {
+            Ok(calibration::VisitRecord {
+                dir_id: row.get(0)?,
+                ts: Timestamp::from_unix_seconds(row.get(1)?),
+                source: row.get(2)?,
+                session: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(records)
+}
+
+/// The `path` of the `dirs` row `dir_id`, or `None` when no such row exists.
+pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, StorageError> {
+    let mut stmt = conn.prepare("SELECT path FROM dirs WHERE id = ?1")?;
+    let mut rows = stmt.query(params![dir_id])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        db_path, dir_entries, dir_id_by_key, insert_visit, last_visited_dir, open, open_at,
-        set_missing_since, upsert_dir,
+        db_path, dir_entries, dir_id_by_key, dir_path_by_id, insert_query, insert_visit,
+        last_visited_dir, open, open_at, query_log, set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -654,5 +721,65 @@ mod tests {
         let sql = format!("SELECT COUNT(*) FROM {table}");
         conn.query_row(&sql, [], |row| row.get(0))
             .expect("the count reads")
+    }
+
+    #[test]
+    fn insert_query_and_query_log_round_trip_every_field() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        insert_query(&conn, at(150), "c:\\dev", "tok", Some(tokio), "1", "jump")
+            .expect("the jump query inserts");
+        insert_query(&conn, at(160), "c:\\dev", "nope", None, "fallback", "none")
+            .expect("the failed query inserts");
+        let records = query_log(&conn).expect("the query log reads");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].ts, at(150));
+        assert_eq!(records[0].cwd, "c:\\dev");
+        assert_eq!(records[0].query, "tok");
+        assert_eq!(records[0].result_dir_id, Some(tokio));
+        assert_eq!(records[0].stage, "1");
+        assert_eq!(records[0].outcome, "jump");
+        assert_eq!(records[1].ts, at(160));
+        assert_eq!(records[1].result_dir_id, None);
+        assert_eq!(records[1].stage, "fallback");
+        assert_eq!(records[1].outcome, "none");
+    }
+
+    #[test]
+    fn visit_log_reads_inserted_visits_in_ts_order() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        insert_visit(&conn, tokio, at(120), "hook", "session-1", None)
+            .expect("the second visit inserts");
+        insert_visit(&conn, tokio, at(110), "jump", "session-1", None)
+            .expect("the first visit inserts");
+        let records = visit_log(&conn).expect("the visit log reads");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].ts, at(110));
+        assert_eq!(records[0].dir_id, tokio);
+        assert_eq!(records[0].source, "jump");
+        assert_eq!(records[0].session, "session-1");
+        assert_eq!(records[1].ts, at(120));
+        assert_eq!(records[1].source, "hook");
+    }
+
+    #[test]
+    fn dir_path_by_id_reports_known_and_unknown_ids() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        assert_eq!(
+            dir_path_by_id(&conn, tokio).expect("the known lookup runs"),
+            Some("c:\\dev\\tokio".to_owned())
+        );
+        assert_eq!(
+            dir_path_by_id(&conn, tokio + 1).expect("the unknown lookup runs"),
+            None
+        );
     }
 }

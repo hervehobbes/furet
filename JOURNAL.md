@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 11 — SPEC §15 query journal + probable-failure detection: `query`
+now logs every real decision to `queries` (skipped for `--list`, `--explain`,
+and the pre-existing empty-query regression); new `src/calibration.rs`
+(`probable_failures`, `FAILURE_THRESHOLD_SECS = 10`); new `furet queries
+--failures` prints tab-separated lines to **stdout** — an explicit exception
+to the jump-target-only discipline, since this subcommand is a standalone
+reporting tool never invoked by `f`/`fi`.
+Decisions: none beyond the prompt; no ambiguity hit.
+Next: none — this was the last lot of the V1 roadmap.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 10 — SPEC §11 disk fallback + §12 `fi`: new `src/fallback.rs`
 (`ignore::WalkBuilder`), `furet query` gains `--no-ignore`, `--color`,
 empty-query `--list` (recency then path), and records the fallback winner
