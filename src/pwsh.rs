@@ -162,4 +162,3 @@ mod tests {
         assert!(rendered.contains("Enter to confirm, Esc to cancel"));
     }
 }
-
