@@ -8,7 +8,7 @@ $global:__furet_session = [guid]::NewGuid().ToString()
 $global:__furet_last_pwd = (Get-Location).Path
 
 function global:__furet_record($target, $from, $source) {
-    furet add -- $target --session $global:__furet_session --source $source --from $from | Out-Null
+    furet add --session $global:__furet_session --source $source --from $from -- $target | Out-Null
     $global:__furet_last_pwd = $target
 }
 
@@ -162,3 +162,4 @@ mod tests {
         assert!(rendered.contains("Enter to confirm, Esc to cancel"));
     }
 }
+
