@@ -245,31 +245,35 @@ fn query_directories(
         return Ok(());
     }
     let decision = decision::decide(&ranked);
-    // WHY: SPEC section 15 never logs the empty-query-without-list regression case.
+    // WHY: SPEC section 15 never logs the empty-query-without-list regression case;
+    // its `ranked` is always empty on the non-fallback path, so `stage` must stay
+    // unevaluated there rather than hit the otherwise-unreachable `None` arm below.
     let logged_query = !query.trim().is_empty();
-    let stage = if is_fallback {
-        "fallback".to_owned()
-    } else if matches!(decision, Decision::Menu(_)) {
-        "menu".to_owned()
-    } else {
-        match ranked.first() {
-            Some(scored) => match scored.stage {
-                Stage::One => "1".to_owned(),
-                Stage::Two => "2".to_owned(),
-            },
-            None => unreachable!("a non-fallback empty query never reaches decide"),
+    let stage = logged_query.then(|| {
+        if is_fallback {
+            "fallback".to_owned()
+        } else if matches!(decision, Decision::Menu(_)) {
+            "menu".to_owned()
+        } else {
+            match ranked.first() {
+                Some(scored) => match scored.stage {
+                    Stage::One => "1".to_owned(),
+                    Stage::Two => "2".to_owned(),
+                },
+                None => unreachable!("a non-fallback non-empty query always reaches decide"),
+            }
         }
-    };
+    });
     match decision {
         Decision::None => {
-            if logged_query {
+            if let Some(stage) = &stage {
                 storage::insert_query(
                     &conn,
                     clock.now(),
                     &current.path,
                     query,
                     None,
-                    &stage,
+                    stage,
                     "none",
                 )?;
             }
@@ -281,14 +285,14 @@ fn query_directories(
             } else {
                 storage::dir_id_by_key(&conn, &candidate.path.to_lowercase())?
             };
-            if logged_query {
+            if let Some(stage) = &stage {
                 storage::insert_query(
                     &conn,
                     clock.now(),
                     &current.path,
                     query,
                     result_dir_id,
-                    &stage,
+                    stage,
                     "jump",
                 )?;
             }
@@ -296,14 +300,14 @@ fn query_directories(
             Ok(())
         }
         Decision::Menu(shown) => {
-            if logged_query {
+            if let Some(stage) = &stage {
                 storage::insert_query(
                     &conn,
                     clock.now(),
                     &current.path,
                     query,
                     None,
-                    &stage,
+                    stage,
                     "menu",
                 )?;
             }

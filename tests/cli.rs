@@ -798,7 +798,10 @@ fn query_with_an_empty_query_and_no_list_fails_exactly_as_before() {
     let out = query(&world, "", world.tree.path(), false);
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
-    assert!(!out.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "furet: no directory matches ''\n"
+    );
 }
 
 #[test]

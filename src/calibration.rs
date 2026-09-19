@@ -34,7 +34,6 @@ pub struct ProbableFailure<'a> {
     pub reason: FailureReason,
 }
 
-/// Earliest `visits` entry matching `predicate`, ties broken by input order.
 fn earliest(visits: &[VisitRecord], predicate: impl Fn(&VisitRecord) -> bool) -> Option<usize> {
     visits
         .iter()
