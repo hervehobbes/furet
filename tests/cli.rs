@@ -403,6 +403,102 @@ fn query_never_returns_the_current_directory() {
 }
 
 #[test]
+fn a_directory_deleted_from_disk_is_soft_deleted_then_reactivated_by_readding() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let conn = db(&world);
+    let original_ts: i64 = conn
+        .query_row("SELECT ts FROM visits ORDER BY id LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("the original visit reads back");
+    std::fs::remove_dir_all(&tokio).expect("the recorded directory vanishes from disk");
+    let out = query(&world, "tokio", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+    let missing_since: Option<i64> = conn
+        .query_row("SELECT missing_since FROM dirs", [], |row| row.get(0))
+        .expect("the dirs row reads back after the query");
+    assert!(
+        missing_since.is_some(),
+        "a vanished directory must be soft-deleted by the query"
+    );
+    std::fs::create_dir_all(&tokio).expect("the directory reappears on disk");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let reactivated: Option<i64> = conn
+        .query_row("SELECT missing_since FROM dirs", [], |row| row.get(0))
+        .expect("the dirs row reads back after the re-add");
+    assert_eq!(
+        reactivated, None,
+        "a successful add must reactivate the row"
+    );
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
+    let first_ts: i64 = conn
+        .query_row("SELECT ts FROM visits ORDER BY id LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("the original visit still reads back");
+    assert_eq!(
+        first_ts, original_ts,
+        "the original visit must survive the vanish-and-return cycle"
+    );
+    let out = query(&world, "tokio", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the reactivated directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn a_reappeared_directory_is_reactivated_by_the_next_query_alone() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    std::fs::remove_dir_all(&tokio).expect("the recorded directory vanishes from disk");
+    let vanished = query(&world, "tokio", world.tree.path(), true);
+    assert!(
+        vanished.status.success(),
+        "stderr: {}",
+        text(&vanished.stderr)
+    );
+    assert_eq!(text(&vanished.stdout), "");
+    std::fs::create_dir_all(&tokio).expect("the directory reappears on disk");
+    let out = query(&world, "tokio", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the reactivated directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    let conn = db(&world);
+    let missing_since: Option<i64> = conn
+        .query_row("SELECT missing_since FROM dirs", [], |row| row.get(0))
+        .expect("the dirs row reads back");
+    assert_eq!(
+        missing_since, None,
+        "the query itself must reactivate a reappeared directory"
+    );
+    assert_eq!(
+        scalar(&conn, "SELECT COUNT(*) FROM visits"),
+        1,
+        "reactivation must keep the original visit without adding one"
+    );
+}
+
+#[test]
 fn up_prints_the_canonical_ancestor_n_levels_above() {
     let world = sandbox(&["a/b/c"]);
     let deep = world.child("a").join("b").join("c");

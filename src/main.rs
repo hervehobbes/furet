@@ -9,6 +9,7 @@ use furet::clock::{Clock, SystemClock};
 use furet::decision::{self, Decision};
 use furet::paths;
 use furet::rank::{self, Candidate};
+use furet::soft_delete;
 use furet::storage;
 
 mod pwsh;
@@ -160,8 +161,18 @@ fn add(
 fn query_directories(query: &str, list: bool) -> Result<(), Box<dyn Error>> {
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
+    let clock = SystemClock::new();
     let conn = storage::open()?;
-    let candidates: Vec<Candidate> = storage::dir_entries(&conn)?
+    let reconciled = soft_delete::reconcile(
+        storage::dir_entries(&conn)?,
+        &soft_delete::RealFilesystem,
+        clock.now(),
+    );
+    for (dir_id, missing_since) in &reconciled.updates {
+        storage::set_missing_since(&conn, *dir_id, *missing_since)?;
+    }
+    let candidates: Vec<Candidate> = reconciled
+        .entries
         .into_iter()
         .map(|entry| {
             let split = paths::split(&entry.path);

@@ -3,6 +3,7 @@ pub mod decision;
 pub mod normalize;
 pub mod paths;
 pub mod rank;
+pub mod soft_delete;
 pub mod stage1;
 pub mod stage2;
 pub mod storage;

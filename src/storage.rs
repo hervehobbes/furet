@@ -111,6 +111,8 @@ fn migrate(conn: &mut Connection) -> Result<(), StorageError> {
 /// One `dirs` row flattened for ranking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
+    /// The `dirs.id` of this row.
+    pub id: i64,
     /// Canonical displayable path.
     pub path: String,
     /// Most recent visit, or `first_seen` when no visit exists yet.
@@ -119,8 +121,8 @@ pub struct DirEntry {
     pub missing: bool,
 }
 
-/// Inserts a `dirs` row for `key` and returns its id; an existing row is
-/// returned untouched, its `path` and `first_seen` never change.
+/// Inserts a `dirs` row for `key` and returns its id; on conflict the row
+/// keeps its `path` and `first_seen` and is reactivated (SPEC section 10).
 pub fn upsert_dir(
     conn: &Connection,
     path: &str,
@@ -129,7 +131,7 @@ pub fn upsert_dir(
 ) -> Result<i64, StorageError> {
     conn.execute(
         "INSERT INTO dirs (path, key, first_seen) VALUES (?1, ?2, ?3)
-         ON CONFLICT (key) DO NOTHING",
+         ON CONFLICT (key) DO UPDATE SET missing_since = NULL",
         params![path, key, first_seen.unix_seconds()],
     )?;
     conn.query_row("SELECT id FROM dirs WHERE key = ?1", params![key], |row| {
@@ -171,7 +173,8 @@ pub fn insert_visit(
 pub fn dir_entries(conn: &Connection) -> Result<Vec<DirEntry>, StorageError> {
     // WHY: a dir upserted before any visit falls back to first_seen.
     let mut stmt = conn.prepare(
-        "SELECT dirs.path,
+        "SELECT dirs.id,
+                dirs.path,
                 COALESCE(latest.ts, dirs.first_seen),
                 dirs.missing_since IS NOT NULL
          FROM dirs
@@ -183,13 +186,27 @@ pub fn dir_entries(conn: &Connection) -> Result<Vec<DirEntry>, StorageError> {
     let entries = stmt
         .query_map([], |row| {
             Ok(DirEntry {
-                path: row.get(0)?,
-                last_visit: Timestamp::from_unix_seconds(row.get(1)?),
-                missing: row.get(2)?,
+                id: row.get(0)?,
+                path: row.get(1)?,
+                last_visit: Timestamp::from_unix_seconds(row.get(2)?),
+                missing: row.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(entries)
+}
+
+/// Sets or clears one directory's soft-delete timestamp by row id.
+pub fn set_missing_since(
+    conn: &Connection,
+    dir_id: i64,
+    missing_since: Option<Timestamp>,
+) -> Result<(), StorageError> {
+    conn.execute(
+        "UPDATE dirs SET missing_since = ?1 WHERE id = ?2",
+        params![missing_since.map(|ts| ts.unix_seconds()), dir_id],
+    )?;
+    Ok(())
 }
 
 /// The path of the second-to-last visited directory for `session`, ordered
@@ -214,7 +231,7 @@ pub fn last_visited_dir(conn: &Connection, session: &str) -> Result<Option<Strin
 mod tests {
     use super::{
         db_path, dir_entries, dir_id_by_key, insert_visit, last_visited_dir, open, open_at,
-        upsert_dir,
+        set_missing_since, upsert_dir,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -527,7 +544,7 @@ mod tests {
             .expect("the fixture dir upserts");
         insert_visit(&conn, tokio, at(110), "hook", "s", None).expect("the first visit inserts");
         insert_visit(&conn, tokio, at(140), "hook", "s", None).expect("the second visit inserts");
-        upsert_dir(&conn, "c:\\dev\\orphan", "c:\\dev\\orphan", at(120))
+        let orphan = upsert_dir(&conn, "c:\\dev\\orphan", "c:\\dev\\orphan", at(120))
             .expect("the visit-less dir upserts");
         conn.execute(
             "UPDATE dirs SET missing_since = 900 WHERE id = ?1",
@@ -537,12 +554,63 @@ mod tests {
         let mut entries = dir_entries(&conn).expect("the entries read");
         entries.sort_by(|left, right| left.path.cmp(&right.path));
         assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, orphan);
         assert_eq!(entries[0].path, "c:\\dev\\orphan");
         assert_eq!(entries[0].last_visit, at(120));
         assert!(!entries[0].missing);
+        assert_eq!(entries[1].id, tokio);
         assert_eq!(entries[1].path, "c:\\dev\\tokio");
         assert_eq!(entries[1].last_visit, at(140));
         assert!(entries[1].missing);
+    }
+
+    #[test]
+    fn set_missing_since_round_trips_a_timestamp_and_none() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let dir_id = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        set_missing_since(&conn, dir_id, Some(at(500))).expect("marking the dir missing runs");
+        let marked: Option<i64> = conn
+            .query_row(
+                "SELECT missing_since FROM dirs WHERE id = ?1",
+                params![dir_id],
+                |row| row.get(0),
+            )
+            .expect("the marked row reads back");
+        assert_eq!(marked, Some(at(500).unix_seconds()));
+        set_missing_since(&conn, dir_id, None).expect("reactivating the dir runs");
+        let cleared: Option<i64> = conn
+            .query_row(
+                "SELECT missing_since FROM dirs WHERE id = ?1",
+                params![dir_id],
+                |row| row.get(0),
+            )
+            .expect("the reactivated row reads back");
+        assert_eq!(cleared, None);
+    }
+
+    #[test]
+    fn upsert_dir_reactivates_a_missing_row_without_touching_path_or_first_seen() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let first = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the first upsert runs");
+        set_missing_since(&conn, first, Some(at(150))).expect("the fixture marks the dir missing");
+        let second = upsert_dir(&conn, "C:\\Dev\\TOKIO", "c:\\dev\\tokio", at(200))
+            .expect("the second upsert runs");
+        assert_eq!(first, second);
+        assert_eq!(row_count(&conn, "dirs"), 1);
+        let (path, first_seen, missing_since): (String, i64, Option<i64>) = conn
+            .query_row(
+                "SELECT path, first_seen, missing_since FROM dirs",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the single dirs row reads back");
+        assert_eq!(path, "c:\\dev\\tokio");
+        assert_eq!(first_seen, at(100).unix_seconds());
+        assert_eq!(missing_since, None);
     }
 
     #[test]

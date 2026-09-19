@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 8 — SPEC §10 soft delete: new `src/soft_delete.rs` (injectable
+`Filesystem`, `RealFilesystem`, `reconcile` flipping `missing` against disk
+and emitting `(id, missing_since)` updates), `storage::set_missing_since`,
+`DirEntry.id`, `upsert_dir` reactivating via `ON CONFLICT DO UPDATE SET
+missing_since = NULL`, `furet query` reconciling and persisting before
+ranking; 6 fake-fs unit tests, 2 storage tests, 2 end-to-end CLI tests.
+Decisions: each update is its own auto-committed UPDATE, no wrapping
+transaction (lot 5's per-statement style); nothing left open.
+Next: lot 9, on Hervé's go.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 7 — SPEC §9 in a new `src/decision.rs`: `decide` over `rank`'s output
 (stage-1 best jumps unconditionally, stage-2 best jumps when alone at its
 distance, else a menu of at most 9 equals), `render_menu`, `selection`, the
