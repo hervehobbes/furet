@@ -1,4 +1,14 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 4 — SQLite storage (SPEC §5) in `src/storage.rs`: `db_path` (honors
+`FURET_DATA_DIR`, else the platform local data dir), `open` (WAL, foreign
+keys, ordered `user_version` migrations), the `dirs`/`visits`/`queries`
+schema with CHECKs on `source`/`stage` and a unique index on `dirs.key`.
+Decisions: timestamps are plain INTEGER Unix seconds matching
+`clock::Timestamp` (no typed rows yet, those are lot 5's); `stage` stored as
+TEXT `'1'`/`'2'`/`'fallback'`/`'menu'` to keep one column type.
+Next: lot 5, paths (§6), `furet add`, `furet query`.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 3 — ranking (SPEC §8) and stage dispatch in `src/rank.rs`, an
 injectable clock in `src/clock.rs`, a scenario runner (SPEC §13) executing 13
 cases over 4 TOML files; proptest covers D1, the strict total order, the
