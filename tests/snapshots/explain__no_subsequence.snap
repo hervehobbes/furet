@@ -1,0 +1,20 @@
+---
+source: tests/explain.rs
+expression: "world.explain(\"tok\", &cwd)"
+---
+normalized query: tok
+evaluated candidates:
+  stage 1 score 70 <tmp>\tokio-lab\tokio
+    token 'tok': base 10 + length 3 + placement 34 + prefix 10 + density 6 = 63
+    order bonus +5
+    folder bonus +2
+  stage 1 score 70 <tmp>\tokio-lab\tokei
+    token 'tok': base 10 + length 3 + placement 34 + prefix 10 + density 6 = 63
+    order bonus +5
+    folder bonus +2
+eliminated candidates:
+  <tmp>\tokio-lab\gone: disappeared
+  <tmp>\tokio-lab\helix: no subsequence
+  <tmp>\tokio-lab\zellij: no subsequence
+deciding criterion: recency
+decision: jump <tmp>\tokio-lab\tokio

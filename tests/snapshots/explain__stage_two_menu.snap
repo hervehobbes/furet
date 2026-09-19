@@ -1,0 +1,16 @@
+---
+source: tests/explain.rs
+expression: "world.explain(\"tokoi\", &cwd)"
+---
+normalized query: tokoi
+evaluated candidates:
+  stage 2 score 2 <tmp>\tokio-lab\aaa\tokio
+    distance 1 (max 2)
+  stage 2 score 2 <tmp>\tokio-lab\zzz\tokio
+    distance 1 (max 2)
+eliminated candidates:
+  (none)
+deciding criterion: recency
+decision: menu
+  1) <tmp>\tokio-lab\aaa\tokio
+  2) <tmp>\tokio-lab\zzz\tokio

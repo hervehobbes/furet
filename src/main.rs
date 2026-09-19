@@ -7,6 +7,7 @@ use std::process;
 use clap::{Parser, Subcommand, ValueEnum};
 use furet::clock::{Clock, SystemClock};
 use furet::decision::{self, Decision};
+use furet::explain;
 use furet::paths;
 use furet::rank::{self, Candidate};
 use furet::soft_delete;
@@ -48,6 +49,9 @@ enum Command {
         /// Print every ranked candidate, best first.
         #[arg(long)]
         list: bool,
+        /// Print the scoring report on stderr and jump nowhere.
+        #[arg(long)]
+        explain: bool,
     },
     /// Print the ancestor `n` levels above the current directory.
     Up {
@@ -109,7 +113,11 @@ fn main() {
             source,
             from,
         } => report(add(&path, &session, source, from.as_deref())),
-        Command::Query { query, list } => report(query_directories(&query, list)),
+        Command::Query {
+            query,
+            list,
+            explain,
+        } => report(query_directories(&query, list, explain)),
         Command::Up { n } => report(up(n)),
         Command::Back { session } => report(back(&session)),
         Command::Init { shell } => match shell {
@@ -158,7 +166,7 @@ fn add(
     Ok(())
 }
 
-fn query_directories(query: &str, list: bool) -> Result<(), Box<dyn Error>> {
+fn query_directories(query: &str, list: bool, explain: bool) -> Result<(), Box<dyn Error>> {
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
@@ -185,6 +193,11 @@ fn query_directories(query: &str, list: bool) -> Result<(), Box<dyn Error>> {
             }
         })
         .collect();
+    if explain {
+        let report = explain::explain(query, &current.path, &candidates);
+        eprint!("{}", explain::render(&report));
+        return Ok(());
+    }
     let ranked = rank::rank(query, &current.path, &candidates);
     if list {
         let lines: Vec<&str> = ranked

@@ -56,6 +56,32 @@ pub fn rank<'a>(query: &str, current_dir: &str, candidates: &'a [Candidate]) -> 
     ranked
 }
 
+/// A SPEC section 8 sort criterion, in the order the comparator applies them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TieBreak {
+    Score,
+    Recency,
+    NameLength,
+    Path,
+}
+
+/// First criterion on which the winner and the runner-up of an already
+/// ranked list differ; `None` when there is no runner-up.
+pub fn deciding_criterion(ranked: &[Scored]) -> Option<TieBreak> {
+    let winner = key(ranked.first()?);
+    let runner_up = key(ranked.get(1)?);
+    if winner.score != runner_up.score {
+        return Some(TieBreak::Score);
+    }
+    if winner.last_visit != runner_up.last_visit {
+        return Some(TieBreak::Recency);
+    }
+    if winner.name_len != runner_up.name_len {
+        return Some(TieBreak::NameLength);
+    }
+    Some(TieBreak::Path)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RankKey<'a> {
     score: u32,
@@ -82,13 +108,16 @@ fn compare(left: &RankKey, right: &RankKey) -> Ordering {
         .then_with(|| left.path.cmp(right.path))
 }
 
-fn same_path(left: &str, right: &str) -> bool {
+pub(crate) fn same_path(left: &str, right: &str) -> bool {
     left.to_lowercase() == right.to_lowercase()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Candidate, RankKey, Stage, compare, dispatch, key, rank, same_path};
+    use super::{
+        Candidate, RankKey, Scored, Stage, TieBreak, compare, deciding_criterion, dispatch, key,
+        rank, same_path,
+    };
     use crate::clock::Timestamp;
     use crate::{stage1, stage2};
     use proptest::prelude::*;
@@ -245,6 +274,93 @@ mod tests {
         );
     }
 
+    fn ranked<'a>(candidates: &'a [Candidate], scores: &[u32]) -> Vec<Scored<'a>> {
+        candidates
+            .iter()
+            .zip(scores)
+            .map(|(candidate, score)| Scored {
+                candidate,
+                score: *score,
+                stage: Stage::One,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn deciding_criterion_needs_a_runner_up() {
+        let candidates = [dir("/dev/tokio", "tokio", "/dev", 1)];
+        assert_eq!(deciding_criterion(&[]), None);
+        assert_eq!(deciding_criterion(&ranked(&candidates, &[90])), None);
+    }
+
+    #[test]
+    fn a_score_difference_decides_before_anything_else() {
+        let candidates = [
+            dir("/dev/tokio", "tokio", "/dev", 240),
+            dir("/dev/tokei", "tokei", "/dev", 1),
+        ];
+        assert_eq!(
+            deciding_criterion(&ranked(&candidates, &[90, 38])),
+            Some(TieBreak::Score)
+        );
+    }
+
+    #[test]
+    fn recency_decides_a_genuine_score_tie() {
+        let candidates = [
+            dir("/dev/helix", "helix", "/dev", 1),
+            dir("/archive/helix", "helix", "/archive", 120),
+        ];
+        assert_eq!(
+            deciding_criterion(&ranked(&candidates, &[90, 90])),
+            Some(TieBreak::Recency)
+        );
+    }
+
+    #[test]
+    fn name_length_decides_once_the_score_and_the_recency_tie() {
+        let candidates = [
+            dir("/dev/ripgrep", "ripgrep", "/dev", 2),
+            dir("/dev/rip-grep", "rip-grep", "/dev", 2),
+        ];
+        assert_eq!(
+            deciding_criterion(&ranked(&candidates, &[40, 40])),
+            Some(TieBreak::NameLength)
+        );
+    }
+
+    #[test]
+    fn the_path_decides_once_every_earlier_criterion_ties() {
+        let candidates = [
+            dir("/archive/helix", "helix", "/archive", 2),
+            dir("/dev/helix", "helix", "/dev", 2),
+        ];
+        assert_eq!(
+            deciding_criterion(&ranked(&candidates, &[90, 90])),
+            Some(TieBreak::Path)
+        );
+    }
+
+    #[test]
+    fn deciding_criterion_reads_the_real_ranking_the_same_way() {
+        let candidates = [
+            dir("/dev/tokei", "tokei", "/dev", 1),
+            dir("/dev/tokio", "tokio", "/dev", 240),
+        ];
+        assert_eq!(
+            deciding_criterion(&rank("tokio", "", &candidates)),
+            Some(TieBreak::Score)
+        );
+        let tied = [
+            dir("/archive/helix", "helix", "/archive", 120),
+            dir("/dev/helix", "helix", "/dev", 1),
+        ];
+        assert_eq!(
+            deciding_criterion(&rank("helix", "", &tied)),
+            Some(TieBreak::Recency)
+        );
+    }
+
     static NAMES: &[&str] = &["tokio", "tokei", "helix", "neovim", "ripgrep", "Réunions"];
     static FOLDERS: &[&str] = &["/dev", "/DEV", "/archive"];
     static QUERIES: &[&str] = &["ri", "tok", "tokio", "tokoi", "helix", "reunions", "zigzag"];
@@ -341,6 +457,45 @@ mod tests {
             if let (Some(one), Some(two)) = (last_stage_one, first_stage_two) {
                 prop_assert!(one < two);
             }
+        }
+
+        #[test]
+        fn the_deciding_criterion_names_a_criterion_that_really_differs(
+            candidates in a_candidate_set(),
+            query in proptest::sample::select(QUERIES),
+            current in proptest::sample::select(CURRENT),
+        ) {
+            let ranked = rank(query, current, &candidates);
+            let (winner, runner_up) = match deciding_criterion(&ranked) {
+                None => {
+                    prop_assert!(ranked.len() < 2);
+                    return Ok(());
+                }
+                Some(criterion) => {
+                    prop_assert!(ranked.len() >= 2);
+                    let (winner, runner_up) = (key(&ranked[0]), key(&ranked[1]));
+                    match criterion {
+                        TieBreak::Score => prop_assert!(winner.score > runner_up.score),
+                        TieBreak::Recency => {
+                            prop_assert_eq!(winner.score, runner_up.score);
+                            prop_assert!(winner.last_visit > runner_up.last_visit);
+                        }
+                        TieBreak::NameLength => {
+                            prop_assert_eq!(winner.score, runner_up.score);
+                            prop_assert_eq!(winner.last_visit, runner_up.last_visit);
+                            prop_assert!(winner.name_len < runner_up.name_len);
+                        }
+                        TieBreak::Path => {
+                            prop_assert_eq!(winner.score, runner_up.score);
+                            prop_assert_eq!(winner.last_visit, runner_up.last_visit);
+                            prop_assert_eq!(winner.name_len, runner_up.name_len);
+                            prop_assert!(winner.path < runner_up.path);
+                        }
+                    }
+                    (winner, runner_up)
+                }
+            };
+            prop_assert_eq!(compare(&winner, &runner_up), Ordering::Less);
         }
 
         #[test]

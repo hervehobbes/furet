@@ -1,7 +1,9 @@
 use crate::normalize::Normalized;
 
 const WINDOW_SLACK: usize = 2;
-const MAX_DISTANCE: usize = 2;
+
+/// Largest optimal string alignment distance stage 2 still accepts.
+pub const MAX_DISTANCE: usize = 2;
 
 /// Shortest normalized mono-token query stage 2 accepts; the default behind
 /// the future `typo_min_length` override.
@@ -24,6 +26,18 @@ pub fn score(query: &str, name: &str) -> Option<u32> {
         return None;
     }
     Some(SCORE_CAP - distance as u32)
+}
+
+/// Raw best-window distance whenever the query is eligible for stage 2 at
+/// all, including the distances `score` rejects as too far.
+pub fn explain(query: &str, name: &str) -> Option<usize> {
+    let mut tokens = query.split_whitespace();
+    let token = Normalized::new(tokens.next()?);
+    if tokens.next().is_some() || token.len() < TYPO_MIN_QUERY_LEN {
+        return None;
+    }
+    let candidate = Normalized::new(name);
+    Some(best_window_distance(token.chars(), candidate.chars()))
 }
 
 fn best_window_distance(query: &[char], candidate: &[char]) -> usize {
@@ -78,7 +92,7 @@ fn optimal_string_alignment(left: &[char], right: &[char]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_DISTANCE, SCORE_CAP, TYPO_MIN_QUERY_LEN, best_window_distance,
+        MAX_DISTANCE, SCORE_CAP, TYPO_MIN_QUERY_LEN, best_window_distance, explain,
         optimal_string_alignment, score,
     };
     use crate::normalize::Normalized;
@@ -164,6 +178,31 @@ mod tests {
         assert_eq!(score("reunoins", "Réunions"), score("reunoins", "reunions"));
     }
 
+    #[test]
+    fn explain_reports_the_distance_behind_every_accepted_score() {
+        assert_eq!(explain("tokoi", "tokio"), Some(1));
+        assert_eq!(explain("tokio", "tokei"), Some(MAX_DISTANCE));
+        assert_eq!(explain("ripgrep", "ripgrep-all-the-things"), Some(0));
+        assert_eq!(explain("hlix", "helix"), Some(1));
+    }
+
+    #[test]
+    fn explain_still_reports_a_distance_score_rejects_as_too_far() {
+        assert_eq!(score("zellij", "zelda"), None);
+        assert_eq!(explain("zellij", "zelda"), Some(3));
+        assert_eq!(score("tokio", ""), None);
+        assert_eq!(explain("tokio", ""), Some(5));
+    }
+
+    #[test]
+    fn explain_reports_nothing_when_the_query_is_not_eligible_at_all() {
+        assert_eq!(explain("zig", "zib"), None);
+        assert_eq!(explain("hli", "helix"), None);
+        assert_eq!(explain("tokoi tokoi", "tokio"), None);
+        assert_eq!(explain("", "tokio"), None);
+        assert_eq!(explain("   ", "tokio"), None);
+    }
+
     static ALPHABET: &[char] = &['a', 'b', 'c', 'k', 'o', 't', 'i', 'R', 'é', '-', '_', '.'];
 
     fn a_name_and_a_query_within_two_deletions() -> impl Strategy<Value = (String, String)> {
@@ -220,6 +259,35 @@ mod tests {
             if let Some(found) = score(&query, &name) {
                 prop_assert!((1..=SCORE_CAP).contains(&found));
                 prop_assert!(found < stage1::SCORE_FLOOR);
+            }
+        }
+
+        #[test]
+        fn explain_reports_the_distance_every_accepted_score_encodes(
+            query in "[a-zRé._ -]{0,12}",
+            name in "[a-zRé._ -]{0,16}",
+        ) {
+            if let Some(found) = score(&query, &name) {
+                let distance = usize::try_from(SCORE_CAP - found).unwrap_or(usize::MAX);
+                prop_assert_eq!(explain(&query, &name), Some(distance));
+                prop_assert!(distance <= MAX_DISTANCE);
+            }
+        }
+
+        #[test]
+        fn explain_and_score_agree_on_eligibility_and_on_the_threshold(
+            query in "[a-zRé._ -]{0,12}",
+            name in "[a-zRé._ -]{0,16}",
+        ) {
+            match explain(&query, &name) {
+                None => prop_assert_eq!(score(&query, &name), None),
+                Some(distance) if distance > MAX_DISTANCE => {
+                    prop_assert_eq!(score(&query, &name), None);
+                }
+                Some(distance) => {
+                    let expected = SCORE_CAP - u32::try_from(distance).unwrap_or(u32::MAX);
+                    prop_assert_eq!(score(&query, &name), Some(expected));
+                }
             }
         }
 

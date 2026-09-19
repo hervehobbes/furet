@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 9 — SPEC §14 `--explain`: `stage1::explain` (per-token bonuses),
+`stage2::explain` (raw distance past `MAX_DISTANCE`), `rank::TieBreak` +
+`deciding_criterion`, new `src/explain.rs` (`Report`, `Elimination`, pure
+`render`), `furet query --explain` on stderr only and exit 0, 3 `insta` snapshots.
+Decisions: layout is normalized query / evaluated (rank order) / eliminated
+(path order) / deciding criterion / decision; `placement` stays one bundled DP
+number (word-start, name-start, consecutive run and gap penalty not split out);
+`decide`'s lifetime relaxed to `&[Scored<'a>]` so a local ranking can be reported.
+Next: lot 10, on Hervé's go.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 8 — SPEC §10 soft delete: new `src/soft_delete.rs` (injectable
 `Filesystem`, `RealFilesystem`, `reconcile` flipping `missing` against disk
 and emitting `(id, missing_since)` updates), `storage::set_missing_since`,

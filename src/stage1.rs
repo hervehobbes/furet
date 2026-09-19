@@ -38,6 +38,64 @@ pub fn score(query: &str, name: &str, folder: Option<&str>) -> Option<u32> {
     Some(floored)
 }
 
+/// One query token's stage-1 contribution, split into base and bonuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenBreakdown {
+    pub token: String,
+    pub base: i64,
+    pub length: i64,
+    pub placement: i64,
+    pub prefix: i64,
+    pub density: i64,
+}
+
+/// Every component behind a stage-1 score, plus the score itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Breakdown {
+    pub tokens: Vec<TokenBreakdown>,
+    pub order_bonus: i64,
+    pub folder_bonus: i64,
+    pub total: u32,
+}
+
+/// Same match as `score`, reporting each token's bonuses; `Some` exactly
+/// when `score` is, with `total` equal to what `score` returned.
+pub fn explain(query: &str, name: &str, folder: Option<&str>) -> Option<Breakdown> {
+    let tokens: Vec<Normalized> = query.split_whitespace().map(Normalized::new).collect();
+    let candidate = Normalized::new(name);
+    let mut reported: Vec<TokenBreakdown> = Vec::with_capacity(tokens.len());
+    let mut starts: Vec<usize> = Vec::with_capacity(tokens.len());
+    for token in &tokens {
+        let matched = match_token(token, &candidate)?;
+        starts.push(matched.start);
+        reported.push(TokenBreakdown {
+            token: token.text(),
+            base: TOKEN_BASE,
+            length: matched.length,
+            placement: matched.placement,
+            prefix: matched.prefix,
+            density: matched.density,
+        });
+    }
+    let total = score(query, name, folder)?;
+    let order_bonus = if starts.windows(2).all(|pair| pair[0] < pair[1]) {
+        ORDER_BONUS
+    } else {
+        0
+    };
+    let folder_bonus = if folder.is_some_and(|part| matches_folder(&tokens, part)) {
+        i64::from(FOLDER_BONUS)
+    } else {
+        0
+    };
+    Some(Breakdown {
+        tokens: reported,
+        order_bonus,
+        folder_bonus,
+        total,
+    })
+}
+
 struct TokenMatch {
     length: i64,
     placement: i64,
@@ -167,7 +225,8 @@ fn matches_folder(tokens: &[Normalized], folder: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Normalized, SCORE_FLOOR, TokenMatch, best_placement, is_subsequence, match_token, score,
+        Normalized, SCORE_FLOOR, TokenMatch, best_placement, explain, is_subsequence, match_token,
+        score,
     };
     use proptest::prelude::*;
 
@@ -300,6 +359,52 @@ mod tests {
         assert_eq!(score("réunions", "Reunions", None), Some(117));
     }
 
+    #[test]
+    fn explain_reports_the_same_total_as_score_on_an_exact_match() {
+        let breakdown = explain("tokio", "tokio", None).expect("the exact match is explained");
+        assert_eq!(breakdown.total, 90);
+        assert_eq!(Some(breakdown.total), score("tokio", "tokio", None));
+        assert_eq!(breakdown.tokens.len(), 1);
+        let token = &breakdown.tokens[0];
+        assert_eq!(token.token, "tokio");
+        assert_eq!(
+            (
+                token.base,
+                token.length,
+                token.placement,
+                token.prefix,
+                token.density
+            ),
+            (10, 5, 50, 10, 10)
+        );
+        assert_eq!(breakdown.order_bonus, 5);
+        assert_eq!(breakdown.folder_bonus, 0);
+    }
+
+    #[test]
+    fn explain_reports_the_order_and_folder_bonuses_separately() {
+        let ordered = explain("neo vim", "neovim", None).expect("both tokens match");
+        assert_eq!(ordered.total, 101);
+        assert_eq!(ordered.order_bonus, 5);
+        let reversed = explain("vim neo", "neovim", None).expect("both tokens still match");
+        assert_eq!(reversed.total, 96);
+        assert_eq!(reversed.order_bonus, 0);
+        let foldered = explain("tk", "tokei", Some("dev\\toolkit")).expect("the token matches");
+        assert_eq!(foldered.total, 40);
+        assert_eq!(foldered.folder_bonus, 2);
+        let plain = explain("tk", "tokei", Some("dev\\helix")).expect("the token matches");
+        assert_eq!(plain.total, 38);
+        assert_eq!(plain.folder_bonus, 0);
+    }
+
+    #[test]
+    fn explain_rejects_exactly_what_score_rejects() {
+        assert!(explain("zig", "tokio", None).is_none());
+        assert!(explain("", "tokio", None).is_none());
+        assert!(explain("   ", "tokio", None).is_none());
+        assert!(explain("neo zig", "neovim", None).is_none());
+    }
+
     static ALPHABET: &[char] = &[
         'a', 'b', 'c', 'k', 'o', 't', 'i', 'R', 'é', '-', '_', '.', ' ',
     ];
@@ -360,6 +465,36 @@ mod tests {
             let second = score(&query, &name, Some(&folder));
             prop_assert_eq!(first, second);
             prop_assert_eq!(score(&query, &name, None), score(&query, &name, None));
+        }
+
+        #[test]
+        fn explain_always_agrees_with_score(
+            query in "[a-zRé._ -]{0,12}",
+            name in "[a-zRé._ -]{0,16}",
+            folder in "[a-zRé._\\\\ -]{0,16}",
+        ) {
+            prop_assert_eq!(
+                explain(&query, &name, Some(&folder)).map(|found| found.total),
+                score(&query, &name, Some(&folder))
+            );
+            prop_assert_eq!(
+                explain(&query, &name, None).map(|found| found.total),
+                score(&query, &name, None)
+            );
+        }
+
+        #[test]
+        fn explain_agrees_with_score_on_every_subsequence_pair(
+            (name, query) in a_candidate_and_one_of_its_subsequences(),
+        ) {
+            let breakdown = explain(&query, &name, None);
+            prop_assert_eq!(
+                breakdown.as_ref().map(|found| found.total),
+                score(&query, &name, None)
+            );
+            if let Some(found) = breakdown {
+                prop_assert_eq!(found.tokens.len(), query.split_whitespace().count());
+            }
         }
 
         #[test]

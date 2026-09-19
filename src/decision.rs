@@ -13,7 +13,7 @@ pub enum Decision<'a> {
 
 /// Applies SPEC section 9 to `rank`'s output: a stage-1 best always jumps, a
 /// stage-2 best jumps when alone at its distance and opens a menu otherwise.
-pub fn decide<'a>(ranked: &'a [Scored<'a>]) -> Decision<'a> {
+pub fn decide<'a>(ranked: &[Scored<'a>]) -> Decision<'a> {
     let Some(top) = ranked.first() else {
         return Decision::None;
     };
