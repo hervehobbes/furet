@@ -1,0 +1,35 @@
+[[case]]
+name = "a stage-1 match wins over a much more recent stage-2 match"
+query = "tokio"
+dirs = [
+    { path = "/dev/tokio", visited = "-10d" },
+    { path = "/dev/tokei", visited = "-1h" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "stage 2 catches a typo no candidate matches in stage 1"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-3d" },
+    { path = "/dev/helix", visited = "-1h" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "the folder bonus separates two directories sharing a name"
+query = "tok"
+dirs = [
+    { path = "/dev/toolkit/tokei", visited = "-4d" },
+    { path = "/archive/tokei", visited = "-4d" },
+]
+jump = "/dev/toolkit/tokei"
+
+[[case]]
+name = "an accented name matches its unaccented query"
+query = "reunions"
+dirs = [
+    { path = "/docs/Réunions", visited = "-1h" },
+    { path = "/dev/tokio", visited = "-2h" },
+]
+jump = "/docs/Réunions"

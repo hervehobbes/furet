@@ -1,0 +1,26 @@
+[[case]]
+name = "equal scores: the more recent directory wins"
+query = "helix"
+dirs = [
+    { path = "/archive/helix", visited = "-5d" },
+    { path = "/dev/helix", visited = "-1h" },
+]
+jump = "/dev/helix"
+
+[[case]]
+name = "equal scores and equal recency: the shorter name wins"
+query = "ri"
+dirs = [
+    { path = "/dev/rip-grep", visited = "-2h" },
+    { path = "/dev/ripgrep", visited = "-2h" },
+]
+jump = "/dev/ripgrep"
+
+[[case]]
+name = "equal scores, recency and name length: the smaller path wins"
+query = "helix"
+dirs = [
+    { path = "/dev/helix", visited = "-2h" },
+    { path = "/archive/helix", visited = "-2h" },
+]
+jump = "/archive/helix"

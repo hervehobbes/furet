@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 3 — ranking (SPEC §8) and stage dispatch in `src/rank.rs`, an
+injectable clock in `src/clock.rs`, a scenario runner (SPEC §13) executing 13
+cases over 4 TOML files; proptest covers D1, the strict total order, the
+stage-1 > stage-2 floor and both exclusions.
+Decisions: `Timestamp` is a newtype over i64 Unix seconds (no new crate);
+`rank` returns a sorted `Vec<Scored>` so lot 7 can read ties; name length in
+characters; `current_dir` compared lowercased, no canonicalization until lots
+5/6; `dirs` entries accept `{ path, visited = "-2h", missing }`.
+Next: lot 4, the SQLite schema and storage.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 2 — stage-2 typo tolerance (SPEC §7.3) in `src/stage2.rs`, 13 tests
 including the cross-module invariant "stage 1 always outranks stage 2".
 Decisions: signature `score(query: &str, name: &str) -> Option<u32>`, no

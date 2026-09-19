@@ -1,0 +1,46 @@
+[[case]]
+name = "a missing directory is dropped even though it matches best"
+query = "tokio"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h", missing = true },
+    { path = "/dev/tokei", visited = "-3d" },
+]
+jump = "/dev/tokei"
+
+[[case]]
+name = "the current directory is dropped even though it matches best"
+query = "helix"
+current_dir = "/dev/helix"
+dirs = [
+    { path = "/dev/helix", visited = "-1h" },
+    { path = "/archive/helix", visited = "-5d" },
+]
+jump = "/archive/helix"
+
+[[case]]
+name = "the current directory is compared without regard to case"
+query = "helix"
+current_dir = "/DEV/Helix"
+dirs = [
+    { path = "/dev/helix", visited = "-1h" },
+    { path = "/archive/helix", visited = "-5d" },
+]
+jump = "/archive/helix"
+
+[[case]]
+name = "every candidate missing leaves nothing to jump to"
+query = "helix"
+dirs = [
+    { path = "/dev/helix", visited = "-1h", missing = true },
+    { path = "/archive/helix", visited = "-5d", missing = true },
+]
+none = true
+
+[[case]]
+name = "a query matching no known directory jumps nowhere"
+query = "zigzag"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/dev/helix", visited = "-2h" },
+]
+none = true
