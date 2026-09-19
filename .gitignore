@@ -54,36 +54,10 @@ TestResults/
 *.sqlite
 *.sqlite3
 
-# ---- Configuration locale ----
-# Le config.yml de production vit dans %LOCALAPPDATA%.
-# Seuls les exemples versionnés (config.example.yml) meublent le suivi.
 config.yml
 config.local.yml
 appsettings.Development.json
 appsettings.Local.json
-
-# ---- Projet de référence (jalon 2, parité RouteSearch) ----
-reference/bin/
-reference/obj/
-# Les CSV produits sur un dépôt privé (régénérés à la racine de reference/)
-# ne sont jamais versionnés : ils portent des chemins et noms réels que la
-# règle 9 du CLAUDE.md interdit. La référence versionnée vit sous
-# reference/ombi/ et n'est pas touchée par ces motifs (voir reference/README.md).
-reference/routes.csv
-reference/matches.csv
-reference/urls-manuelles.txt
-
-# ---- Bancs d'essai et mesures ----
-/bench/out/
-/spike/**/bin/
-/spike/**/obj/
-*.trace
-*.prof
-
-# ---- Éditeurs ----
-.idea/
-*.swp
-*~
 
 # ---- Windows ----
 Thumbs.db
@@ -97,5 +71,4 @@ $RECYCLE.BIN/
 /tmp/
 prompts/
 .zcode/
-vrac.md
-
+tools/forbidden-words.txt
