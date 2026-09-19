@@ -685,6 +685,46 @@ fn query_finds_an_unindexed_directory_through_disk_fallback_and_records_it() {
 }
 
 #[test]
+fn a_fallback_jump_then_back_returns_to_the_origin_directory() {
+    let world = sandbox(&["origin", "projects/tokio"]);
+    let origin = world.child("origin");
+    assert!(
+        add(&world, &origin, "session-1", None, None)
+            .status
+            .success()
+    );
+    let cwd = world.child("projects");
+    let query_out = query(&world, "tokio", &cwd, false);
+    assert!(
+        query_out.status.success(),
+        "stderr: {}",
+        text(&query_out.stderr)
+    );
+    let target = text(&query_out.stdout).trim().to_owned();
+    assert!(
+        add(
+            &world,
+            Path::new(&target),
+            "session-1",
+            Some("jump"),
+            Some(&origin)
+        )
+        .status
+        .success()
+    );
+    let back_out = run(world.furet().arg("back").arg("--session").arg("session-1"));
+    assert!(
+        back_out.status.success(),
+        "stderr: {}",
+        text(&back_out.stderr)
+    );
+    let expected = paths::canonical(&origin)
+        .expect("the origin directory canonicalizes")
+        .path;
+    assert_eq!(text(&back_out.stdout), format!("{expected}\n"));
+}
+
+#[test]
 fn query_list_color_wraps_every_path_in_the_ls_colors_directory_code() {
     let world = sandbox(&["stock", "tokio"]);
     let stock = world.child("stock");
