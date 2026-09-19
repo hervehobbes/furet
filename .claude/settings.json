@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(tools/hooks/**)",
+      "Write(tools/hooks/**)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(git commit --no-verify)",
+      "Bash(git push --force:*)",
+      "Bash(git push --force)",
+      "Bash(git push -f:*)",
+      "Bash(git push -f)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File tools/Strip-Comments.ps1"
+          }
+        ]
+      }
+    ]
+  }
+}
