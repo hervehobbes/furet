@@ -9,14 +9,65 @@ returns `None`), and returns a `Vec<Scored>` sorted per SPEC §8: score, then
 recency (D1 — never the other way around), then name length, then path, as a
 strict deterministic total order.
 
-- `stage1::score(query, name, folder) -> Option<u32>`, floored at
-  `SCORE_FLOOR = 4`, always outscores stage 2.
-- `stage2::score(query, name) -> Option<u32>`, capped at `SCORE_CAP = 3`,
-  eligible only for a mono-token query of at least `TYPO_MIN_QUERY_LEN = 4`
-  characters, within `MAX_DISTANCE = 2` edits (OSA).
-- `decision::decide(ranked) -> Decision` applies SPEC §9: a stage-1 best
-  jumps unconditionally; a stage-2 best jumps alone at its distance, else
-  opens a `Menu` of the leading run of tied stage-2 candidates (2..=9).
+### Stage 1 — optimal subsequence (SPEC §7.2)
+
+`stage1::score(query, name, folder) -> Option<u32>` (`src/stage1.rs`). The
+query is split on whitespace; every token must be a subsequence of `name`
+(logical AND) or the whole match is `None`
+(`rejects_a_token_that_is_not_a_subsequence`). Each token's placement is the
+maximum-scoring one found by a two-row O(|query|×|name|) DP, not the first
+greedy one (`the_optimal_placement_beats_the_first_greedy_one`).
+
+Per-token score = `TOKEN_BASE + length + placement + prefix + density`,
+where:
+
+| Bonus | Value | Constant | Pinned by |
+|---|---|---|---|
+| Token base | `+10` | `TOKEN_BASE` | `explain_reports_the_same_total_as_score_on_an_exact_match` |
+| Consecutive placement | `+8` per char placed right after the previous one | `CONSECUTIVE_BONUS` | `the_consecutive_bonus_adds_eight_per_adjacent_character` |
+| Word start | `+10` — index 0, after a separator (`. - _ / \` space `:` `(`), or a camelCase hump read on the *original* string | `WORD_START_BONUS` | `a_word_start_after_a_separator_adds_ten`, `a_camel_hump_read_on_the_original_string_adds_ten` |
+| Name start | `+8` if the token's first character lands at index 0 | `NAME_START_BONUS` | `the_name_start_bonus_needs_the_first_character_at_index_zero` |
+| Prefix | `+10` if the normalized candidate starts with the whole token | `PREFIX_BONUS` | `the_prefix_bonus_needs_a_whole_string_prefix` |
+| Density | `(10 × token_len) / name_len`, truncating integer division | `DENSITY_FACTOR = 10` | `the_density_bonus_uses_truncating_division` |
+| Gap | `−1` per skipped character, uncapped | `GAP_PENALTY = 1` | `the_gap_penalty_removes_one_point_per_skipped_character` |
+
+Order bonus **+5** (`ORDER_BONUS`) once, only if every token's match start
+is strictly increasing in typed order
+(`the_order_bonus_needs_strictly_increasing_token_starts`). Folder bonus
+**+2** (`FOLDER_BONUS`) once, only if every token is also a subsequence of
+the joined parent segments
+(`the_folder_bonus_adds_two_when_the_query_also_matches_the_folder`). Total
+= sum of token scores + order bonus, floored at `SCORE_FLOOR = 4`, then
+folder bonus added on top of the floor
+(`the_folder_bonus_is_added_on_top_of_the_floor`,
+`the_score_is_floored_at_four`). The floor is the structural guarantee that
+stage 1 always outscores stage 2 (`stage2::SCORE_CAP = 3`); every table
+value above matches SPEC §7.2 as written.
+
+### Stage 2 — typo tolerance (SPEC §7.3)
+
+`stage2::score(query, name) -> Option<u32>` (`src/stage2.rs`), reached only
+when stage 1 returns `None`. Eligible only for a mono-token query (exactly
+one whitespace-separated token, `a_multi_token_query_never_matches`) of at
+least `TYPO_MIN_QUERY_LEN = 4` characters
+(`a_query_shorter_than_the_threshold_never_matches`), scored against every
+sliding window of `name` of length `|query| ± 2`, clamped to `name`'s length
+(`a_sliding_window_matches_a_fragment_of_a_longer_name`). Score =
+`SCORE_CAP - distance` = `3 - distance` for `distance <= MAX_DISTANCE = 2`
+(`a_one_edit_typo_scores_two`, `a_distance_of_two_scores_one_and_a_distance_of_three_scores_nothing`).
+
+**Discrepancy**: SPEC §7.3 calls for full Damerau-Levenshtein distance
+(unrestricted transpositions). The implementation uses optimal string
+alignment (OSA) instead — each substring may be edited at most once, so
+`distance("ca", "abc")` is 3 under OSA but 2 under true Damerau-Levenshtein.
+Deliberate lot-2 decision (`JOURNAL.md`, lot 2), pinned by
+`an_adjacent_transposition_counts_as_a_single_edit` and the
+`distance("ca", "abc") == 3` case; not reconciled with SPEC's wording.
+
+`decision::decide(ranked) -> Decision` (`src/decision.rs`) applies SPEC §9:
+a stage-1 best jumps unconditionally; a stage-2 best jumps alone at its
+distance, else opens a `Menu` of the leading run of tied stage-2 candidates
+(2..=9, `MENU_MAX_ENTRIES`).
 
 ## Storage contract
 
@@ -54,6 +105,27 @@ below.
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`.
+
+### Exit codes
+
+Every subcommand routes through `main::report`
+(`src/main.rs:148`): `Ok(())` → **0**, any `Err` → **1**, message printed to
+stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
+`--source`/`ValueEnum`, missing required arg) never reaches `report` at all
+— clap exits **2** directly, confirmed by running
+`furet add /nonexistent --session s --source bogus`, which exits 2.
+
+| Subcommand | Exit 0 | Exit 1 |
+|---|---|---|
+| `add` | path canonicalizes and the visit is recorded | path does not exist/canonicalize (`add_rejects_a_path_that_does_not_exist`), or a DB error |
+| `query` (plain) | a candidate resolves (stage 1, stage 2, or fallback) and prints it | nothing matches at all (`query_with_no_recorded_directory_and_no_fallback_hit_fails_on_stderr`), or a menu is cancelled (`query_menu_cancels_on_an_out_of_range_number`, `..._on_an_empty_answer_and_on_no_answer_at_all`) |
+| `query --list` | always, even with zero candidates (`query_list_with_no_candidate_prints_nothing_and_exits_zero`) | — |
+| `query --explain` | always, even with zero candidates (`explain_exits_zero_when_nothing_matches`) | — |
+| `up <n>` | `n >= 1` and that many ancestors exist | `n == 0` (`up_rejects_zero_levels`) or too few ancestors (`up_fails_when_there_are_fewer_ancestors_than_requested`) |
+| `back --session` | the session has at least 2 visits | fewer than 2 visits for that session (`back_fails_when_the_session_has_fewer_than_two_visits`) |
+| `init pwsh` | always — pure string rendering, no fallible step | — |
+| `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
+| `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 
 ### Accepted spec discrepancies
 
