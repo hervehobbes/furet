@@ -645,6 +645,43 @@ fn init_pwsh_never_bakes_in_a_session_id() {
 }
 
 #[test]
+fn init_pwsh_records_a_real_session_visit_after_every_successful_query_including_fallback() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+
+    let query_call = "$target = furet query -- $query";
+    let query_pos = script
+        .find(query_call)
+        .expect("the general query dispatch line is present");
+    assert_eq!(
+        script.matches(query_call).count(),
+        1,
+        "there is exactly one general query dispatch site"
+    );
+    let after_query = &script[query_pos + query_call.len()..];
+    let expected_tail = "\n    if ($LASTEXITCODE -ne 0) {\n        return\n    }\n    \
+        Set-Location -LiteralPath $target\n    __furet_record $target $from 'jump'\n";
+    assert!(
+        after_query.starts_with(expected_tail),
+        "the query dispatch must be immediately followed by an exit-code \
+         check and then __furet_record $target $from 'jump', got: {}",
+        &after_query[..expected_tail.len().min(after_query.len())]
+    );
+
+    let record_def = script
+        .find("function global:__furet_record($target, $from, $source) {")
+        .expect("__furet_record is defined");
+    let record_body = &script[record_def..];
+    assert!(
+        record_body.contains(
+            "furet add --session $global:__furet_session --source $source --from $from -- $target"
+        ),
+        "__furet_record must add the visit under the real session, source, and target"
+    );
+}
+
+#[test]
 fn init_pwsh_defines_fi_with_an_fzf_branch_and_a_console_menu_branch() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("init").arg("pwsh"));
