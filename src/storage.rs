@@ -192,9 +192,30 @@ pub fn dir_entries(conn: &Connection) -> Result<Vec<DirEntry>, StorageError> {
     Ok(entries)
 }
 
+/// The path of the second-to-last visited directory for `session`, ordered
+/// by `ts` then `id` descending; `None` when fewer than two visits exist.
+pub fn last_visited_dir(conn: &Connection, session: &str) -> Result<Option<String>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT dirs.path
+         FROM visits
+         JOIN dirs ON dirs.id = visits.dir_id
+         WHERE visits.session = ?1
+         ORDER BY visits.ts DESC, visits.id DESC
+         LIMIT 1 OFFSET 1",
+    )?;
+    let mut rows = stmt.query(params![session])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{db_path, dir_entries, dir_id_by_key, insert_visit, open, open_at, upsert_dir};
+    use super::{
+        db_path, dir_entries, dir_id_by_key, insert_visit, last_visited_dir, open, open_at,
+        upsert_dir,
+    };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
     use std::path::{Path, PathBuf};
@@ -522,6 +543,43 @@ mod tests {
         assert_eq!(entries[1].path, "c:\\dev\\tokio");
         assert_eq!(entries[1].last_visit, at(140));
         assert!(entries[1].missing);
+    }
+
+    #[test]
+    fn last_visited_dir_returns_the_second_to_last_visit_for_the_session() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the tokio dir upserts");
+        let helix = upsert_dir(&conn, "c:\\dev\\helix", "c:\\dev\\helix", at(100))
+            .expect("the helix dir upserts");
+        let tokei = upsert_dir(&conn, "c:\\dev\\tokei", "c:\\dev\\tokei", at(100))
+            .expect("the tokei dir upserts");
+        insert_visit(&conn, tokio, at(110), "jump", "session-1", None)
+            .expect("the first visit inserts");
+        insert_visit(&conn, helix, at(120), "jump", "session-1", None)
+            .expect("the second visit inserts");
+        insert_visit(&conn, tokei, at(130), "jump", "session-1", None)
+            .expect("the third visit inserts");
+        insert_visit(&conn, tokio, at(200), "hook", "decoy-session", None)
+            .expect("the decoy visit inserts");
+        let previous =
+            last_visited_dir(&conn, "session-1").expect("the second-to-last lookup runs");
+        assert_eq!(previous, Some("c:\\dev\\helix".to_owned()));
+    }
+
+    #[test]
+    fn last_visited_dir_returns_none_below_two_visits() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let empty = last_visited_dir(&conn, "no-visits").expect("the empty lookup runs");
+        assert_eq!(empty, None);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the tokio dir upserts");
+        insert_visit(&conn, tokio, at(110), "jump", "one-visit", None)
+            .expect("the single visit inserts");
+        let single = last_visited_dir(&conn, "one-visit").expect("the single-visit lookup runs");
+        assert_eq!(single, None);
     }
 
     fn row_count(conn: &Connection, table: &str) -> i64 {

@@ -314,6 +314,121 @@ fn query_never_returns_the_current_directory() {
 }
 
 #[test]
+fn up_prints_the_canonical_ancestor_n_levels_above() {
+    let world = sandbox(&["a/b/c"]);
+    let deep = world.child("a").join("b").join("c");
+    let out = run(world.furet().arg("up").arg("2").current_dir(&deep));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&world.child("a"))
+        .expect("the ancestor canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn up_fails_when_there_are_fewer_ancestors_than_requested() {
+    let world = sandbox(&["a"]);
+    let out = run(world
+        .furet()
+        .arg("up")
+        .arg("10000")
+        .current_dir(world.child("a")));
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
+}
+
+#[test]
+fn up_rejects_zero_levels() {
+    let world = sandbox(&["a"]);
+    let out = run(world
+        .furet()
+        .arg("up")
+        .arg("0")
+        .current_dir(world.child("a")));
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
+}
+
+#[test]
+fn back_prints_the_second_to_last_visited_directory_for_the_session() {
+    let world = sandbox(&["tokei", "tokio", "helix"]);
+    let tokei = world.child("tokei");
+    let tokio = world.child("tokio");
+    let helix = world.child("helix");
+    assert!(
+        add(&world, &tokei, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &helix, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = run(world.furet().arg("back").arg("--session").arg("session-1"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the expected previous directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn back_fails_when_the_session_has_fewer_than_two_visits() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = run(world.furet().arg("back").arg("--session").arg("session-1"));
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
+}
+
+#[test]
+fn init_pwsh_prints_a_nonempty_script_naming_the_default_command() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    let script = text(&out.stdout);
+    assert!(!script.trim().is_empty());
+    assert!(script.contains("function global:f "));
+}
+
+#[test]
+fn init_pwsh_respects_a_custom_cmd_name() {
+    let world = sandbox(&[]);
+    let out = run(world
+        .furet()
+        .arg("init")
+        .arg("pwsh")
+        .arg("--cmd")
+        .arg("jump"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let script = text(&out.stdout);
+    assert!(script.contains("function global:jump "));
+}
+
+#[test]
+fn init_pwsh_never_bakes_in_a_session_id() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+    assert!(script.contains("[guid]::NewGuid()"));
+}
+
+#[test]
 fn version_prints_a_nonempty_string() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("--version"));

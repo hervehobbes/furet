@@ -1,4 +1,16 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 6 — `furet up <n>`, `furet back --session`, `furet init pwsh
+[--cmd]` (SPEC §4), plus `storage::last_visited_dir` (second-to-last visit
+per session). The generated PowerShell script (`src/pwsh.rs`) implements the
+`f`/`f -`/`f ..`/`f <path>`/`f <query>` dispatch, a session GUID, an
+oldpwd-style dedup variable, and a prompt-wrapping hook that preserves any
+prompt already defined, mirroring zoxide's PowerShell init.
+Decisions: internal script names use the `__furet_*` prefix; the script is
+built from a static template with a `__FURET_CMD__` placeholder instead of
+`format!`, to avoid escaping every brace; `up n=0` is an error, not "here".
+Next: lot 7, the ambiguity/menu decision (SPEC §9).
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 5 — SPEC §6 paths in `src/paths.rs` (separator unification, `dunce`
 canonicalization, lowercased `key`, `name`/`folder` split), storage CRUD
 (`upsert_dir`, `dir_id_by_key`, `insert_visit`, `dir_entries`), `SystemClock`,
