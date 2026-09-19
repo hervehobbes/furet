@@ -5,9 +5,9 @@ per session). The generated PowerShell script (`src/pwsh.rs`) implements the
 `f`/`f -`/`f ..`/`f <path>`/`f <query>` dispatch, a session GUID, an
 oldpwd-style dedup variable, and a prompt-wrapping hook that preserves any
 prompt already defined, mirroring zoxide's PowerShell init.
-Decisions: internal script names use the `__furet_*` prefix; the script is
-built from a static template with a `__FURET_CMD__` placeholder instead of
-`format!`, to avoid escaping every brace; `up n=0` is an error, not "here".
+Decisions: `__furet_*` script names; static template with a `__FURET_CMD__`
+placeholder instead of `format!`, to avoid escaping every brace; `up n=0` is
+an error, not "here".
 Next: lot 7, the ambiguity/menu decision (SPEC §9).
 
 ## 2026-09-19 — branch main — v0.1.0
