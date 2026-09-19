@@ -1,10 +1,12 @@
 use std::env;
 use std::error::Error;
+use std::io;
 use std::path::Path;
 use std::process;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use furet::clock::{Clock, SystemClock};
+use furet::decision::{self, Decision};
 use furet::paths;
 use furet::rank::{self, Candidate};
 use furet::storage;
@@ -181,11 +183,22 @@ fn query_directories(query: &str, list: bool) -> Result<(), Box<dyn Error>> {
         print_lines(&lines);
         return Ok(());
     }
-    let best = ranked
-        .first()
-        .ok_or_else(|| format!("no directory matches '{query}'"))?;
-    print_result(&best.candidate.path);
-    Ok(())
+    match decision::decide(&ranked) {
+        Decision::None => Err(format!("no directory matches '{query}'").into()),
+        Decision::Jump(candidate) => {
+            print_result(&candidate.path);
+            Ok(())
+        }
+        Decision::Menu(shown) => {
+            eprint!("{}", decision::render_menu(&shown));
+            let mut answer = String::new();
+            io::stdin().read_line(&mut answer)?;
+            let index = decision::selection(&answer, shown.len()).ok_or("no directory selected")?;
+            let chosen = shown.get(index - 1).ok_or("no directory selected")?;
+            print_result(&chosen.path);
+            Ok(())
+        }
+    }
 }
 
 fn up(n: u32) -> Result<(), Box<dyn Error>> {

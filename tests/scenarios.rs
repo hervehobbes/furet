@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use furet::clock::{Clock, FixedClock, Timestamp};
+use furet::decision::{Decision, decide};
 use furet::rank::{Candidate, rank};
 use serde::Deserialize;
 
@@ -200,31 +201,50 @@ fn scenario_cases_reach_their_expected_outcome() -> Result<(), Box<dyn std::erro
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())
                 .collect();
-            match (&case.jump, case.none) {
-                (Some(expected), _) => {
-                    let best = found.first().unwrap_or_else(|| {
-                        panic!(
-                            "{}: case '{}' expected a jump to '{expected}', nothing matched",
-                            path.display(),
-                            case.name
-                        )
-                    });
-                    assert_eq!(
-                        *best,
-                        expected.as_str(),
+            let decision = decide(&ranked);
+            match (&case.jump, &case.menu, case.none) {
+                (Some(expected), None, None) => match &decision {
+                    Decision::Jump(candidate) => assert_eq!(
+                        candidate.path,
+                        *expected,
                         "{}: case '{}' ranked {found:?}",
                         path.display(),
                         case.name
-                    );
-                }
-                (None, Some(_)) => assert!(
-                    found.is_empty(),
+                    ),
+                    other => panic!(
+                        "{}: case '{}' expected a jump to '{expected}', decided {other:?}",
+                        path.display(),
+                        case.name
+                    ),
+                },
+                (None, Some(expected), None) => match &decision {
+                    Decision::Menu(shown) => {
+                        let listed: Vec<&str> = shown
+                            .iter()
+                            .map(|candidate| candidate.path.as_str())
+                            .collect();
+                        assert_eq!(
+                            listed,
+                            expected.iter().map(String::as_str).collect::<Vec<&str>>(),
+                            "{}: case '{}' ranked {found:?}",
+                            path.display(),
+                            case.name
+                        );
+                    }
+                    other => panic!(
+                        "{}: case '{}' expected a menu of {expected:?}, decided {other:?}",
+                        path.display(),
+                        case.name
+                    ),
+                },
+                (None, None, Some(_)) => assert!(
+                    matches!(decision, Decision::None),
                     "{}: case '{}' expected no candidate, ranked {found:?}",
                     path.display(),
                     case.name
                 ),
                 _ => panic!(
-                    "{}: case '{}' has an outcome this lot cannot run; menu outcomes arrive with SPEC section 9",
+                    "{}: case '{}' must set exactly one of jump / menu / none",
                     path.display(),
                     case.name
                 ),

@@ -79,6 +79,34 @@ fn query(sandbox: &Sandbox, query: &str, cwd: &Path, list: bool) -> Output {
     run(&mut cmd)
 }
 
+fn query_answering(sandbox: &Sandbox, query: &str, cwd: &Path, answer: &str) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("query")
+        .arg(query)
+        .current_dir(cwd)
+        .write_stdin(answer);
+    run(&mut cmd)
+}
+
+fn ambiguous_world() -> (Sandbox, String, String) {
+    let world = sandbox(&["aaa/tokio", "zzz/tokio"]);
+    let far = world.child("zzz").join("tokio");
+    let near = world.child("aaa").join("tokio");
+    assert!(add(&world, &far, "session-1", None, None).status.success());
+    assert!(add(&world, &near, "session-1", None, None).status.success());
+    let first = paths::canonical(&near)
+        .expect("the first menu entry canonicalizes")
+        .path;
+    let second = paths::canonical(&far)
+        .expect("the second menu entry canonicalizes")
+        .path;
+    (world, first, second)
+}
+
+fn expected_menu(first: &str, second: &str) -> String {
+    format!("Choose a directory:\n  1) {first}\n  2) {second}\nEnter to confirm, Esc to cancel\n")
+}
+
 #[test]
 fn add_records_one_dir_and_one_visit_with_the_default_source() {
     let world = sandbox(&["tokio"]);
@@ -274,6 +302,67 @@ fn query_list_with_no_candidate_prints_nothing_and_exits_zero() {
     let out = query(&world, "anything", world.tree.path(), true);
     assert!(out.status.success());
     assert_eq!(text(&out.stdout), "");
+}
+
+#[test]
+fn query_with_a_stage_two_tie_prints_the_menu_on_stderr_only() {
+    let (world, first, second) = ambiguous_world();
+    let out = query_answering(&world, "tokoi", world.tree.path(), "nope\n");
+    assert!(!out.status.success());
+    assert_eq!(text(&out.stdout), "");
+    assert_eq!(
+        text(&out.stderr),
+        format!(
+            "{}furet: no directory selected\n",
+            expected_menu(&first, &second)
+        )
+    );
+}
+
+#[test]
+fn query_menu_prints_the_selected_path_and_exits_zero() {
+    let (world, first, second) = ambiguous_world();
+    let picked_first = query_answering(&world, "tokoi", world.tree.path(), "1\n");
+    assert!(
+        picked_first.status.success(),
+        "stderr: {}",
+        text(&picked_first.stderr)
+    );
+    assert_eq!(text(&picked_first.stdout), format!("{first}\n"));
+    let picked_second = query_answering(&world, "tokoi", world.tree.path(), "2\n");
+    assert!(picked_second.status.success());
+    assert_eq!(text(&picked_second.stdout), format!("{second}\n"));
+    assert!(text(&picked_second.stderr).starts_with("Choose a directory:\n"));
+}
+
+#[test]
+fn query_menu_cancels_on_an_out_of_range_number() {
+    let (world, _, _) = ambiguous_world();
+    let out = query_answering(&world, "tokoi", world.tree.path(), "3\n");
+    assert!(!out.status.success());
+    assert_eq!(text(&out.stdout), "");
+    assert!(text(&out.stderr).contains("no directory selected"));
+}
+
+#[test]
+fn query_menu_cancels_on_an_empty_answer_and_on_no_answer_at_all() {
+    let (world, _, _) = ambiguous_world();
+    let empty_line = query_answering(&world, "tokoi", world.tree.path(), "\n");
+    assert!(!empty_line.status.success());
+    assert_eq!(text(&empty_line.stdout), "");
+    let eof = query_answering(&world, "tokoi", world.tree.path(), "");
+    assert!(!eof.status.success());
+    assert_eq!(text(&eof.stdout), "");
+    assert!(text(&eof.stderr).contains("no directory selected"));
+}
+
+#[test]
+fn query_list_dumps_a_tie_without_asking_anything() {
+    let (world, first, second) = ambiguous_world();
+    let out = query(&world, "tokoi", world.tree.path(), true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{first}\n{second}\n"));
+    assert_eq!(text(&out.stderr), "");
 }
 
 #[test]

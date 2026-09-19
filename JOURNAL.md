@@ -1,4 +1,15 @@
 ## 2026-09-19 — branch main — v0.1.0
+Done: lot 7 — SPEC §9 in a new `src/decision.rs`: `decide` over `rank`'s output
+(stage-1 best jumps unconditionally, stage-2 best jumps when alone at its
+distance, else a menu of at most 9 equals), `render_menu`, `selection`, the
+`furet query` wiring, `menu = [...]` scenarios, and proptests (a menu is always
+2..=9 tied stage-2 candidates, stage 1 never lists, decide is deterministic).
+Decisions: own module rather than `rank.rs`, since it consumes rank's output and
+lot 10 (`fi`) reuses the menu; cancel reuses `report`'s exit code 1; digits only
+on line-buffered stdin — arrow keys and Esc deferred, no new terminal dependency.
+Next: lot 8, on Hervé's go.
+
+## 2026-09-19 — branch main — v0.1.0
 Done: lot 6 — `furet up <n>`, `furet back --session`, `furet init pwsh
 [--cmd]` (SPEC §4), plus `storage::last_visited_dir` (second-to-last visit
 per session). The generated PowerShell script (`src/pwsh.rs`) implements the

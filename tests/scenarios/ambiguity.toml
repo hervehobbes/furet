@@ -1,0 +1,36 @@
+[[case]]
+name = "two stage-2 candidates at the same distance open a menu"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/archive/tokio", visited = "-5d" },
+]
+menu = ["/dev/tokio", "/archive/tokio"]
+
+[[case]]
+name = "a menu lists the best distance only, never the runners-up"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/archive/tokio", visited = "-5d" },
+    { path = "/dev/tokyo", visited = "-1h" },
+]
+menu = ["/dev/tokio", "/archive/tokio"]
+
+[[case]]
+name = "a single stage-2 candidate at the best distance jumps, it never lists"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-5d" },
+    { path = "/dev/tokyo", visited = "-1h" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "stage-1 candidates sharing a score jump, they never list"
+query = "helix"
+dirs = [
+    { path = "/dev/helix", visited = "-2h" },
+    { path = "/archive/helix", visited = "-2h" },
+]
+jump = "/archive/helix"
