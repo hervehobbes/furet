@@ -14,10 +14,10 @@ pub const SCORE_CAP: u32 = 3;
 
 /// Stage-2 score in `1..=3`, a fallback the caller reaches only once
 /// `stage1::score` returned `None`; optimal string alignment distance.
-pub fn score(query: &str, name: &str) -> Option<u32> {
+pub fn score(query: &str, name: &str, min_length: usize) -> Option<u32> {
     let mut tokens = query.split_whitespace();
     let token = Normalized::new(tokens.next()?);
-    if tokens.next().is_some() || token.len() < TYPO_MIN_QUERY_LEN {
+    if tokens.next().is_some() || token.len() < min_length {
         return None;
     }
     let candidate = Normalized::new(name);
@@ -30,10 +30,10 @@ pub fn score(query: &str, name: &str) -> Option<u32> {
 
 /// Raw best-window distance whenever the query is eligible for stage 2 at
 /// all, including the distances `score` rejects as too far.
-pub fn explain(query: &str, name: &str) -> Option<usize> {
+pub fn explain(query: &str, name: &str, min_length: usize) -> Option<usize> {
     let mut tokens = query.split_whitespace();
     let token = Normalized::new(tokens.next()?);
-    if tokens.next().is_some() || token.len() < TYPO_MIN_QUERY_LEN {
+    if tokens.next().is_some() || token.len() < min_length {
         return None;
     }
     let candidate = Normalized::new(name);
@@ -117,36 +117,36 @@ mod tests {
     fn a_query_shorter_than_the_threshold_never_matches() {
         assert_eq!(TYPO_MIN_QUERY_LEN, 4);
         assert_eq!(distance("zig", "zib"), 1);
-        assert_eq!(score("zig", "zib"), None);
-        assert_eq!(score("hlix", "helix"), Some(2));
-        assert_eq!(score("hli", "helix"), None);
+        assert_eq!(score("zig", "zib", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(score("hlix", "helix", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("hli", "helix", TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
     fn a_multi_token_query_never_matches() {
-        assert_eq!(score("tokoi", "tokio"), Some(2));
-        assert_eq!(score("tokoi tokoi", "tokio"), None);
-        assert_eq!(score("tokio tokio", "tokio"), None);
+        assert_eq!(score("tokoi", "tokio", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("tokoi tokoi", "tokio", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(score("tokio tokio", "tokio", TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
     fn an_empty_query_or_an_empty_name_never_matches() {
-        assert_eq!(score("", "tokio"), None);
-        assert_eq!(score("   ", "tokio"), None);
-        assert_eq!(score("tokio", ""), None);
+        assert_eq!(score("", "tokio", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(score("   ", "tokio", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(score("tokio", "", TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
     fn a_one_edit_typo_scores_two() {
         assert_eq!(window_distance("tokoi", "tokio"), 1);
-        assert_eq!(score("tokoi", "tokio"), Some(2));
-        assert_eq!(score("helyx", "helix"), Some(2));
+        assert_eq!(score("tokoi", "tokio", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("helyx", "helix", TYPO_MIN_QUERY_LEN), Some(2));
     }
 
     #[test]
     fn an_adjacent_transposition_counts_as_a_single_edit() {
         assert_eq!(distance("ripgrpe", "ripgrep"), 1);
-        assert_eq!(score("ripgrpe", "ripgrep"), Some(2));
+        assert_eq!(score("ripgrpe", "ripgrep", TYPO_MIN_QUERY_LEN), Some(2));
         assert_eq!(distance("zellij", "zellij"), 0);
     }
 
@@ -159,48 +159,63 @@ mod tests {
     #[test]
     fn a_distance_of_two_scores_one_and_a_distance_of_three_scores_nothing() {
         assert_eq!(window_distance("tokio", "tokei"), MAX_DISTANCE);
-        assert_eq!(score("tokio", "tokei"), Some(1));
+        assert_eq!(score("tokio", "tokei", TYPO_MIN_QUERY_LEN), Some(1));
         assert_eq!(window_distance("zellij", "zelda"), 3);
-        assert_eq!(score("zellij", "zelda"), None);
+        assert_eq!(score("zellij", "zelda", TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
     fn a_sliding_window_matches_a_fragment_of_a_longer_name() {
         assert_eq!(window_distance("ripgrep", "rip-grep-all"), 1);
-        assert_eq!(score("ripgrep", "rip-grep-all"), Some(2));
-        assert_eq!(score("ripgrep", "ripgrep-all-the-things"), Some(SCORE_CAP));
+        assert_eq!(
+            score("ripgrep", "rip-grep-all", TYPO_MIN_QUERY_LEN),
+            Some(2)
+        );
+        assert_eq!(
+            score("ripgrep", "ripgrep-all-the-things", TYPO_MIN_QUERY_LEN),
+            Some(SCORE_CAP)
+        );
     }
 
     #[test]
     fn an_accented_name_is_normalized_before_the_distance() {
-        assert_eq!(score("reunoins", "Réunions"), Some(2));
-        assert_eq!(score("réunoins", "Reunions"), Some(2));
-        assert_eq!(score("reunoins", "Réunions"), score("reunoins", "reunions"));
+        assert_eq!(score("reunoins", "Réunions", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("réunoins", "Reunions", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(
+            score("reunoins", "Réunions", TYPO_MIN_QUERY_LEN),
+            score("reunoins", "reunions", TYPO_MIN_QUERY_LEN)
+        );
     }
 
     #[test]
     fn explain_reports_the_distance_behind_every_accepted_score() {
-        assert_eq!(explain("tokoi", "tokio"), Some(1));
-        assert_eq!(explain("tokio", "tokei"), Some(MAX_DISTANCE));
-        assert_eq!(explain("ripgrep", "ripgrep-all-the-things"), Some(0));
-        assert_eq!(explain("hlix", "helix"), Some(1));
+        assert_eq!(explain("tokoi", "tokio", TYPO_MIN_QUERY_LEN), Some(1));
+        assert_eq!(
+            explain("tokio", "tokei", TYPO_MIN_QUERY_LEN),
+            Some(MAX_DISTANCE)
+        );
+        assert_eq!(
+            explain("ripgrep", "ripgrep-all-the-things", TYPO_MIN_QUERY_LEN),
+            Some(0)
+        );
+        assert_eq!(explain("hlix", "helix", TYPO_MIN_QUERY_LEN), Some(1));
     }
 
     #[test]
     fn explain_still_reports_a_distance_score_rejects_as_too_far() {
-        assert_eq!(score("zellij", "zelda"), None);
-        assert_eq!(explain("zellij", "zelda"), Some(3));
-        assert_eq!(score("tokio", ""), None);
-        assert_eq!(explain("tokio", ""), Some(5));
+        assert_eq!(score("zellij", "zelda", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("zellij", "zelda", TYPO_MIN_QUERY_LEN), Some(3));
+        assert_eq!(score("tokio", "", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("tokio", "", TYPO_MIN_QUERY_LEN), Some(5));
     }
 
     #[test]
     fn explain_reports_nothing_when_the_query_is_not_eligible_at_all() {
-        assert_eq!(explain("zig", "zib"), None);
-        assert_eq!(explain("hli", "helix"), None);
-        assert_eq!(explain("tokoi tokoi", "tokio"), None);
-        assert_eq!(explain("", "tokio"), None);
-        assert_eq!(explain("   ", "tokio"), None);
+        assert_eq!(explain("zig", "zib", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("hli", "helix", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("tokoi tokoi", "tokio", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("", "tokio", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("   ", "tokio", TYPO_MIN_QUERY_LEN), None);
     }
 
     static ALPHABET: &[char] = &['a', 'b', 'c', 'k', 'o', 't', 'i', 'R', 'é', '-', '_', '.'];
@@ -233,7 +248,7 @@ mod tests {
             name in "[a-zRé._ -]{0,16}",
         ) {
             if let (Some(first), Some(second)) =
-                (stage1::score(&query, &name, None), score(&query, &name))
+                (stage1::score(&query, &name, None), score(&query, &name, TYPO_MIN_QUERY_LEN))
             {
                 prop_assert!(first > second);
             }
@@ -244,7 +259,7 @@ mod tests {
             (name, query) in a_name_and_a_query_within_two_deletions(),
         ) {
             let first = stage1::score(&query, &name, None);
-            let second = score(&query, &name);
+            let second = score(&query, &name, TYPO_MIN_QUERY_LEN);
             prop_assert!(first.is_some());
             prop_assert!(second.is_some());
             prop_assert!(first.unwrap_or(0) >= stage1::SCORE_FLOOR);
@@ -256,7 +271,7 @@ mod tests {
             query in "[a-zRé._ -]{0,12}",
             name in "[a-zRé._ -]{0,16}",
         ) {
-            if let Some(found) = score(&query, &name) {
+            if let Some(found) = score(&query, &name, TYPO_MIN_QUERY_LEN) {
                 prop_assert!((1..=SCORE_CAP).contains(&found));
                 prop_assert!(found < stage1::SCORE_FLOOR);
             }
@@ -267,9 +282,9 @@ mod tests {
             query in "[a-zRé._ -]{0,12}",
             name in "[a-zRé._ -]{0,16}",
         ) {
-            if let Some(found) = score(&query, &name) {
+            if let Some(found) = score(&query, &name, TYPO_MIN_QUERY_LEN) {
                 let distance = usize::try_from(SCORE_CAP - found).unwrap_or(usize::MAX);
-                prop_assert_eq!(explain(&query, &name), Some(distance));
+                prop_assert_eq!(explain(&query, &name, TYPO_MIN_QUERY_LEN), Some(distance));
                 prop_assert!(distance <= MAX_DISTANCE);
             }
         }
@@ -279,14 +294,14 @@ mod tests {
             query in "[a-zRé._ -]{0,12}",
             name in "[a-zRé._ -]{0,16}",
         ) {
-            match explain(&query, &name) {
-                None => prop_assert_eq!(score(&query, &name), None),
+            match explain(&query, &name, TYPO_MIN_QUERY_LEN) {
+                None => prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), None),
                 Some(distance) if distance > MAX_DISTANCE => {
-                    prop_assert_eq!(score(&query, &name), None);
+                    prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), None);
                 }
                 Some(distance) => {
                     let expected = SCORE_CAP - u32::try_from(distance).unwrap_or(u32::MAX);
-                    prop_assert_eq!(score(&query, &name), Some(expected));
+                    prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), Some(expected));
                 }
             }
         }
@@ -296,7 +311,7 @@ mod tests {
             query in "[a-zRé._ -]{0,12}",
             name in "[a-zRé._ -]{0,16}",
         ) {
-            prop_assert_eq!(score(&query, &name), score(&query, &name));
+            prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), score(&query, &name, TYPO_MIN_QUERY_LEN));
         }
     }
 }

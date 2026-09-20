@@ -41,6 +41,20 @@ wires a prompt hook that records every directory change.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
 
+## Configuration
+
+`<data dir>/config.toml` overrides these built-in defaults; a missing file
+is normal, and any invalid key falls back to its default with a `WARN` log
+line naming the key. Only `furet query` reads it.
+
+| Key | Type | Default | Valid |
+|---|---|---|---|
+| `typo_min_length` | integer | 4 | `>= 1` |
+| `fallback.depth` | integer | 1 | `>= 1` |
+| `fallback.up` | integer | 1 | `>= 0` |
+| `fallback.no_ignore` | bool | false | — |
+| `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
+
 ## Logs
 
 Every invocation writes plain-text logs to `<data dir>/logs/` — a daily

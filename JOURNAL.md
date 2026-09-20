@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 15 — SPEC §16 `config.toml` overrides: new pure `src/config.rs`
+(`parse(text) -> (Settings, Vec<String>)`); wired `typo_min_length` and the
+`fallback.*` keys through `stage2`, `rank`, and a new `fallback::Options`
+struct; loaded once in `main`'s `query` path only, per-key fallback with a
+`warn!` naming the bad key; `ambiguity`/`keyboard_layout`/`engine` recognized
+and ignored with a "not supported yet" warning.
+Decisions: `toml::Table` (not `toml::Value`) parses a document; unsupported
+keys stay unwired per the lot prompt.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 14 — SPEC §17 file logging: every invocation writes plain-text
 logs (tracing + tracing-appender, daily rotation, `furet.<date>.log`, 7 kept)
 to `<data dir>/logs/`; default level `info`, overridable via `FURET_LOG`

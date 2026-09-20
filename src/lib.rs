@@ -1,5 +1,6 @@
 pub mod calibration;
 pub mod clock;
+pub mod config;
 pub mod decision;
 pub mod explain;
 pub mod fallback;

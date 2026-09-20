@@ -2,7 +2,7 @@
 
 ## Fuzzy engine contract
 
-Pure, no filesystem or clock access. `rank::rank(query, current_dir, candidates)`
+Pure, no filesystem or clock access. `rank::rank(query, current_dir, candidates, typo_min_length)`
 drops the current directory and any `missing` candidate, scores every
 survivor with `rank::dispatch` (stage 1 first, stage 2 only when stage 1
 returns `None`), and returns a `Vec<Scored>` sorted per SPEC §8: score, then
@@ -46,11 +46,13 @@ value above matches SPEC §7.2 as written.
 
 ### Stage 2 — typo tolerance (SPEC §7.3)
 
-`stage2::score(query, name) -> Option<u32>` (`src/stage2.rs`), reached only
-when stage 1 returns `None`. Eligible only for a mono-token query (exactly
-one whitespace-separated token, `a_multi_token_query_never_matches`) of at
-least `TYPO_MIN_QUERY_LEN = 4` characters
-(`a_query_shorter_than_the_threshold_never_matches`), scored against every
+`stage2::score(query, name, min_length) -> Option<u32>` (`src/stage2.rs`),
+reached only when stage 1 returns `None`. Eligible only for a mono-token
+query (exactly one whitespace-separated token,
+`a_multi_token_query_never_matches`) of at least `min_length` characters —
+`TYPO_MIN_QUERY_LEN = 4` by default, overridable by `typo_min_length`
+(SPEC §16) — (`a_query_shorter_than_the_threshold_never_matches`), scored
+against every
 sliding window of `name` of length `|query| ± 2`, clamped to `name`'s length
 (`a_sliding_window_matches_a_fragment_of_a_longer_name`). Score =
 `SCORE_CAP - distance` = `3 - distance` for `distance <= MAX_DISTANCE = 2`
@@ -68,6 +70,28 @@ Deliberate lot-2 decision (`JOURNAL.md`, lot 2), pinned by
 a stage-1 best jumps unconditionally; a stage-2 best jumps alone at its
 distance, else opens a `Menu` of the leading run of tied stage-2 candidates
 (2..=9, `MENU_MAX_ENTRIES`).
+
+## Configuration contract (SPEC §16)
+
+`<data dir>/config.toml` (`storage::data_dir()`, same as the database and the
+logs) overrides `config::Settings::default()`; loaded once, only by `furet
+query` (`add` stays cheap). `config::parse(text) -> (Settings, Vec<String>)`
+is pure — no filesystem, no `tracing` — and never fails the caller.
+
+Fallback is per key, not per file, except malformed TOML:
+
+- an unknown key warns and is ignored;
+- a key of the wrong type or out of its documented range warns and keeps
+  that key's default;
+- malformed TOML warns once and keeps every default.
+
+Every warning `parse` returns is logged with `warn!` by `main::load_settings`;
+a missing file logs one `debug!` and changes nothing.
+
+`ambiguity`, `keyboard_layout`, and `engine` are recognized and ignored, each
+warning "not supported yet" — SPEC §9 does not define what `ambiguity`
+measures, and the other two name features not built yet (Hervé's decision,
+lot 15).
 
 ## Storage contract
 

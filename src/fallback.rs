@@ -14,29 +14,78 @@ pub const CHILD_DEPTH: usize = 1;
 /// How many ancestor levels above the current directory are climbed.
 pub const ANCESTOR_LEVELS: usize = 1;
 
-const EXCLUDED_NAMES: &[&str] = &["node_modules", "bin", "obj", ".git", "target"];
+pub(crate) const EXCLUDED_NAMES: &[&str] = &["node_modules", "bin", "obj", ".git", "target"];
+
+/// Overrides for one `discover` call; `Default` matches the built-in
+/// constants (SPEC section 16).
+pub struct Options {
+    /// Depth walked under the current directory itself.
+    pub child_depth: usize,
+    /// How many ancestor levels above the current directory are climbed.
+    pub ancestor_levels: usize,
+    /// Whether gitignore rules apply during the walk.
+    pub respect_gitignore: bool,
+    /// Directory names skipped everywhere in the walk, replacing the default list.
+    pub exclude: Vec<String>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            child_depth: CHILD_DEPTH,
+            ancestor_levels: ANCESTOR_LEVELS,
+            respect_gitignore: true,
+            exclude: EXCLUDED_NAMES
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        }
+    }
+}
 
 /// Discovers directories on disk when the database has none to offer
 /// (SPEC section 11): children of `current_dir`, then of each ancestor.
-pub fn discover(current_dir: &Path, respect_gitignore: bool) -> Vec<Candidate> {
-    debug!(current = %current_dir.display(), respect_gitignore, "fallback walk");
+pub fn discover(current_dir: &Path, options: Options) -> Vec<Candidate> {
+    debug!(
+        current = %current_dir.display(),
+        respect_gitignore = options.respect_gitignore,
+        "fallback walk"
+    );
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_into(&mut found, current_dir, CHILD_DEPTH, respect_gitignore);
+    walk_into(
+        &mut found,
+        current_dir,
+        options.child_depth,
+        options.respect_gitignore,
+        &options.exclude,
+    );
     let mut ancestor = current_dir.to_path_buf();
-    for _ in 0..ANCESTOR_LEVELS {
+    for _ in 0..options.ancestor_levels {
         let Some(parent) = ancestor.parent().map(Path::to_path_buf) else {
             break;
         };
-        walk_into(&mut found, &parent, 1, respect_gitignore);
+        walk_into(
+            &mut found,
+            &parent,
+            1,
+            options.respect_gitignore,
+            &options.exclude,
+        );
         ancestor = parent;
     }
     to_candidates(found, current_dir)
 }
 
-fn walk_into(found: &mut Vec<PathBuf>, root: &Path, depth: usize, respect_gitignore: bool) {
+fn walk_into(
+    found: &mut Vec<PathBuf>,
+    root: &Path,
+    depth: usize,
+    respect_gitignore: bool,
+    exclude: &[String],
+) {
     let walker = WalkBuilder::new(root)
         .max_depth(Some(depth))
-        .overrides(exclusion_overrides(root))
+        .overrides(exclusion_overrides(root, exclude))
         .git_ignore(respect_gitignore)
         .git_global(respect_gitignore)
         .git_exclude(respect_gitignore)
@@ -59,9 +108,9 @@ fn walk_into(found: &mut Vec<PathBuf>, root: &Path, depth: usize, respect_gitign
     }
 }
 
-fn exclusion_overrides(root: &Path) -> Override {
+fn exclusion_overrides(root: &Path, exclude: &[String]) -> Override {
     let mut builder = OverrideBuilder::new(root);
-    for name in EXCLUDED_NAMES {
+    for name in exclude {
         if builder.add(&format!("!{name}")).is_err() {
             warn!(name = %name, "exclusion override rejected; walking without exclusions");
             return Override::empty();
@@ -110,7 +159,7 @@ mod tests {
     // WHY: this whole module is layer-3-ish test code exercising real directories.
     #![allow(clippy::expect_used)]
 
-    use super::discover;
+    use super::{Options, discover};
     use assert_fs::TempDir;
     use std::path::{Path, PathBuf};
 
@@ -120,12 +169,19 @@ mod tests {
         target
     }
 
+    fn options(respect_gitignore: bool) -> Options {
+        Options {
+            respect_gitignore,
+            ..Options::default()
+        }
+    }
+
     #[test]
     fn finds_depth_one_children_of_the_current_directory() {
         let root = TempDir::new().expect("a fresh scratch root");
         let current = make_dir(root.path(), "parent/current");
         make_dir(root.path(), "parent/current/child");
-        let found = discover(&current, true);
+        let found = discover(&current, options(true));
         let found_names: Vec<String> = found
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -138,7 +194,7 @@ mod tests {
         let root = TempDir::new().expect("a fresh scratch root");
         let current = make_dir(root.path(), "parent/current");
         make_dir(root.path(), "parent/sibling");
-        let found = discover(&current, true);
+        let found = discover(&current, options(true));
         let found_names: Vec<String> = found
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -154,7 +210,7 @@ mod tests {
         let root = TempDir::new().expect("a fresh scratch root");
         let current = make_dir(root.path(), "parent/current");
         make_dir(root.path(), "unrelated_at_root");
-        let found = discover(&current, true);
+        let found = discover(&current, options(true));
         let found_names: Vec<String> = found
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -173,7 +229,7 @@ mod tests {
             make_dir(&current, excluded);
         }
         make_dir(&current, "kept");
-        let found = discover(&current, false);
+        let found = discover(&current, options(false));
         let found_names: Vec<String> = found
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -190,7 +246,7 @@ mod tests {
         make_dir(&current, ".git");
         std::fs::write(current.join(".gitignore"), "ignored\n")
             .expect("the fixture .gitignore is written");
-        let respected = discover(&current, true);
+        let respected = discover(&current, options(true));
         let respected_names: Vec<String> = respected
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -199,7 +255,7 @@ mod tests {
             !respected_names.contains(&"ignored".to_owned()),
             "{respected_names:?}"
         );
-        let ignored_off = discover(&current, false);
+        let ignored_off = discover(&current, options(false));
         let ignored_off_names: Vec<String> = ignored_off
             .iter()
             .map(|candidate| candidate.name.clone())
@@ -214,7 +270,7 @@ mod tests {
     fn the_current_directory_itself_is_never_in_the_result() {
         let root = TempDir::new().expect("a fresh scratch root");
         let current = make_dir(root.path(), "parent/current");
-        let found = discover(&current, true);
+        let found = discover(&current, options(true));
         let current_key = current.file_name().expect("current has a name");
         assert!(
             found

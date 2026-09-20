@@ -53,8 +53,9 @@ pub fn explain<'a>(
     current_dir: &str,
     candidates: &'a [Candidate],
     origin: Origin,
+    typo_min_length: usize,
 ) -> Report<'a> {
-    let ranked = rank::rank(query, current_dir, candidates);
+    let ranked = rank::rank(query, current_dir, candidates, typo_min_length);
     let mut evaluations: Vec<Evaluation<'a>> = Vec::with_capacity(candidates.len());
     for scored in &ranked {
         let name = &scored.candidate.name;
@@ -68,7 +69,7 @@ pub fn explain<'a>(
             },
             stage2_distance: match scored.stage {
                 Stage::One => None,
-                Stage::Two => stage2::explain(query, name),
+                Stage::Two => stage2::explain(query, name, typo_min_length),
             },
         });
     }
@@ -84,7 +85,7 @@ pub fn explain<'a>(
     for candidate in dropped {
         evaluations.push(Evaluation::Eliminated {
             candidate,
-            reason: eliminate(query, current_dir, candidate),
+            reason: eliminate(query, current_dir, candidate, typo_min_length),
         });
     }
     Report {
@@ -96,14 +97,19 @@ pub fn explain<'a>(
     }
 }
 
-fn eliminate(query: &str, current_dir: &str, candidate: &Candidate) -> Elimination {
+fn eliminate(
+    query: &str,
+    current_dir: &str,
+    candidate: &Candidate,
+    typo_min_length: usize,
+) -> Elimination {
     if rank::same_path(&candidate.path, current_dir) {
         return Elimination::CurrentDirectory;
     }
     if candidate.missing {
         return Elimination::Disappeared;
     }
-    match stage2::explain(query, &candidate.name) {
+    match stage2::explain(query, &candidate.name, typo_min_length) {
         Some(distance) => Elimination::DistanceTooFar { distance },
         None => Elimination::NoSubsequence,
     }
@@ -248,6 +254,7 @@ mod tests {
     use crate::clock::Timestamp;
     use crate::decision::Decision;
     use crate::rank::{Candidate, Stage, TieBreak};
+    use crate::stage2::TYPO_MIN_QUERY_LEN;
 
     fn at(hours: i64) -> Timestamp {
         Timestamp::from_unix_seconds(1_700_000_000 - hours * 3_600)
@@ -305,7 +312,13 @@ mod tests {
     #[test]
     fn every_candidate_is_evaluated_exactly_once() {
         let candidates = world();
-        let report = explain("tokio", "/dev/helix", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "/dev/helix",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(report.evaluations.len(), candidates.len());
         assert_eq!(report.normalized_query, "tokio");
     }
@@ -313,7 +326,13 @@ mod tests {
     #[test]
     fn the_current_directory_is_eliminated_before_anything_else() {
         let candidates = world();
-        let report = explain("helix", "/DEV/Helix", &candidates, Origin::Database);
+        let report = explain(
+            "helix",
+            "/DEV/Helix",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(
             reason(&report, "/dev/helix"),
             Some(Elimination::CurrentDirectory)
@@ -324,7 +343,13 @@ mod tests {
     fn a_missing_candidate_is_eliminated_as_disappeared() {
         let mut candidates = world();
         candidates[0].missing = true;
-        let report = explain("tokio", "", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(
             reason(&report, "/dev/tokio"),
             Some(Elimination::Disappeared)
@@ -336,7 +361,13 @@ mod tests {
     fn a_candidate_missing_and_current_reports_the_current_directory_first() {
         let mut candidates = world();
         candidates[0].missing = true;
-        let report = explain("tokio", "/dev/tokio", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "/dev/tokio",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(
             reason(&report, "/dev/tokio"),
             Some(Elimination::CurrentDirectory)
@@ -346,7 +377,7 @@ mod tests {
     #[test]
     fn a_query_too_short_for_stage_two_eliminates_on_no_subsequence() {
         let candidates = world();
-        let report = explain("tok", "", &candidates, Origin::Database);
+        let report = explain("tok", "", &candidates, Origin::Database, TYPO_MIN_QUERY_LEN);
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 68)));
         assert_eq!(
             reason(&report, "/dev/helix"),
@@ -361,7 +392,13 @@ mod tests {
     #[test]
     fn a_name_too_far_from_the_query_reports_its_distance() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(
             reason(&report, "/dev/zellij"),
             Some(Elimination::DistanceTooFar { distance: 4 })
@@ -375,7 +412,13 @@ mod tests {
     #[test]
     fn stage_one_wins_before_stage_two_and_both_keep_their_detail() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 90)));
         assert_eq!(matched(&report, "/dev/tokei"), Some((Stage::Two, 1)));
         let detail: Vec<(bool, bool)> = report
@@ -396,10 +439,22 @@ mod tests {
     #[test]
     fn the_decision_and_the_tie_break_match_the_ranking() {
         let candidates = world();
-        let report = explain("tokio", "", &candidates, Origin::Database);
+        let report = explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(report.decision, Decision::Jump(&candidates[0]));
         assert_eq!(report.deciding_criterion, Some(TieBreak::Score));
-        let empty = explain("zigzag", "", &candidates, Origin::Database);
+        let empty = explain(
+            "zigzag",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(empty.decision, Decision::None);
         assert_eq!(empty.deciding_criterion, None);
     }
@@ -410,7 +465,13 @@ mod tests {
             dir("/aaa/tokio", "tokio", "/aaa", 1),
             dir("/zzz/tokio", "tokio", "/zzz", 2),
         ];
-        let report = explain("tokoi", "", &candidates, Origin::Database);
+        let report = explain(
+            "tokoi",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        );
         assert_eq!(
             report.decision,
             Decision::Menu(vec![&candidates[0], &candidates[1]])
@@ -426,6 +487,7 @@ mod tests {
             "/dev/helix",
             &candidates,
             Origin::Database,
+            TYPO_MIN_QUERY_LEN,
         ));
         let expected = "normalized query: tokio\n\
             evaluated candidates:\n\
@@ -448,12 +510,24 @@ mod tests {
     fn render_names_the_floor_and_an_empty_report() {
         let long = format!("a{}z", "b".repeat(50));
         let candidates = [dir("/dev/long", &long, "/dev", 1)];
-        let rendered = render(&explain("az", "", &candidates, Origin::Database));
+        let rendered = render(&explain(
+            "az",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        ));
         assert!(rendered.contains("floor raises"), "{rendered}");
         assert!(rendered.contains("stage 1 score 4 /dev/long"), "{rendered}");
         let nothing: [Candidate; 0] = [];
         assert_eq!(
-            render(&explain("tokio", "", &nothing, Origin::Database)),
+            render(&explain(
+                "tokio",
+                "",
+                &nothing,
+                Origin::Database,
+                TYPO_MIN_QUERY_LEN
+            )),
             "normalized query: tokio\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
         );
     }
@@ -461,9 +535,21 @@ mod tests {
     #[test]
     fn a_fallback_origin_renders_an_extra_origin_line() {
         let candidates = [dir("/dev/tokio", "tokio", "/dev", 1)];
-        let database = render(&explain("tokio", "", &candidates, Origin::Database));
+        let database = render(&explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+        ));
         assert!(!database.contains("origin:"), "{database}");
-        let fallback = render(&explain("tokio", "", &candidates, Origin::Fallback));
+        let fallback = render(&explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Fallback,
+            TYPO_MIN_QUERY_LEN,
+        ));
         insta::assert_snapshot!(fallback);
     }
 }

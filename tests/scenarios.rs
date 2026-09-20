@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use furet::clock::{Clock, FixedClock, Timestamp};
 use furet::decision::{Decision, decide};
 use furet::rank::{Candidate, rank};
+use furet::stage2::TYPO_MIN_QUERY_LEN;
 use serde::Deserialize;
 
 const SIMULATED_NOW: Timestamp = Timestamp::from_unix_seconds(1_700_000_000);
@@ -196,7 +197,7 @@ fn scenario_cases_reach_their_expected_outcome() -> Result<(), Box<dyn std::erro
                 .map(|spec| candidate(spec, clock.now()))
                 .collect();
             let current_dir = case.current_dir.as_deref().unwrap_or_default();
-            let ranked = rank(&case.query, current_dir, &candidates);
+            let ranked = rank(&case.query, current_dir, &candidates, TYPO_MIN_QUERY_LEN);
             let found: Vec<&str> = ranked
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())

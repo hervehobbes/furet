@@ -31,21 +31,30 @@ pub struct Scored<'a> {
 
 /// Scores one candidate with stage 1, falling back to stage 2 only once
 /// stage 1 returned no match at all.
-pub fn dispatch(query: &str, candidate: &Candidate) -> Option<(u32, Stage)> {
+pub fn dispatch(
+    query: &str,
+    candidate: &Candidate,
+    typo_min_length: usize,
+) -> Option<(u32, Stage)> {
     if let Some(found) = stage1::score(query, &candidate.name, candidate.folder.as_deref()) {
         return Some((found, Stage::One));
     }
-    stage2::score(query, &candidate.name).map(|found| (found, Stage::Two))
+    stage2::score(query, &candidate.name, typo_min_length).map(|found| (found, Stage::Two))
 }
 
 /// Ranks the matching candidates in SPEC §8 order, after dropping the
 /// missing ones and `current_dir` itself.
-pub fn rank<'a>(query: &str, current_dir: &str, candidates: &'a [Candidate]) -> Vec<Scored<'a>> {
+pub fn rank<'a>(
+    query: &str,
+    current_dir: &str,
+    candidates: &'a [Candidate],
+    typo_min_length: usize,
+) -> Vec<Scored<'a>> {
     let mut ranked: Vec<Scored<'a>> = candidates
         .iter()
         .filter(|candidate| !candidate.missing && !same_path(&candidate.path, current_dir))
         .filter_map(|candidate| {
-            dispatch(query, candidate).map(|(score, stage)| Scored {
+            dispatch(query, candidate, typo_min_length).map(|(score, stage)| Scored {
                 candidate,
                 score,
                 stage,
@@ -139,7 +148,7 @@ mod tests {
     }
 
     fn paths(query: &str, current_dir: &str, candidates: &[Candidate]) -> Vec<String> {
-        rank(query, current_dir, candidates)
+        rank(query, current_dir, candidates, stage2::TYPO_MIN_QUERY_LEN)
             .iter()
             .map(|scored| scored.candidate.path.clone())
             .collect()
@@ -148,7 +157,7 @@ mod tests {
     #[test]
     fn dispatch_prefers_stage_one_when_it_matches() {
         let candidate = dir("/dev/tokio", "tokio", "/dev", 1);
-        let found = dispatch("tokio", &candidate);
+        let found = dispatch("tokio", &candidate, stage2::TYPO_MIN_QUERY_LEN);
         assert_eq!(found, Some((90, Stage::One)));
         assert!(found.map(|(score, _)| score) > Some(stage1::SCORE_FLOOR));
     }
@@ -157,14 +166,20 @@ mod tests {
     fn dispatch_falls_back_to_stage_two_when_stage_one_fails() {
         let candidate = dir("/dev/tokio", "tokio", "/dev", 1);
         assert_eq!(stage1::score("tokoi", "tokio", Some("/dev")), None);
-        assert_eq!(dispatch("tokoi", &candidate), Some((2, Stage::Two)));
+        assert_eq!(
+            dispatch("tokoi", &candidate, stage2::TYPO_MIN_QUERY_LEN),
+            Some((2, Stage::Two))
+        );
     }
 
     #[test]
     fn dispatch_returns_nothing_when_both_stages_fail() {
         let candidate = dir("/dev/tokio", "tokio", "/dev", 1);
-        assert_eq!(dispatch("zigzag", &candidate), None);
-        assert_eq!(dispatch("", &candidate), None);
+        assert_eq!(
+            dispatch("zigzag", &candidate, stage2::TYPO_MIN_QUERY_LEN),
+            None
+        );
+        assert_eq!(dispatch("", &candidate, stage2::TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
@@ -186,8 +201,8 @@ mod tests {
             dir("/dev/helix", "helix", "/dev", 1),
         ];
         assert_eq!(
-            dispatch("helix", &candidates[0]),
-            dispatch("helix", &candidates[1])
+            dispatch("helix", &candidates[0], stage2::TYPO_MIN_QUERY_LEN),
+            dispatch("helix", &candidates[1], stage2::TYPO_MIN_QUERY_LEN)
         );
         assert_eq!(
             paths("helix", "", &candidates),
@@ -202,8 +217,8 @@ mod tests {
             dir("/dev/ripgrep", "ripgrep", "/dev", 2),
         ];
         assert_eq!(
-            dispatch("ri", &candidates[0]),
-            dispatch("ri", &candidates[1])
+            dispatch("ri", &candidates[0], stage2::TYPO_MIN_QUERY_LEN),
+            dispatch("ri", &candidates[1], stage2::TYPO_MIN_QUERY_LEN)
         );
         assert_eq!(
             paths("ri", "", &candidates),
@@ -218,8 +233,8 @@ mod tests {
             dir("/archive/helix", "helix", "/archive", 2),
         ];
         assert_eq!(
-            dispatch("helix", &candidates[0]),
-            dispatch("helix", &candidates[1])
+            dispatch("helix", &candidates[0], stage2::TYPO_MIN_QUERY_LEN),
+            dispatch("helix", &candidates[1], stage2::TYPO_MIN_QUERY_LEN)
         );
         assert_eq!(
             paths("helix", "", &candidates),
@@ -266,7 +281,7 @@ mod tests {
             dir("/dev/tokei", "tokei", "/dev", 1),
             dir("/dev/tokio", "tokio", "/dev", 240),
         ];
-        let ranked = rank("tokio", "", &candidates);
+        let ranked = rank("tokio", "", &candidates, stage2::TYPO_MIN_QUERY_LEN);
         assert_eq!(ranked.len(), 2);
         assert_eq!(
             ranked.iter().map(|scored| scored.stage).collect::<Vec<_>>(),
@@ -348,7 +363,7 @@ mod tests {
             dir("/dev/tokio", "tokio", "/dev", 240),
         ];
         assert_eq!(
-            deciding_criterion(&rank("tokio", "", &candidates)),
+            deciding_criterion(&rank("tokio", "", &candidates, stage2::TYPO_MIN_QUERY_LEN)),
             Some(TieBreak::Score)
         );
         let tied = [
@@ -356,7 +371,7 @@ mod tests {
             dir("/dev/helix", "helix", "/dev", 1),
         ];
         assert_eq!(
-            deciding_criterion(&rank("helix", "", &tied)),
+            deciding_criterion(&rank("helix", "", &tied, stage2::TYPO_MIN_QUERY_LEN)),
             Some(TieBreak::Recency)
         );
     }
@@ -433,7 +448,7 @@ mod tests {
             query in proptest::sample::select(QUERIES),
             current in proptest::sample::select(CURRENT),
         ) {
-            let ranked = rank(query, current, &candidates);
+            let ranked = rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN);
             for pair in ranked.windows(2) {
                 prop_assert!(pair[0].score >= pair[1].score);
             }
@@ -445,7 +460,7 @@ mod tests {
             query in proptest::sample::select(QUERIES),
             current in proptest::sample::select(CURRENT),
         ) {
-            let ranked = rank(query, current, &candidates);
+            let ranked = rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN);
             for scored in &ranked {
                 match scored.stage {
                     Stage::One => prop_assert!(scored.score >= stage1::SCORE_FLOOR),
@@ -465,7 +480,7 @@ mod tests {
             query in proptest::sample::select(QUERIES),
             current in proptest::sample::select(CURRENT),
         ) {
-            let ranked = rank(query, current, &candidates);
+            let ranked = rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN);
             let (winner, runner_up) = match deciding_criterion(&ranked) {
                 None => {
                     prop_assert!(ranked.len() < 2);
@@ -523,11 +538,11 @@ mod tests {
             query in proptest::sample::select(QUERIES),
             current in proptest::sample::select(CURRENT),
         ) {
-            let expected: Vec<&str> = rank(query, current, &candidates)
+            let expected: Vec<&str> = rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN)
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())
                 .collect();
-            let found: Vec<&str> = rank(query, current, &shuffled)
+            let found: Vec<&str> = rank(query, current, &shuffled, stage2::TYPO_MIN_QUERY_LEN)
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())
                 .collect();
@@ -540,11 +555,11 @@ mod tests {
             query in proptest::sample::select(QUERIES),
             current in proptest::sample::select(CURRENT),
         ) {
-            for scored in rank(query, current, &candidates) {
+            for scored in rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN) {
                 prop_assert!(!scored.candidate.missing);
                 prop_assert!(!same_path(&scored.candidate.path, current));
                 prop_assert_eq!(
-                    dispatch(query, scored.candidate).map(|(score, _)| score),
+                    dispatch(query, scored.candidate, stage2::TYPO_MIN_QUERY_LEN).map(|(score, _)| score),
                     Some(scored.score)
                 );
             }
@@ -559,9 +574,9 @@ mod tests {
             let kept = candidates
                 .iter()
                 .filter(|candidate| !candidate.missing && !same_path(&candidate.path, current))
-                .filter(|candidate| dispatch(query, candidate).is_some())
+                .filter(|candidate| dispatch(query, candidate, stage2::TYPO_MIN_QUERY_LEN).is_some())
                 .count();
-            let ranked = rank(query, current, &candidates);
+            let ranked = rank(query, current, &candidates, stage2::TYPO_MIN_QUERY_LEN);
             prop_assert_eq!(ranked.len(), kept);
             let distinct: HashSet<&str> = ranked
                 .iter()

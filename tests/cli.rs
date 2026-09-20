@@ -110,6 +110,11 @@ fn query_answering(sandbox: &Sandbox, query: &str, cwd: &Path, answer: &str) -> 
     run(&mut cmd)
 }
 
+fn write_config(sandbox: &Sandbox, contents: &str) {
+    std::fs::write(sandbox.data.path().join("config.toml"), contents)
+        .expect("the config file is written");
+}
+
 fn visited_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
     let canonical = paths::canonical(path)
         .expect("the recorded directory canonicalizes")
@@ -1192,3 +1197,150 @@ fn logging_never_writes_to_stdout_or_stderr() {
     assert!(out.stderr.is_empty(), "stderr: {}", text(&out.stderr));
 }
 
+#[test]
+fn typo_min_length_from_config_disables_short_typo_queries() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let lenient = query(&world, "tokoi", world.tree.path(), false);
+    assert!(
+        lenient.status.success(),
+        "stderr: {}",
+        text(&lenient.stderr)
+    );
+    write_config(&world, "typo_min_length = 6");
+    let strict = query(&world, "tokoi", world.tree.path(), false);
+    assert!(!strict.status.success());
+    assert!(strict.stdout.is_empty());
+}
+
+#[test]
+fn fallback_up_from_config_climbs_more_ancestors() {
+    let world = sandbox(&["a/b/current", "a/sibling"]);
+    let current = world.child("a/b/current");
+    let sibling = world.child("a/sibling");
+    let without_override = query(&world, "sibling", &current, false);
+    assert!(!without_override.status.success());
+    write_config(&world, "[fallback]\nup = 2");
+    let with_override = query(&world, "sibling", &current, false);
+    assert!(
+        with_override.status.success(),
+        "stderr: {}",
+        text(&with_override.stderr)
+    );
+    let expected = paths::canonical(&sibling)
+        .expect("the grandparent's child canonicalizes")
+        .path;
+    assert_eq!(text(&with_override.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn fallback_exclude_from_config_replaces_the_defaults() {
+    let world = sandbox(&["current/target"]);
+    let current = world.child("current");
+    let target = world.child("current/target");
+    let without_override = query(&world, "target", &current, false);
+    assert!(!without_override.status.success());
+    write_config(&world, "[fallback]\nexclude = [\"foo\"]");
+    let with_override = query(&world, "target", &current, false);
+    assert!(
+        with_override.status.success(),
+        "stderr: {}",
+        text(&with_override.stderr)
+    );
+    let expected = paths::canonical(&target)
+        .expect("the once-excluded directory canonicalizes")
+        .path;
+    assert_eq!(text(&with_override.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn fallback_no_ignore_from_config_matches_the_flag() {
+    let world = sandbox(&["current/ignored", "current/.git"]);
+    let current = world.child("current");
+    let ignored = world.child("current/ignored");
+    std::fs::write(current.join(".gitignore"), "ignored\n")
+        .expect("the fixture .gitignore is written");
+    let respected = query(&world, "ignored", &current, false);
+    assert!(!respected.status.success());
+    write_config(&world, "[fallback]\nno_ignore = true");
+    let overridden = query(&world, "ignored", &current, false);
+    assert!(
+        overridden.status.success(),
+        "stderr: {}",
+        text(&overridden.stderr)
+    );
+    let expected = paths::canonical(&ignored)
+        .expect("the gitignored directory canonicalizes")
+        .path;
+    assert_eq!(text(&overridden.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn an_invalid_value_warns_and_falls_back_to_the_default() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    write_config(&world, "typo_min_length = \"six\"");
+    let out = query(&world, "tokio", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    let log = log_contents(&world);
+    assert!(
+        log.lines()
+            .any(|line| line.contains("WARN") && line.contains("typo_min_length")),
+        "{log:?}"
+    );
+}
+
+#[test]
+fn a_malformed_config_never_breaks_a_query() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    write_config(&world, "this is not [ valid toml");
+    let out = query(&world, "tokio", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    assert!(
+        log_contents(&world).contains("WARN"),
+        "{}",
+        log_contents(&world)
+    );
+}
+
+#[test]
+fn no_config_file_writes_no_warning() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = query(&world, "tokio", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(
+        !log_contents(&world).contains("WARN"),
+        "{}",
+        log_contents(&world)
+    );
+}

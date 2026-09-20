@@ -55,6 +55,7 @@ mod tests {
     use super::{Decision, MENU_MAX_ENTRIES, decide, render_menu, selection};
     use crate::clock::Timestamp;
     use crate::rank::{Candidate, Scored, Stage, rank};
+    use crate::stage2::TYPO_MIN_QUERY_LEN;
     use crate::{stage1, stage2};
     use proptest::prelude::*;
     use std::collections::HashSet;
@@ -303,7 +304,7 @@ mod tests {
             candidates in a_candidate_set(),
             query in proptest::sample::select(QUERIES),
         ) {
-            let ranked = rank(query, "", &candidates);
+            let ranked = rank(query, "", &candidates, TYPO_MIN_QUERY_LEN);
             let decision = decide(&ranked);
             prop_assert_eq!(&decision, &decide(&ranked));
             match &decision {

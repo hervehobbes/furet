@@ -7,6 +7,7 @@ use std::process;
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock};
+use furet::config::{self, Settings};
 use furet::decision::{self, Decision};
 use furet::explain::{self, Origin};
 use furet::fallback;
@@ -15,7 +16,7 @@ use furet::rank::{self, Candidate, Stage};
 use furet::soft_delete;
 use furet::storage;
 use rusqlite::Connection;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 mod logging;
 mod pwsh;
@@ -214,6 +215,8 @@ fn query_directories(
     no_ignore: bool,
 ) -> Result<(), Box<dyn Error>> {
     debug!(query, list, explain, color, no_ignore, "query");
+    let settings = load_settings();
+    debug!(?settings, "effective settings");
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
@@ -244,7 +247,7 @@ fn query_directories(
         print_lines(&list_by_recency(&candidates, &current.path, color));
         return Ok(());
     }
-    let (pool, is_fallback) = resolve_pool(query, &current.path, candidates, no_ignore);
+    let (pool, is_fallback) = resolve_pool(query, &current.path, candidates, no_ignore, &settings);
     debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
     if explain {
         let origin = if is_fallback {
@@ -252,11 +255,17 @@ fn query_directories(
         } else {
             Origin::Database
         };
-        let report = explain::explain(query, &current.path, &pool, origin);
+        let report = explain::explain(
+            query,
+            &current.path,
+            &pool,
+            origin,
+            settings.typo_min_length,
+        );
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
-    let ranked = rank::rank(query, &current.path, &pool);
+    let ranked = rank::rank(query, &current.path, &pool, settings.typo_min_length);
     if list {
         let lines: Vec<String> = ranked
             .iter()
@@ -371,14 +380,55 @@ fn resolve_pool(
     current_path: &str,
     db_candidates: Vec<Candidate>,
     no_ignore: bool,
+    settings: &Settings,
 ) -> (Vec<Candidate>, bool) {
-    if query.trim().is_empty() || !rank::rank(query, current_path, &db_candidates).is_empty() {
+    if query.trim().is_empty()
+        || !rank::rank(
+            query,
+            current_path,
+            &db_candidates,
+            settings.typo_min_length,
+        )
+        .is_empty()
+    {
         return (db_candidates, false);
     }
-    (
-        fallback::discover(Path::new(current_path), !no_ignore),
-        true,
-    )
+    let options = fallback::Options {
+        child_depth: settings.fallback.depth,
+        ancestor_levels: settings.fallback.up,
+        respect_gitignore: !(no_ignore || settings.fallback.no_ignore),
+        exclude: settings.fallback.exclude.clone(),
+    };
+    (fallback::discover(Path::new(current_path), options), true)
+}
+
+/// Reads `<data dir>/config.toml`, falling back to `Settings::default()` for
+/// a missing file, a read error, or any invalid key (SPEC section 16).
+fn load_settings() -> Settings {
+    let path = match storage::data_dir() {
+        Ok(dir) => dir.join("config.toml"),
+        Err(error) => {
+            warn!(%error, "cannot resolve the data directory; using default settings");
+            return Settings::default();
+        }
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let (settings, warnings) = config::parse(&text);
+            for warning in &warnings {
+                warn!("{warning}");
+            }
+            settings
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            debug!(path = %path.display(), "no config file; using default settings");
+            Settings::default()
+        }
+        Err(error) => {
+            warn!(%error, path = %path.display(), "cannot read config file; using default settings");
+            Settings::default()
+        }
+    }
 }
 
 /// Every reconciled, non-missing, non-current candidate, most recent first
@@ -555,5 +605,3 @@ mod tests {
         assert!(up_from(root.path(), 10_000).is_err());
     }
 }
-
-
