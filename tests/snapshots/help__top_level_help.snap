@@ -1,0 +1,26 @@
+---
+source: tests/help.rs
+expression: text
+---
+A zoxide-like fuzzy directory jumper
+
+Usage: furet <COMMAND>
+
+Commands:
+  add      Record a visit to a directory
+  query    Rank recorded directories and print the best match, falling back to a disk walk (SPEC section 11) when nothing matches
+  up       Print the ancestor `n` levels above the current directory
+  back     Print the second-to-last directory visited in this session
+  init     Print shell integration code for the requested shell
+  queries  Inspect the query journal (SPEC section 15)
+  home     Print the configured home directory, or nothing when unset or invalid
+  import   Import directories recorded by another tool, read from stdin
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Database file: <DATA_DIR>\furet.db
+Config file: <DATA_DIR>\config.toml (not found, defaults apply)
+Log directory: <DATA_DIR>\logs

@@ -1237,7 +1237,32 @@ fn help_prints_the_database_file_path_resolved_at_runtime() {
             "the top-level {flag} output must show the resolved path {}: {help}",
             expected.display()
         );
+        assert!(
+            help.contains(&format!(
+                "Config file: {} (not found, defaults apply)",
+                world.data.path().join("config.toml").display()
+            )),
+            "the top-level {flag} output must name the missing config file: {help}"
+        );
+        assert!(
+            help.contains(&format!(
+                "Log directory: {}",
+                world.data.path().join("logs").display()
+            )),
+            "the top-level {flag} output must name the log directory: {help}"
+        );
     }
+    write_config(&world, "typo_min_length = 5\n");
+    let out = run(world.furet().arg("--help"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let help = text(&out.stdout);
+    assert!(
+        help.contains(&format!(
+            "Config file: {} (found)",
+            world.data.path().join("config.toml").display()
+        )),
+        "a written config.toml must flip the trailer to (found): {help}"
+    );
 }
 
 #[test]

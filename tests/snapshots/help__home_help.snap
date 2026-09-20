@@ -1,0 +1,10 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the configured home directory, or nothing when unset or invalid
+
+Usage: furet home
+
+Options:
+  -h, --help  Print help

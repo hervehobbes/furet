@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: lot 24 — the `--help`/`-h` trailer now also prints `Config file: …
+(found | not found, defaults apply)` and `Log directory:` beside the database
+line; `storage::config_path`/`logs_dir` are the single source of truth
+(`load_settings` and `logging::init` now call them); six stale help strings
+fixed (query fallback, `--list` empty-query recency, `--cmd`/`fi`,
+`--failures` mandatory, import stdin/tool); every help page pinned by ten
+insta snapshots in `tests/help.rs` (data dir redacted to `<DATA_DIR>`).
+Decisions: added the `regex` dev-dependency and insta's `filters` feature
+for the redaction. Next: reviewer pass from a Claude Code session.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: lot 23 — docs-only, brought the docs back in line with the code:
 ROADMAP rows 12–21, README Status (lots 0–21 + the lot-22 scenario suite),
 ARCHITECTURE's new modules with their layer, DATABASE.md's `session`

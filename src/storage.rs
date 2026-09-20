@@ -28,6 +28,8 @@ pub enum StorageError {
 }
 
 const DB_FILE_NAME: &str = "furet.db";
+const CONFIG_FILE_NAME: &str = "config.toml";
+const LOGS_DIR_NAME: &str = "logs";
 const APP_DIR_NAME: &str = "furet";
 
 // WHY: ts columns are INTEGER Unix seconds to match clock::Timestamp.
@@ -72,6 +74,16 @@ pub fn data_dir() -> Result<PathBuf, StorageError> {
 /// variable is set (tests rely on this), else the platform data directory.
 pub fn db_path() -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join(DB_FILE_NAME))
+}
+
+/// Resolves the config file path: `config.toml` in the data directory.
+pub fn config_path() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join(CONFIG_FILE_NAME))
+}
+
+/// Resolves the log directory: `logs` in the data directory.
+pub fn logs_dir() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join(LOGS_DIR_NAME))
 }
 
 /// Opens the database at the resolved location, creating the file and its
@@ -318,9 +330,9 @@ pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, 
 #[cfg(test)]
 mod tests {
     use super::{
-        db_path, dir_entries, dir_id_by_key, dir_path_by_id, insert_query, insert_visit,
-        known_keys, last_visited_dir, open, open_at, query_log, set_missing_since, upsert_dir,
-        visit_log,
+        config_path, db_path, dir_entries, dir_id_by_key, dir_path_by_id, insert_query,
+        insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at, query_log,
+        set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -569,6 +581,24 @@ mod tests {
         let conn = connection.expect("open works under FURET_DATA_DIR");
         assert_eq!(user_version(&conn), 1);
         assert!(nested.join("furet.db").exists());
+    }
+
+    #[test]
+    fn furet_data_dir_overrides_the_config_and_logs_locations() {
+        let dir = tempfile::tempdir().expect("a fresh temporary directory");
+        let nested = dir.path().join("nested");
+        unsafe { std::env::set_var("FURET_DATA_DIR", &nested) };
+        let config = config_path();
+        let logs = logs_dir();
+        unsafe { std::env::remove_var("FURET_DATA_DIR") };
+        assert_eq!(
+            config.expect("config_path resolves under FURET_DATA_DIR"),
+            nested.join("config.toml")
+        );
+        assert_eq!(
+            logs.expect("logs_dir resolves under FURET_DATA_DIR"),
+            nested.join("logs")
+        );
     }
 
     #[test]

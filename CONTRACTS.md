@@ -136,6 +136,15 @@ else (menus, `--explain`, errors) goes to stderr, with one documented
 exception below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
 
+`furet --help`/`-h` ends with three runtime-resolved trailer lines —
+`Database file:`, `Config file: … (found | not found, defaults apply)`, and
+`Log directory:` — all built from `storage::data_dir()` (honors
+`FURET_DATA_DIR`); an unresolvable location prints `unavailable: <error>`
+instead of failing. `storage::config_path`/`storage::logs_dir` are the single
+source of truth for those locations (`load_settings` and `logging::init` call
+them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`
+and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
+
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
   one visit; `source` defaults to `hook`.
 - `furet query <text> [--list] [--explain] [--color] [--no-ignore]` — ranks

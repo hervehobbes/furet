@@ -1,0 +1,16 @@
+---
+source: tests/help.rs
+expression: text
+---
+Record a visit to a directory
+
+Usage: furet add [OPTIONS] --session <SESSION> <PATH>
+
+Arguments:
+  <PATH>  Directory to record, absolute or relative
+
+Options:
+      --session <SESSION>  Terminal session the visit belongs to
+      --source <SOURCE>    What triggered the visit [default: hook] [possible values: hook, jump, back, up, fallback, import]
+      --from <FROM>        Directory the visit started from
+  -h, --help               Print help

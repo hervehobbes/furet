@@ -49,11 +49,13 @@ enum Command {
         #[arg(long)]
         from: Option<String>,
     },
-    /// Rank recorded directories and print the best match.
+    /// Rank recorded directories and print the best match, falling back to a
+    /// disk walk (SPEC section 11) when nothing matches.
     Query {
         /// Query text; quote it when it contains spaces.
         query: String,
-        /// Print every ranked candidate, best first.
+        /// Print every ranked candidate, best first; an empty query lists by
+        /// recency instead.
         #[arg(long)]
         list: bool,
         /// Print the scoring report on stderr and jump nowhere.
@@ -84,15 +86,15 @@ enum Command {
     },
     /// Inspect the query journal (SPEC section 15).
     Queries {
-        /// List queries whose jump was probably a mistake.
+        /// List queries whose jump was probably a mistake; mandatory today.
         #[arg(long)]
         failures: bool,
     },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
-    /// Import directories from another tool's database.
+    /// Import directories recorded by another tool, read from stdin.
     Import {
-        /// Source database to import from.
+        /// Tool to import from.
         source: ImportSource,
     },
 }
@@ -101,7 +103,7 @@ enum Command {
 enum InitShell {
     /// Print the PowerShell integration script.
     Pwsh {
-        /// Name of the generated jump function.
+        /// Name of the generated jump function; the interactive `fi` keeps its name.
         #[arg(long, default_value = "f")]
         cmd: String,
     },
@@ -139,7 +141,7 @@ impl Source {
 fn main() {
     let guard = logging::init();
     let matches = Cli::command()
-        .after_help(database_help_line())
+        .after_help(runtime_paths_help())
         .get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     let code = match cli.command {
@@ -172,11 +174,38 @@ fn main() {
     process::exit(code);
 }
 
-// WHY: the database path depends on the runtime environment, so a static clap attribute cannot hold it.
+// WHY: the runtime file locations depend on the environment, so a static clap attribute cannot hold them.
+fn runtime_paths_help() -> String {
+    [database_help_line(), config_help_line(), logs_help_line()].join("\n")
+}
+
 fn database_help_line() -> String {
     match storage::db_path() {
         Ok(path) => format!("Database file: {}", path.display()),
         Err(error) => format!("Database file: unavailable: {error}"),
+    }
+}
+
+fn config_help_line() -> String {
+    match storage::config_path() {
+        Ok(path) => match std::fs::exists(&path) {
+            Ok(true) => format!("Config file: {} (found)", path.display()),
+            Ok(false) => {
+                format!(
+                    "Config file: {} (not found, defaults apply)",
+                    path.display()
+                )
+            }
+            Err(error) => format!("Config file: unavailable: {error}"),
+        },
+        Err(error) => format!("Config file: unavailable: {error}"),
+    }
+}
+
+fn logs_help_line() -> String {
+    match storage::logs_dir() {
+        Ok(dir) => format!("Log directory: {}", dir.display()),
+        Err(error) => format!("Log directory: unavailable: {error}"),
     }
 }
 
@@ -419,8 +448,8 @@ fn resolve_pool(
 }
 
 fn load_settings() -> Settings {
-    let path = match storage::data_dir() {
-        Ok(dir) => dir.join("config.toml"),
+    let path = match storage::config_path() {
+        Ok(path) => path,
         Err(error) => {
             warn!(%error, "cannot resolve the data directory; using default settings");
             return Settings::default();

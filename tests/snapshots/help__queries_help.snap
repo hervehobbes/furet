@@ -1,0 +1,11 @@
+---
+source: tests/help.rs
+expression: text
+---
+Inspect the query journal (SPEC section 15)
+
+Usage: furet queries [OPTIONS]
+
+Options:
+      --failures  List queries whose jump was probably a mistake; mandatory today
+  -h, --help      Print help

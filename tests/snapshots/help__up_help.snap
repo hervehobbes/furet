@@ -1,0 +1,13 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the ancestor `n` levels above the current directory
+
+Usage: furet up <N>
+
+Arguments:
+  <N>  Levels to climb; must be at least 1
+
+Options:
+  -h, --help  Print help

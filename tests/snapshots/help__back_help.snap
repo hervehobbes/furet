@@ -1,0 +1,11 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the second-to-last directory visited in this session
+
+Usage: furet back --session <SESSION>
+
+Options:
+      --session <SESSION>  Terminal session to look the previous directory up in
+  -h, --help               Print help

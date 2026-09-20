@@ -1,0 +1,11 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the PowerShell integration script
+
+Usage: furet init pwsh [OPTIONS]
+
+Options:
+      --cmd <CMD>  Name of the generated jump function; the interactive `fi` keeps its name [default: f]
+  -h, --help       Print help
