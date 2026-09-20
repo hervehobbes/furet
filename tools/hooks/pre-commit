@@ -108,6 +108,9 @@ while IFS= read -r f; do
         if ! check_rust_comments "$f"; then
             exit_code=1
         fi
+        if ! git show ":$f" | awk -v f="$f" -f tools/hooks/private-docs.awk; then
+            exit_code=1
+        fi
         ;;
     esac
 done <<EOF
