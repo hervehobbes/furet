@@ -1053,3 +1053,23 @@ fn queries_failures_prints_exactly_the_probable_failure_and_ignores_the_benign_j
         format!("c:\\dev\ttok\t{tokio_path}\tbacktrack\n")
     );
 }
+
+#[test]
+fn help_prints_the_database_file_path_resolved_at_runtime() {
+    let world = sandbox(&[]);
+    let expected = world.data.path().join("furet.db");
+    for flag in ["-h", "--help"] {
+        let out = run(world.furet().arg(flag));
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        let help = text(&out.stdout);
+        assert!(
+            help.contains("Database file:"),
+            "the top-level {flag} output must name the database file: {help}"
+        );
+        assert!(
+            help.contains(expected.to_string_lossy().as_ref()),
+            "the top-level {flag} output must show the resolved path {}: {help}",
+            expected.display()
+        );
+    }
+}

@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 use std::process;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock};
 use furet::decision::{self, Decision};
@@ -120,7 +120,10 @@ impl Source {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let matches = Cli::command()
+        .after_help(database_help_line())
+        .get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     let code = match cli.command {
         Command::Add {
             path,
@@ -143,6 +146,14 @@ fn main() {
         Command::Queries { failures } => report(queries_command(failures)),
     };
     process::exit(code);
+}
+
+// WHY: the database path depends on the runtime environment, so a static clap attribute cannot hold it.
+fn database_help_line() -> String {
+    match storage::db_path() {
+        Ok(path) => format!("Database file: {}", path.display()),
+        Err(error) => format!("Database file: unavailable: {error}"),
+    }
 }
 
 fn report(outcome: Result<(), Box<dyn Error>>) -> i32 {

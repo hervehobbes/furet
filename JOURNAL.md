@@ -1,3 +1,14 @@
+## 2026-09-20 — branch main — v0.1.0
+Done: lot 12 — top-level `--help`/`-h` ends with `Database file: <path>`,
+computed at startup from `storage::db_path()` (honors `FURET_DATA_DIR`);
+resolution errors print `Database file: unavailable: <error>`, no panic.
+Parsing goes through `Cli::command().after_help(...).get_matches()` +
+`from_arg_matches`; subcommand help untouched. New test
+`help_prints_the_database_file_path_resolved_at_runtime` in `tests/cli.rs`.
+Decisions: after_help so both -h and --help show the line; the matches
+round-trip exits via clap::Error::exit instead of unwrap.
+Next: none assigned.
+
 ## 2026-09-19 — branch main — v0.1.0
 Done: lot 11 — SPEC §15 query journal + probable-failure detection: `query`
 now logs every real decision to `queries` (skipped for `--list`, `--explain`,
