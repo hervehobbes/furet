@@ -34,7 +34,6 @@ impl FixedClock {
 }
 
 impl Clock for FixedClock {
-    /// Test Hervé
     fn now(&self) -> Timestamp {
         self.now
     }
