@@ -1,0 +1,29 @@
+[[case]]
+name = "two tokens both matching the name jump to the best candidate"
+query = "neo vim"
+dirs = [
+    { path = "/dev/neovim", visited = "-2h" },
+    { path = "/dev/helix", visited = "-1h" },
+]
+jump = "/dev/neovim"
+
+[[case]]
+name = "one token that is not a subsequence kills the whole match"
+query = "neo zig"
+dirs = [{ path = "/dev/neovim", visited = "-1h" }]
+none = true
+
+[[case]]
+name = "tokens typed in name order beat the reversed order by the order bonus"
+query = "neo vim"
+dirs = [
+    { path = "/archive/vimneo", visited = "-1h" },
+    { path = "/dev/neovim", visited = "-5d" },
+]
+jump = "/dev/neovim"
+
+[[case]]
+name = "a multi-token query never reaches the typo stage"
+query = "tokoi zzz"
+dirs = [{ path = "/dev/tokio", visited = "-1h" }]
+none = true

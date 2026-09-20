@@ -1,0 +1,36 @@
+[[case]]
+name = "the spec's tokio and tokei at the same typo distance open a menu"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/dev/tokei", visited = "-2h" },
+]
+menu = ["/dev/tokio", "/dev/tokei"]
+
+[[case]]
+name = "ten tied typo matches list exactly nine entries in rank order"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/archive/tokio", visited = "-2h" },
+    { path = "/opt/tokio", visited = "-3h" },
+    { path = "/media/tokio", visited = "-4h" },
+    { path = "/docs/tokio", visited = "-5h" },
+    { path = "/work/tokio", visited = "-6h" },
+    { path = "/code/tokio", visited = "-7h" },
+    { path = "/tools/tokio", visited = "-8h" },
+    { path = "/sandbox/tokio", visited = "-9h" },
+    { path = "/data/tokio", visited = "-10h" },
+    { path = "/dev/tokyo", visited = "-1h" },
+]
+menu = [
+    "/dev/tokio",
+    "/archive/tokio",
+    "/opt/tokio",
+    "/media/tokio",
+    "/docs/tokio",
+    "/work/tokio",
+    "/code/tokio",
+    "/tools/tokio",
+    "/sandbox/tokio",
+]

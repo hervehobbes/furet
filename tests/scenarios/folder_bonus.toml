@@ -1,0 +1,26 @@
+[[case]]
+name = "the parent segments matching the query lift the older twin of a shared name"
+query = "hx"
+dirs = [
+    { path = "/archive/helix", visited = "-1h" },
+    { path = "/helix-editor/helix", visited = "-30d" },
+]
+jump = "/helix-editor/helix"
+
+[[case]]
+name = "a folder matching only some tokens earns no folder bonus"
+query = "neo vim"
+dirs = [
+    { path = "/neo-archive/neovim", visited = "-30d" },
+    { path = "/archive/neovim", visited = "-1h" },
+]
+jump = "/archive/neovim"
+
+[[case]]
+name = "a folder bonus on both twins leaves recency to decide"
+query = "hx"
+dirs = [
+    { path = "/helix-editor/helix", visited = "-30d" },
+    { path = "/helix-plugins/helix", visited = "-1h" },
+]
+jump = "/helix-plugins/helix"

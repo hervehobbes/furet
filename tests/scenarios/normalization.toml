@@ -1,0 +1,38 @@
+[[case]]
+name = "an uppercase query is folded to lowercase before matching"
+query = "TOKIO"
+dirs = [
+    { path = "/dev/tokio", visited = "-30d" },
+    { path = "/dev/prompts", visited = "-1h" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "an uppercase directory name answers a lowercase query"
+query = "tokio"
+dirs = [{ path = "/opt/TOKIO", visited = "-1h" }]
+jump = "/opt/TOKIO"
+
+[[case]]
+name = "an accented query is folded to its base letters"
+query = "Réunions"
+dirs = [
+    { path = "/docs/Reunions", visited = "-2h" },
+    { path = "/docs/tokei", visited = "-1h" },
+]
+jump = "/docs/Reunions"
+
+[[case]]
+name = "an uppercase accented query still finds the accented directory"
+query = "RÉUNIONS"
+dirs = [{ path = "/docs/Réunions", visited = "-1h" }]
+jump = "/docs/Réunions"
+
+[[case]]
+name = "a camelCase hump outranks the flat lowercase spelling"
+query = "tw"
+dirs = [
+    { path = "/dev/ToolWindows", visited = "-2d" },
+    { path = "/dev/toolwindows", visited = "-1h" },
+]
+jump = "/dev/ToolWindows"

@@ -1,0 +1,17 @@
+[[case]]
+name = "an older better score beats a very recent weaker one"
+query = "tokio"
+dirs = [
+    { path = "/dev/tokio-console", visited = "-1h" },
+    { path = "/dev/tokio", visited = "-30d" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "an old stage-1 match beats a very recent stage-2 typo"
+query = "helix"
+dirs = [
+    { path = "/dev/helyx", visited = "-1h" },
+    { path = "/archive/helix", visited = "-30d" },
+]
+jump = "/archive/helix"

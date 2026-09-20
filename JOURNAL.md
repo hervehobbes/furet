@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: lot 22 — 20 new SPEC §13 scenario cases: 5 new theme files
+(`normalization`, `multi_token`, `folder_bonus`, `d1`, `menu`) and 4
+`exclusions.toml` extensions; 42 cases total, green on first run.
+Decisions: every expectation was hand-derived from SPEC §7–§9, then
+cross-checked against the engine's `--explain` on a throwaway database before
+the run; the order-bonus case pairs real `neovim` with synthetic `vimneo` (no
+real OSS name carries both tokens twice); `ToolWindows` vs `toolwindows`
+cannot coexist on a case-insensitive disk, but the scenario runner reads TOML
+directly. Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: lot 21 — stage 2's accepted distance now depends on the query length:
 `stage2::max_distance` returns 1 below `LONG_QUERY_MIN_LEN = 6` normalized
 characters, `MAX_DISTANCE = 2` from there on. `--explain` states the applied

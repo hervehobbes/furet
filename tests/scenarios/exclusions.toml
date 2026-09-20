@@ -44,3 +44,43 @@ dirs = [
     { path = "/dev/helix", visited = "-2h" },
 ]
 none = true
+
+[[case]]
+name = "the current directory is excluded on the candidate's side too"
+query = "helix"
+current_dir = "/Dev/Helix"
+dirs = [
+    { path = "/DEV/helix", visited = "-1h" },
+    { path = "/dev/helyx", visited = "-5d" },
+]
+jump = "/dev/helyx"
+
+[[case]]
+name = "only the current directory itself is excluded, not its children"
+query = "helix"
+current_dir = "/dev/helix"
+dirs = [
+    { path = "/dev/helix", visited = "-1h" },
+    { path = "/dev/helix-editor", visited = "-2h" },
+]
+jump = "/dev/helix-editor"
+
+[[case]]
+name = "a missing directory never joins a menu of typo matches"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h", missing = true },
+    { path = "/archive/tokio", visited = "-2h" },
+    { path = "/opt/tokio", visited = "-3h" },
+]
+menu = ["/archive/tokio", "/opt/tokio"]
+
+[[case]]
+name = "the current directory is excluded even when it is marked missing"
+query = "helix"
+current_dir = "/dev/helix"
+dirs = [
+    { path = "/dev/helix", visited = "-1h", missing = true },
+    { path = "/archive/helix", visited = "-5d" },
+]
+jump = "/archive/helix"
