@@ -373,8 +373,6 @@ fn query_directories(
     }
 }
 
-/// The database candidates, ranked; when that ranking is empty for a
-/// non-empty query, the disk fallback candidates instead (SPEC section 11).
 fn resolve_pool(
     query: &str,
     current_path: &str,
@@ -402,8 +400,6 @@ fn resolve_pool(
     (fallback::discover(Path::new(current_path), options), true)
 }
 
-/// Reads `<data dir>/config.toml`, falling back to `Settings::default()` for
-/// a missing file, a read error, or any invalid key (SPEC section 16).
 fn load_settings() -> Settings {
     let path = match storage::data_dir() {
         Ok(dir) => dir.join("config.toml"),
@@ -431,8 +427,6 @@ fn load_settings() -> Settings {
     }
 }
 
-/// Every reconciled, non-missing, non-current candidate, most recent first
-/// then path ascending, for an empty-query `--list` (SPEC section 12).
 fn list_by_recency(candidates: &[Candidate], current_path: &str, color: bool) -> Vec<String> {
     let current_key = current_path.to_lowercase();
     let mut listed: Vec<&Candidate> = candidates
@@ -451,8 +445,6 @@ fn list_by_recency(candidates: &[Candidate], current_path: &str, color: bool) ->
         .collect()
 }
 
-/// Wraps `path` in its `LS_COLORS` `di=` color; a no-op without `--color` or
-/// without a `di=` entry.
 fn colorize(path: &str, color: bool) -> String {
     if !color {
         return path.to_owned();
@@ -470,8 +462,6 @@ fn ls_colors_directory_code() -> Option<String> {
         .find_map(|entry| entry.strip_prefix("di=").map(str::to_owned))
 }
 
-/// Records the fallback discovery of `path` as the SPEC section 11 winner,
-/// returning the `dirs.id` it upserted.
 fn record_fallback_visit(
     conn: &Connection,
     path: &str,

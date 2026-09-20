@@ -50,10 +50,13 @@ line naming the key. Only `furet query` reads it.
 | Key | Type | Default | Valid |
 |---|---|---|---|
 | `typo_min_length` | integer | 4 | `>= 1` |
-| `fallback.depth` | integer | 1 | `>= 1` |
-| `fallback.up` | integer | 1 | `>= 0` |
+| `fallback.depth` | integer | 1 | `1..=5` |
+| `fallback.up` | integer | 1 | `0..=5` |
 | `fallback.no_ignore` | bool | false | — |
 | `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
+
+`fallback.exclude = []` disables every exclusion: the list replaces the
+defaults, it never adds to them.
 
 ## Logs
 

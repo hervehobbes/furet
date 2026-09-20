@@ -86,7 +86,9 @@ Fallback is per key, not per file, except malformed TOML:
 - malformed TOML warns once and keeps every default.
 
 Every warning `parse` returns is logged with `warn!` by `main::load_settings`;
-a missing file logs one `debug!` and changes nothing.
+a missing file logs one `debug!` and changes nothing. `fallback.exclude = []`
+disables every exclusion — the list replaces the defaults, it never adds to
+them.
 
 `ambiguity`, `keyboard_layout`, and `engine` are recognized and ignored, each
 warning "not supported yet" — SPEC §9 does not define what `ambiguity`

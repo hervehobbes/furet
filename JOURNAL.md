@@ -1,4 +1,13 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 15 follow-ups — `fallback.depth` now bounded to `1..=5`,
+`fallback.up` to `0..=5` (`FALLBACK_MAX_DEPTH`/`FALLBACK_MAX_UP`), out of
+range warns and keeps the default; `exclude = []` documented in README and
+CONTRACTS; `///` removed from the five private `main.rs` functions.
+Decisions: `InitShell`'s clap docs kept — absent from the exception list, but
+they are `--help` text like `Command`'s, so removing them would change the CLI.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 15 — SPEC §16 `config.toml` overrides: new pure `src/config.rs`
 (`parse(text) -> (Settings, Vec<String>)`); wired `typo_min_length` and the
 `fallback.*` keys through `stage2`, `rank`, and a new `fallback::Options`

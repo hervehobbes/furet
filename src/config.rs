@@ -1,6 +1,11 @@
 use crate::fallback;
 use crate::stage2;
 
+/// Largest accepted `fallback.depth`; above it the parse warns and keeps the default.
+pub const FALLBACK_MAX_DEPTH: usize = 5;
+/// Largest accepted `fallback.up`; above it the parse warns and keeps the default.
+pub const FALLBACK_MAX_UP: usize = 5;
+
 /// Overridable settings loaded from `<data dir>/config.toml` (SPEC section 16).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -86,15 +91,23 @@ fn parse_fallback(
     };
     for (key, value) in table {
         match key.as_str() {
-            "depth" => match value.as_integer().filter(|n| *n >= 1) {
+            "depth" => match value
+                .as_integer()
+                .filter(|depth| (1..=FALLBACK_MAX_DEPTH as i64).contains(depth))
+            {
                 Some(depth) => settings.depth = depth as usize,
-                None => warnings
-                    .push("fallback.depth must be an integer >= 1; using the default".to_owned()),
+                None => warnings.push(format!(
+                    "fallback.depth must be an integer in 1..={FALLBACK_MAX_DEPTH}; using the default"
+                )),
             },
-            "up" => match value.as_integer().filter(|n| *n >= 0) {
+            "up" => match value
+                .as_integer()
+                .filter(|up| (0..=FALLBACK_MAX_UP as i64).contains(up))
+            {
                 Some(up) => settings.up = up as usize,
-                None => warnings
-                    .push("fallback.up must be an integer >= 0; using the default".to_owned()),
+                None => warnings.push(format!(
+                    "fallback.up must be an integer in 0..={FALLBACK_MAX_UP}; using the default"
+                )),
             },
             "no_ignore" => match value.as_bool() {
                 Some(no_ignore) => settings.no_ignore = no_ignore,
@@ -190,6 +203,29 @@ mod tests {
     }
 
     #[test]
+    fn a_fallback_depth_at_the_maximum_of_five_is_accepted() {
+        let (settings, warnings) = parse("[fallback]\ndepth = 5");
+        assert_eq!(settings.fallback.depth, 5);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_fallback_depth_above_the_maximum_warns_and_keeps_the_default() {
+        let (settings, warnings) = parse("[fallback]\ndepth = 6");
+        assert_eq!(settings.fallback.depth, Settings::default().fallback.depth);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("fallback.depth"));
+    }
+
+    #[test]
+    fn a_huge_fallback_depth_warns_and_keeps_the_default() {
+        let (settings, warnings) = parse("[fallback]\ndepth = 1000000");
+        assert_eq!(settings.fallback.depth, Settings::default().fallback.depth);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("fallback.depth"));
+    }
+
+    #[test]
     fn a_valid_fallback_up_overrides_the_default() {
         let (settings, warnings) = parse("[fallback]\nup = 0");
         assert_eq!(settings.fallback.up, 0);
@@ -207,6 +243,21 @@ mod tests {
     #[test]
     fn an_out_of_range_fallback_up_warns_and_keeps_the_default() {
         let (settings, warnings) = parse("[fallback]\nup = -1");
+        assert_eq!(settings.fallback.up, Settings::default().fallback.up);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("fallback.up"));
+    }
+
+    #[test]
+    fn a_fallback_up_at_the_maximum_of_five_is_accepted() {
+        let (settings, warnings) = parse("[fallback]\nup = 5");
+        assert_eq!(settings.fallback.up, 5);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_fallback_up_above_the_maximum_warns_and_keeps_the_default() {
+        let (settings, warnings) = parse("[fallback]\nup = 6");
         assert_eq!(settings.fallback.up, Settings::default().fallback.up);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("fallback.up"));
@@ -237,6 +288,13 @@ mod tests {
             settings.fallback.exclude,
             vec!["foo".to_owned(), "bar".to_owned()]
         );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn an_empty_exclude_list_disables_every_exclusion() {
+        let (settings, warnings) = parse("[fallback]\nexclude = []");
+        assert_eq!(settings.fallback.exclude, Vec::<String>::new());
         assert!(warnings.is_empty());
     }
 
