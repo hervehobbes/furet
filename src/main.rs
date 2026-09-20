@@ -589,13 +589,15 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    let (deduped, duplicate) = import::dedupe_by_key(candidates);
+
     let mut conn = storage::open()?;
     let known_keys = storage::known_keys(&conn)?;
-    let known = candidates
+    let known = deduped
         .iter()
         .filter(|(_, dir)| known_keys.contains(&dir.key))
         .count();
-    let planned = import::plan(candidates, &known_keys, now);
+    let planned = import::plan(deduped, &known_keys, now);
 
     let tx = conn.transaction()?;
     for entry in &planned {
@@ -605,13 +607,13 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
     tx.commit()?;
 
     let imported = planned.len();
-    let skipped = malformed + not_a_directory + known;
+    let skipped = malformed + not_a_directory + known + duplicate;
     info!(
         imported,
-        skipped, known, not_a_directory, malformed, "import zoxide"
+        skipped, known, not_a_directory, malformed, duplicate, "import zoxide"
     );
     eprintln!(
-        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed})"
+        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate})"
     );
     Ok(())
 }

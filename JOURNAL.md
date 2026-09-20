@@ -1,4 +1,14 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: fixed a bug in `furet import zoxide` where same-key candidates (e.g.
+two case variants) were both planned and both inserted; `import::dedupe_by_key`
+now collapses them (highest score wins, path asc breaks a tie) before the
+known-keys filter. Stderr summary gained a `duplicate` bucket.
+Decisions: `known` (already in `dirs`) and `duplicate` (collided within this
+batch) are separate counters, not merged — Hervé's call. `known` is now
+computed on the deduped set so a duplicate that is also known counts once.
+CONTRACTS.md updated. Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 20 — `furet import zoxide` reads `<score> <path>` lines from
 stdin, canonicalizes each path (directories only), skips already-known
 directories, and records the rest with synthetic timestamps (score desc,

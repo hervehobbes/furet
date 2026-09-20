@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::clock::Timestamp;
 use crate::paths::CanonicalDir;
@@ -43,6 +43,27 @@ pub struct Planned {
     pub ts: Timestamp,
 }
 
+/// Collapses candidates sharing a `key` into the one with the highest
+/// score (path ascending breaks a tie); returns it with the drop count.
+pub fn dedupe_by_key(candidates: Vec<(f64, CanonicalDir)>) -> (Vec<(f64, CanonicalDir)>, usize) {
+    let mut best: HashMap<String, (f64, CanonicalDir)> = HashMap::new();
+    let mut duplicates = 0usize;
+    for (score, dir) in candidates {
+        match best.get(&dir.key) {
+            Some((best_score, best_dir)) => {
+                duplicates += 1;
+                if score > *best_score || (score == *best_score && dir.path < best_dir.path) {
+                    best.insert(dir.key.clone(), (score, dir));
+                }
+            }
+            None => {
+                best.insert(dir.key.clone(), (score, dir));
+            }
+        }
+    }
+    (best.into_values().collect(), duplicates)
+}
+
 /// Drops already-known directories, orders survivors by score descending
 /// then path ascending, and assigns each a synthetic timestamp.
 pub fn plan(
@@ -70,7 +91,7 @@ pub fn plan(
 
 #[cfg(test)]
 mod tests {
-    use super::{Entry, parse_line, plan};
+    use super::{Entry, dedupe_by_key, parse_line, plan};
     use crate::clock::Timestamp;
     use crate::paths::CanonicalDir;
     use std::collections::HashSet;
@@ -180,6 +201,33 @@ mod tests {
             .map(|entry| entry.ts.unix_seconds())
             .collect();
         assert_eq!(seconds, [999, 998, 997]);
+    }
+
+    #[test]
+    fn case_variant_duplicates_collapse_to_the_higher_score() {
+        let candidates = vec![(3.0, dir("c:\\dev\\Foo")), (9.0, dir("c:\\dev\\foo"))];
+        let (deduped, duplicates) = dedupe_by_key(candidates);
+        assert_eq!(duplicates, 1);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].0, 9.0);
+        assert_eq!(deduped[0].1.path, "c:\\dev\\foo");
+
+        let planned = plan(
+            deduped,
+            &HashSet::new(),
+            Timestamp::from_unix_seconds(1_000),
+        );
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].path, "c:\\dev\\foo");
+    }
+
+    #[test]
+    fn duplicates_tied_on_score_keep_the_path_that_sorts_first() {
+        let candidates = vec![(5.0, dir("c:\\dev\\Foo")), (5.0, dir("c:\\dev\\foo"))];
+        let (deduped, duplicates) = dedupe_by_key(candidates);
+        assert_eq!(duplicates, 1);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].1.path, "c:\\dev\\Foo");
     }
 
     #[test]

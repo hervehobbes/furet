@@ -147,8 +147,10 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
   (`src/import.rs`, `main::import_zoxide`). zoxide's score is discarded once
   it has ordered the import — D1 stays the only recency rule. One
   transaction for the whole import; stdout stays empty; a summary line
-  (`imported N, skipped M (known K, not a directory D, malformed X)`) goes
-  to stderr. No `queries` journal entry.
+  (`imported N, skipped M (known K, not a directory D, malformed X,
+  duplicate Y)`) goes to stderr; `duplicate` counts candidates that share a
+  key with another candidate in the same batch, collapsed onto the one with
+  the highest score before the known-keys filter. No `queries` journal entry.
 
 ### Exit codes
 

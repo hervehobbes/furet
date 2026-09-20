@@ -1579,6 +1579,23 @@ fn importing_the_same_zoxide_export_twice_imports_nothing_the_second_time() {
 }
 
 #[test]
+fn case_variant_lines_for_the_same_directory_collapse_into_one_import() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let path = tokio.to_string_lossy().into_owned();
+    let stdin = format!("3 {}\n9 {}\n", path.to_lowercase(), path.to_uppercase());
+    let out = import_zoxide(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 1, skipped 1 (known 0, not a directory 0, malformed 0, duplicate 1)\n"
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
 fn a_directory_already_visited_through_add_is_skipped_and_keeps_its_visits() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
@@ -1623,7 +1640,7 @@ fn a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stderr),
-        "imported 1, skipped 3 (known 0, not a directory 2, malformed 1)\n"
+        "imported 1, skipped 3 (known 0, not a directory 2, malformed 1, duplicate 0)\n"
     );
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
 }
@@ -1636,7 +1653,7 @@ fn importing_empty_stdin_exits_zero_and_imports_nothing() {
     assert!(out.stdout.is_empty());
     assert_eq!(
         text(&out.stderr),
-        "imported 0, skipped 0 (known 0, not a directory 0, malformed 0)\n"
+        "imported 0, skipped 0 (known 0, not a directory 0, malformed 0, duplicate 0)\n"
     );
 }
 
