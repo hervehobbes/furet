@@ -1,0 +1,11 @@
+---
+source: tests/help.rs
+expression: text
+---
+List known directories as tab-separated lines
+
+Usage: furet list [OPTIONS]
+
+Options:
+      --all   Also list directories missing from disk, with a presence column
+  -h, --help  Print help

@@ -90,6 +90,12 @@ enum Command {
         #[arg(long)]
         failures: bool,
     },
+    /// List known directories as tab-separated lines.
+    List {
+        /// Also list directories missing from disk, with a presence column.
+        #[arg(long)]
+        all: bool,
+    },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
     /// Import directories recorded by another tool, read from stdin.
@@ -164,6 +170,7 @@ fn main() {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
         Command::Queries { failures } => report(queries_command(failures)),
+        Command::List { all } => report(list_command(all)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -704,6 +711,31 @@ fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
 #[allow(clippy::print_stdout)]
 fn print_result(path: &str) {
     println!("{path}");
+}
+
+// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+fn list_command(all: bool) -> Result<(), Box<dyn Error>> {
+    debug!(all, "list");
+    let conn = storage::open()?;
+    let lines: Vec<String> = storage::dir_listing(&conn, all)?
+        .iter()
+        .map(|row| {
+            let mut line = format!(
+                "{}\t{}\t{}\t{}",
+                row.path,
+                row.visits,
+                row.last_visit.as_deref().unwrap_or(""),
+                row.first_seen
+            );
+            if all {
+                line.push('\t');
+                line.push_str(if row.missing { "missing" } else { "present" });
+            }
+            line
+        })
+        .collect();
+    print_lines(&lines);
+    Ok(())
 }
 
 #[allow(clippy::print_stdout)]

@@ -1,4 +1,13 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: lot 26 — new `furet list [--all]`: one tab-separated line per known
+directory (`path`, `visits`, `last_visit`, `first_seen`, local time formatted
+by SQLite; `--all` keeps missing rows and adds a presence column), ordered by
+last visit desc then path asc, zero-visit rows last; read-only, no reconcile.
+New `storage::dir_listing`; 7 cli.rs tests, 3 storage unit tests, 1 new + 1
+updated help snapshot; README/CONTRACTS/example.md updated.
+Decisions: none beyond the prompt. Next: reviewer pass.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: lot 25 — the pwsh jump function registers an argument completer:
 plain `<Tab>` on the first, single argument token cycles through `furet
 query --list`'s ranked lines (empty word = recency; `-`/`..`+ excluded;

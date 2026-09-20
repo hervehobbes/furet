@@ -73,6 +73,11 @@ fn queries_help_is_pinned() {
 }
 
 #[test]
+fn list_help_is_pinned() {
+    snapshot_help("list_help", &["list", "--help"]);
+}
+
+#[test]
 fn home_help_is_pinned() {
     snapshot_help("home_help", &["home", "--help"]);
 }

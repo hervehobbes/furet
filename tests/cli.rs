@@ -140,6 +140,50 @@ fn visited_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
     );
 }
 
+fn first_seen_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
+    let canonical = paths::canonical(path)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    let updated = db(sandbox)
+        .execute(
+            "UPDATE dirs SET first_seen = ?2 WHERE path = ?1",
+            params![canonical, seconds],
+        )
+        .expect("the first_seen timestamp is forced");
+    assert_eq!(updated, 1, "exactly one dir row is {}", path.display());
+}
+
+fn missing_since_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
+    let canonical = paths::canonical(path)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    let updated = db(sandbox)
+        .execute(
+            "UPDATE dirs SET missing_since = ?2 WHERE path = ?1",
+            params![canonical, seconds],
+        )
+        .expect("the missing_since timestamp is forced");
+    assert_eq!(updated, 1, "exactly one dir row is {}", path.display());
+}
+
+fn list(sandbox: &Sandbox, all: bool) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("list");
+    if all {
+        cmd.arg("--all");
+    }
+    run(&mut cmd)
+}
+
+fn local_time(conn: &Connection, seconds: i64) -> String {
+    conn.query_row(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+        params![seconds],
+        |row| row.get(0),
+    )
+    .expect("the timestamp formats in local time")
+}
+
 fn ambiguous_world() -> (Sandbox, String, String) {
     let world = sandbox(&["aaa/tokio", "zzz/tokio"]);
     let far = world.child("zzz").join("tokio");
@@ -1217,6 +1261,199 @@ fn queries_failures_prints_exactly_the_probable_failure_and_ignores_the_benign_j
     assert_eq!(
         text(&out.stdout),
         format!("c:\\dev\ttok\t{tokio_path}\tbacktrack\n")
+    );
+}
+
+#[test]
+fn list_on_an_empty_database_prints_nothing_and_exits_zero() {
+    let world = sandbox(&[]);
+    let out = list(&world, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty());
+}
+
+#[test]
+fn list_prints_path_visit_count_and_both_timestamps_tab_separated() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &tokio, "session-2", None, None)
+            .status
+            .success()
+    );
+    first_seen_at(&world, &tokio, 1_700_000_000);
+    let updated = db(&world)
+        .execute("UPDATE visits SET ts = 1_700_000_050", [])
+        .expect("the visit timestamps are forced");
+    assert_eq!(updated, 2, "both visits belong to tokio");
+    let out = list(&world, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    let last = local_time(&conn, 1_700_000_050);
+    let first = local_time(&conn, 1_700_000_000);
+    let stamp = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+        .expect("the timestamp pattern compiles");
+    for value in [&last, &first] {
+        assert!(
+            stamp.is_match(value),
+            "'{value}' must be a local ISO timestamp"
+        );
+    }
+    let expected_path = paths::canonical(&tokio)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    assert_eq!(
+        text(&out.stdout),
+        format!("{expected_path}\t2\t{last}\t{first}\n")
+    );
+}
+
+#[test]
+fn list_sorts_by_last_visit_descending() {
+    let world = sandbox(&["alpha", "beta", "gamma"]);
+    let alpha = world.child("alpha");
+    let beta = world.child("beta");
+    let gamma = world.child("gamma");
+    for child in [&alpha, &beta, &gamma] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    visited_at(&world, &alpha, 1_700_000_001);
+    visited_at(&world, &beta, 1_700_000_003);
+    visited_at(&world, &gamma, 1_700_000_002);
+    let out = list(&world, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected: Vec<String> = [&beta, &gamma, &alpha]
+        .iter()
+        .map(|path| {
+            paths::canonical(path)
+                .expect("the recorded directory canonicalizes")
+                .path
+        })
+        .collect();
+    let listed: Vec<String> = text(&out.stdout)
+        .lines()
+        .map(|line| line.split('\t').next().expect("a path field").to_owned())
+        .collect();
+    assert_eq!(listed, expected);
+}
+
+#[test]
+fn list_breaks_a_last_visit_tie_by_path_ascending() {
+    let world = sandbox(&["zzz", "aaa"]);
+    let zzz = world.child("zzz");
+    let aaa = world.child("aaa");
+    assert!(add(&world, &zzz, "session-1", None, None).status.success());
+    assert!(add(&world, &aaa, "session-1", None, None).status.success());
+    visited_at(&world, &zzz, 1_700_000_042);
+    visited_at(&world, &aaa, 1_700_000_042);
+    let out = list(&world, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let first = paths::canonical(&aaa).expect("aaa canonicalizes").path;
+    let second = paths::canonical(&zzz).expect("zzz canonicalizes").path;
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0].split('\t').next(), Some(first.as_str()));
+    assert_eq!(lines[1].split('\t').next(), Some(second.as_str()));
+}
+
+#[test]
+fn list_excludes_missing_directories_by_default() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &gone, "session-1", None, None).status.success());
+    first_seen_at(&world, &tokio, 1_700_000_000);
+    first_seen_at(&world, &gone, 1_700_000_000);
+    visited_at(&world, &tokio, 1_700_000_002);
+    visited_at(&world, &gone, 1_700_000_003);
+    missing_since_at(&world, &gone, 1_700_000_100);
+    let out = list(&world, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    let expected_path = paths::canonical(&tokio)
+        .expect("the present directory canonicalizes")
+        .path;
+    let last = local_time(&conn, 1_700_000_002);
+    let first = local_time(&conn, 1_700_000_000);
+    assert_eq!(
+        text(&out.stdout),
+        format!("{expected_path}\t1\t{last}\t{first}\n")
+    );
+}
+
+#[test]
+fn list_all_includes_missing_directories_with_a_presence_column() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &gone, "session-1", None, None).status.success());
+    first_seen_at(&world, &tokio, 1_700_000_000);
+    first_seen_at(&world, &gone, 1_700_000_000);
+    visited_at(&world, &tokio, 1_700_000_002);
+    visited_at(&world, &gone, 1_700_000_003);
+    missing_since_at(&world, &gone, 1_700_000_100);
+    let out = list(&world, true);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    let gone_path = paths::canonical(&gone)
+        .expect("the missing directory canonicalizes")
+        .path;
+    let tokio_path = paths::canonical(&tokio)
+        .expect("the present directory canonicalizes")
+        .path;
+    let first = local_time(&conn, 1_700_000_000);
+    let gone_last = local_time(&conn, 1_700_000_003);
+    let tokio_last = local_time(&conn, 1_700_000_002);
+    assert_eq!(
+        text(&out.stdout),
+        format!(
+            "{gone_path}\t1\t{gone_last}\t{first}\tmissing\n{tokio_path}\t1\t{tokio_last}\t{first}\tpresent\n"
+        )
+    );
+}
+
+#[test]
+fn list_writes_nothing_to_stderr_on_success() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &gone, "session-1", None, None).status.success());
+    missing_since_at(&world, &gone, 1_700_000_100);
+    let plain = list(&world, false);
+    let all = list(&world, true);
+    assert!(plain.status.success(), "stderr: {}", text(&plain.stderr));
+    assert!(all.status.success(), "stderr: {}", text(&all.stderr));
+    assert!(
+        plain.stderr.is_empty(),
+        "plain list writes nothing to stderr: {}",
+        text(&plain.stderr)
+    );
+    assert!(
+        all.stderr.is_empty(),
+        "list --all writes nothing to stderr: {}",
+        text(&all.stderr)
     );
 }
 

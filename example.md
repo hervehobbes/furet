@@ -211,6 +211,23 @@ PS C:\dev\furet> furet queries --failures
 `--failures` liste les sauts qui étaient probablement des erreurs
 (SPEC §15) — utile pour repérer un mauvais classement à corriger.
 
+### Lister les répertoires connus
+
+```powershell
+PS C:\dev\furet> furet list
+C:\dev\CodeGroups\CodeGroups.Mcp	3	2026-09-20T14:12:05	2026-09-01T09:30:00
+```
+
+Une ligne par répertoire connu, colonnes séparées par des tabulations :
+`path`, `visits` (nombre de visites enregistrées), `last_visit` et
+`first_seen`, en heure locale. Avec `--all`, les répertoires absents du
+disque apparaissent aussi, avec une cinquième colonne `present` ou
+`missing` :
+
+```powershell
+PS C:\dev\furet> furet list --all
+```
+
 ### Importer la base zoxide
 
 Pour démarrer avec une base déjà remplie plutôt que vide :

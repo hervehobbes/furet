@@ -132,8 +132,8 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 Only jump targets reach stdout: `furet query`'s resolved match and its
 `--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
 configured directory — plus `init pwsh`'s generated script. Everything
-else (menus, `--explain`, errors) goes to stderr, with one documented
-exception below. Every invocation also writes structured logs to
+else (menus, `--explain`, errors) goes to stderr, with two documented
+exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
 
 `furet --help`/`-h` ends with three runtime-resolved trailer lines —
@@ -168,7 +168,17 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 - `furet queries --failures` — prints tab-separated probable-mistake rows
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
-  nothing pipes its output into `Set-Location`.
+  nothing pipes its output into `Set-Location`. `furet list` below is the
+  second accepted stdout exception, for the same reason.
+- `furet list [--all]` — prints one tab-separated line per known directory —
+  `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
+  ordered by last visit descending then path ascending, zero-visit rows
+  last; timestamps are local time formatted by SQLite itself. Without
+  `--all`, rows with a `missing_since` are excluded; with `--all`, every
+  row appears plus a fifth `present`/`missing` column. Read-only: the
+  stored `missing_since` is shown as is, with no soft-delete
+  reconciliation. An empty database prints nothing, exit 0
+  (`src/storage.rs`, `dir_listing`; `main::list_command`).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -207,6 +217,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 | `init pwsh` | always — pure string rendering, no fallible step | — |
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
+| `list [--all]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 

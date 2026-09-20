@@ -45,6 +45,10 @@ wires a prompt hook that records every directory change.
   on stderr without jumping.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
+- `furet list [--all]` — print every known directory as one tab-separated
+  line: `path`, `visits`, `last_visit`, `first_seen` (local time); `--all`
+  also lists directories missing from disk, with a `present`/`missing`
+  column.
 
 ## Importing from zoxide
 

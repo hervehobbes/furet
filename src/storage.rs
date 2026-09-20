@@ -233,6 +233,55 @@ pub fn set_missing_since(
     Ok(())
 }
 
+/// One `dirs` row flattened for `furet list`, its timestamps already
+/// formatted in local time by SQLite itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirListing {
+    /// Canonical displayable path.
+    pub path: String,
+    /// Number of `visits` rows recorded for this directory.
+    pub visits: i64,
+    /// Most recent visit in local time, or `None` when no visit exists yet.
+    pub last_visit: Option<String>,
+    /// First time this directory was recorded, in local time.
+    pub first_seen: String,
+    /// Whether `missing_since` is set (soft delete, SPEC section 10).
+    pub missing: bool,
+}
+
+/// Lists every known directory for `furet list`, last visit descending then
+/// path ascending, zero-visit rows last; `include_missing` keeps missing rows.
+pub fn dir_listing(
+    conn: &Connection,
+    include_missing: bool,
+) -> Result<Vec<DirListing>, StorageError> {
+    // WHY: MAX(ts) is the raw integer the ORDER BY needs, so the strftime text never decides the order.
+    let mut stmt = conn.prepare(
+        "SELECT dirs.path,
+                COUNT(visits.id),
+                strftime('%Y-%m-%dT%H:%M:%S', MAX(visits.ts), 'unixepoch', 'localtime'),
+                strftime('%Y-%m-%dT%H:%M:%S', dirs.first_seen, 'unixepoch', 'localtime'),
+                dirs.missing_since IS NOT NULL
+         FROM dirs
+         LEFT JOIN visits ON visits.dir_id = dirs.id
+         WHERE ?1 OR dirs.missing_since IS NULL
+         GROUP BY dirs.id
+         ORDER BY (MAX(visits.ts) IS NULL), MAX(visits.ts) DESC, dirs.path ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![include_missing], |row| {
+            Ok(DirListing {
+                path: row.get(0)?,
+                visits: row.get(1)?,
+                last_visit: row.get(2)?,
+                first_seen: row.get(3)?,
+                missing: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// The path of the second-to-last visited directory for `session`, ordered
 /// by `ts` then `id` descending; `None` when fewer than two visits exist.
 pub fn last_visited_dir(conn: &Connection, session: &str) -> Result<Option<String>, StorageError> {
@@ -330,9 +379,9 @@ pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, 
 #[cfg(test)]
 mod tests {
     use super::{
-        config_path, db_path, dir_entries, dir_id_by_key, dir_path_by_id, insert_query,
-        insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at, query_log,
-        set_missing_since, upsert_dir, visit_log,
+        config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
+        insert_query, insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at,
+        query_log, set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -673,6 +722,81 @@ mod tests {
         assert_eq!(entries[1].path, "c:\\dev\\tokio");
         assert_eq!(entries[1].last_visit, at(140));
         assert!(entries[1].missing);
+    }
+
+    #[test]
+    fn dir_listing_counts_visits_and_formats_local_time() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        insert_visit(&conn, tokio, at(150), "hook", "s", None).expect("the first visit inserts");
+        insert_visit(&conn, tokio, at(120), "hook", "s", None).expect("the second visit inserts");
+        let rows = dir_listing(&conn, false).expect("the listing reads");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, "c:\\dev\\tokio");
+        assert_eq!(rows[0].visits, 2);
+        let local = |seconds: i64| -> String {
+            conn.query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+                params![seconds],
+                |row| row.get(0),
+            )
+            .expect("the expected timestamp formats")
+        };
+        assert_eq!(
+            rows[0].last_visit.as_deref(),
+            Some(local(at(150).unix_seconds()).as_str())
+        );
+        assert_eq!(rows[0].first_seen, local(at(100).unix_seconds()));
+        assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn dir_listing_orders_by_last_visit_then_path_and_lists_zero_visits_last() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let beta = upsert_dir(&conn, "c:\\dev\\beta", "c:\\dev\\beta", at(100))
+            .expect("the beta dir upserts");
+        let aaa = upsert_dir(&conn, "c:\\dev\\aaa", "c:\\dev\\aaa", at(100))
+            .expect("the aaa dir upserts");
+        upsert_dir(&conn, "c:\\dev\\orphan", "c:\\dev\\orphan", at(100))
+            .expect("the visit-less dir upserts");
+        insert_visit(&conn, beta, at(300), "hook", "s", None).expect("the beta visit inserts");
+        insert_visit(&conn, aaa, at(300), "hook", "s", None).expect("the aaa visit inserts");
+        let rows = dir_listing(&conn, false).expect("the listing reads");
+        let paths: Vec<&str> = rows.iter().map(|row| row.path.as_str()).collect();
+        assert_eq!(paths, ["c:\\dev\\aaa", "c:\\dev\\beta", "c:\\dev\\orphan"]);
+        assert_eq!(rows[0].visits, 1);
+        assert_eq!(rows[1].visits, 1);
+        assert_eq!(rows[2].visits, 0);
+        assert_eq!(rows[2].last_visit, None);
+    }
+
+    #[test]
+    fn dir_listing_filters_missing_rows_unless_included() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the tokio dir upserts");
+        let gone = upsert_dir(&conn, "c:\\dev\\gone", "c:\\dev\\gone", at(100))
+            .expect("the gone dir upserts");
+        insert_visit(&conn, tokio, at(150), "hook", "s", None).expect("the tokio visit inserts");
+        insert_visit(&conn, gone, at(160), "hook", "s", None).expect("the gone visit inserts");
+        conn.execute(
+            "UPDATE dirs SET missing_since = 900 WHERE id = ?1",
+            params![gone],
+        )
+        .expect("the fixture marks the dir missing");
+        let plain = dir_listing(&conn, false).expect("the filtered listing reads");
+        assert_eq!(plain.len(), 1);
+        assert_eq!(plain[0].path, "c:\\dev\\tokio");
+        let all = dir_listing(&conn, true).expect("the full listing reads");
+        assert_eq!(all.len(), 2);
+        assert!(all[0].missing, "the newer-visited missing row sorts first");
+        assert_eq!(all[0].path, "c:\\dev\\gone");
+        assert!(!all[1].missing);
+        assert_eq!(all[1].path, "c:\\dev\\tokio");
     }
 
     #[test]
