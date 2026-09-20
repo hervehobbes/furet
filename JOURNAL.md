@@ -1,4 +1,14 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 13 — docs-only: new root `DATABASE.md` describing the SQLite
+database straight from `src/storage.rs` (`db_path` resolution, WAL +
+foreign_keys = ON + user_version = 1, `dirs`/`visits`/`queries` with every
+column, constraint, and CHECK value, `idx_dirs_key`, the three foreign
+keys); no code change, no tests, nothing to test in Markdown.
+Decisions: none beyond the prompt; the uncommitted CLAUDE.md/BACKLOG.md
+working-tree edits were left unstaged (Hervé's sibling change).
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 12 — top-level `--help`/`-h` ends with `Database file: <path>`,
 computed at startup from `storage::db_path()` (honors `FURET_DATA_DIR`);
 resolution errors print `Database file: unavailable: <error>`, no panic.
