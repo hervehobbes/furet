@@ -2,7 +2,6 @@
 #![allow(clippy::expect_used)]
 
 use std::env;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -79,6 +78,15 @@ fn last_visit_source(conn: &Connection) -> String {
     .expect("the last visit reads back")
 }
 
+fn last_visit_session(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT session FROM visits ORDER BY id DESC LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .expect("the last visit's session reads back")
+}
+
 fn quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "''"))
 }
@@ -114,9 +122,10 @@ fn run_pwsh(
         .parent()
         .expect("the furet binary has a parent directory");
     let existing_path = env::var_os("PATH").unwrap_or_default();
-    let mut new_path = OsString::from(bin_dir.as_os_str());
-    new_path.push(";");
-    new_path.push(existing_path);
+    let new_path = env::join_paths(
+        std::iter::once(bin_dir.to_path_buf()).chain(env::split_paths(&existing_path)),
+    )
+    .expect("PATH entries join without embedded path separators");
 
     let script_dir = TempDir::new().expect("a fresh script directory");
     let script_path = script_dir.path().join("run.ps1");
@@ -173,6 +182,10 @@ fn f_query_jumps_to_the_ranked_target_and_records_one_jump_visit() {
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
     assert_eq!(last_visit_source(&conn), "jump");
+    let session = last_visit_session(&conn);
+    assert_ne!(session, "seed");
+    assert_ne!(session, "fallback");
+    assert!(!session.is_empty());
 }
 
 #[test]
@@ -286,17 +299,16 @@ fn f_explain_reports_on_stderr_without_moving_or_recording_flag_last_and_flag_fi
 }
 
 #[test]
-fn a_disk_fallback_jump_then_f_dash_returns_to_the_origin() {
+fn a_disk_fallback_jump_after_a_real_prompt_then_f_dash_returns_to_projects() {
     let world = sandbox(&["origin", "projects/tokio-rs"]);
-    let origin = world.child("origin");
     let projects = world.child("projects");
     let target = world.child("projects/tokio-rs");
     let body = format!(
-        "f origin\nSet-Location -LiteralPath {projects}\nf tokio\nf -",
+        "f origin\nSet-Location -LiteralPath {projects}\n[void] (prompt)\nf tokio\nf -",
         projects = quote(&projects),
     );
     let run = run_pwsh(&world, "", "", world.tree.path(), &body);
-    assert_eq!(run.cwd, canonical(&origin), "stderr: {}", run.stderr);
+    assert_eq!(run.cwd, canonical(&projects), "stderr: {}", run.stderr);
     let conn = db(&world);
     let target_key = paths::canonical(&target)
         .expect("the fallback target canonicalizes")
@@ -313,6 +325,10 @@ fn a_disk_fallback_jump_then_f_dash_returns_to_the_origin() {
         "the disk-fallback target must have been visited in the session"
     );
     assert_eq!(last_visit_source(&conn), "back");
+    let session = last_visit_session(&conn);
+    assert_ne!(session, "seed");
+    assert_ne!(session, "fallback");
+    assert!(!session.is_empty());
 }
 
 #[test]

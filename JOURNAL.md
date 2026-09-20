@@ -1,4 +1,13 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 18 review fixes — the fallback test now calls a real `prompt` after
+`Set-Location`, so `f -` returns to `projects` (session-second-to-last), not
+`origin`; added `last_visit_session` assertion (not seed/fallback, non-empty)
+on that test and on the plain jump test; `run_pwsh` builds PATH via
+`env::split_paths`/`join_paths` instead of a hard-coded `;`.
+Decisions: none beyond the fixes as specified; test-only, no contract change.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 18 — new `tests/pwsh.rs`: 16 tests run the real `furet init pwsh`
 script in a real `pwsh -NoProfile -NonInteractive -File` process, asserting
 on the printed cwd, stdout/stderr, and the sqlite visits, covering all 15
