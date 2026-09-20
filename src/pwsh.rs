@@ -49,7 +49,11 @@ function global:__FURET_CMD__ {
     $from = (Get-Location).Path
 
     if ([string]::IsNullOrEmpty($query)) {
-        Set-Location -LiteralPath $HOME
+        $furetHome = furet home
+        if ([string]::IsNullOrEmpty($furetHome)) {
+            $furetHome = $HOME
+        }
+        Set-Location -LiteralPath $furetHome
         __furet_record (Get-Location).Path $from 'jump'
         return
     }

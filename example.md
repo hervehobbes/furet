@@ -120,6 +120,9 @@ PS C:\dev\clypher\Clypher.Tests> f
 PS C:\Users\thouz>
 ```
 
+La cible peut être personnalisée avec la clé `home` de `config.toml` (chemin
+absolu, `/` accepté) ; sans elle, `f` sans argument va vers `$HOME`.
+
 ## Choisir interactivement avec `fi`
 
 `fi` affiche les candidats classés et vous laisse choisir (menu `fzf` si

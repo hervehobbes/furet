@@ -74,8 +74,8 @@ distance, else opens a `Menu` of the leading run of tied stage-2 candidates
 ## Configuration contract (SPEC §16)
 
 `<data dir>/config.toml` (`storage::data_dir()`, same as the database and the
-logs) overrides `config::Settings::default()`; loaded once, only by `furet
-query` (`add` stays cheap). `config::parse(text) -> (Settings, Vec<String>)`
+logs) overrides `config::Settings::default()`; loaded by `furet query` and
+`furet home` (`add` stays cheap). `config::parse(text) -> (Settings, Vec<String>)`
 is pure — no filesystem, no `tracing` — and never fails the caller.
 
 Fallback is per key, not per file, except malformed TOML:
@@ -134,6 +134,10 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`.
+- `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
+  nothing when it is unset, a relative path, or does not resolve on disk;
+  never fails because of the config. The pwsh `f` with no argument calls it
+  and falls back to `$HOME` on empty output.
 
 ### Exit codes
 
@@ -155,6 +159,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 | `init pwsh` | always — pure string rendering, no fallible step | — |
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
+| `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 
 ### Accepted spec discrepancies
 

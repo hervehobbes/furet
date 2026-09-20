@@ -1,4 +1,14 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 19 — new `home` config key (`config::Settings.home`, absolute path,
+`/` accepted) and `furet home` subcommand: prints the canonicalized value or
+nothing (warns on a relative path or a missing directory, silent when
+unset); pwsh's no-arg `f` now calls `furet home` and falls back to `$HOME`
+on empty output. 4 config unit tests, 4 cli.rs tests, 2 executed pwsh tests.
+Decisions: `main::home_command` never fails, mirroring the lot's "never
+fails because of config" rule; README/CONTRACTS/example.md updated.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 18 review fixes — the fallback test now calls a real `prompt` after
 `Set-Location`, so `f -` returns to `projects` (session-second-to-last), not
 `origin`; added `last_visit_session` assertion (not seed/fallback, non-empty)

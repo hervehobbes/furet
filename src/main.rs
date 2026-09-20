@@ -87,6 +87,8 @@ enum Command {
         #[arg(long)]
         failures: bool,
     },
+    /// Print the configured home directory, or nothing when unset or invalid.
+    Home,
 }
 
 #[derive(Subcommand)]
@@ -148,6 +150,7 @@ fn main() {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
         Command::Queries { failures } => report(queries_command(failures)),
+        Command::Home => report(home_command()),
     };
     // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
     drop(guard);
@@ -511,6 +514,27 @@ fn back(session: &str) -> Result<(), Box<dyn Error>> {
     let previous = storage::last_visited_dir(&conn, session)?
         .ok_or("no previous directory for this session")?;
     print_result(&previous);
+    Ok(())
+}
+
+fn home_command() -> Result<(), Box<dyn Error>> {
+    debug!("home");
+    let settings = load_settings();
+    let Some(configured) = settings.home else {
+        return Ok(());
+    };
+    let unified = configured.replace('/', "\\");
+    let candidate = Path::new(&unified);
+    if !candidate.is_absolute() {
+        warn!(home = %configured, "config home must be an absolute path; ignored");
+        return Ok(());
+    }
+    match paths::canonical(candidate) {
+        Ok(canonical) => print_result(&canonical.path),
+        Err(error) => {
+            warn!(%error, home = %configured, "config home does not resolve to an existing directory; ignored");
+        }
+    }
     Ok(())
 }
 

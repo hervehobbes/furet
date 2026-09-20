@@ -1449,6 +1449,60 @@ fn a_malformed_config_never_breaks_a_query() {
 }
 
 #[test]
+fn home_prints_the_configured_directory_canonicalized() {
+    let world = sandbox(&["home"]);
+    let home = world.child("home");
+    let forward = home.to_string_lossy().replace('\\', "/");
+    write_config(&world, &format!("home = \"{forward}\""));
+    let out = run(world.furet().arg("home"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&home)
+        .expect("the configured home canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn home_prints_nothing_and_exits_zero_when_unset() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("home"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn home_prints_nothing_and_warns_when_the_directory_is_missing() {
+    let world = sandbox(&[]);
+    let missing = world.child("nope");
+    let forward = missing.to_string_lossy().replace('\\', "/");
+    write_config(&world, &format!("home = \"{forward}\""));
+    let out = run(world.furet().arg("home"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let log = log_contents(&world);
+    assert!(
+        log.lines()
+            .any(|line| line.contains("WARN") && line.contains("home")),
+        "{log:?}"
+    );
+}
+
+#[test]
+fn home_prints_nothing_and_warns_on_a_relative_path() {
+    let world = sandbox(&[]);
+    write_config(&world, "home = \"relative/path\"");
+    let out = run(world.furet().arg("home"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let log = log_contents(&world);
+    assert!(
+        log.lines()
+            .any(|line| line.contains("WARN") && line.contains("home")),
+        "{log:?}"
+    );
+}
+
+#[test]
 fn no_config_file_writes_no_warning() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");

@@ -279,6 +279,43 @@ fn f_with_no_argument_goes_to_the_process_home_and_records_a_jump() {
     assert_eq!(last_visit_source(&conn), "jump");
 }
 
+fn write_home_config(sandbox: &Sandbox, home: &Path) {
+    let forward = home.to_string_lossy().replace('\\', "/");
+    std::fs::write(
+        sandbox.data.path().join("config.toml"),
+        format!("home = \"{forward}\""),
+    )
+    .expect("the config file is written");
+}
+
+#[test]
+fn f_with_no_argument_goes_to_the_configured_home_and_records_a_jump() {
+    let world = sandbox(&["myhome"]);
+    let home = world.child("myhome");
+    write_home_config(&world, &home);
+    let run = run_pwsh(&world, "", "", world.tree.path(), "f");
+    assert_eq!(run.cwd, canonical(&home), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn f_with_a_configured_but_missing_home_falls_back_to_home() {
+    let world = sandbox(&[]);
+    let missing = world.child("nope");
+    write_home_config(&world, &missing);
+    let run = run_pwsh(
+        &world,
+        "",
+        "",
+        world.tree.path(),
+        "Write-Output ('FURET_TEST_HOME=' + $HOME)\nf",
+    );
+    let home = extract(&run.stdout, "FURET_TEST_HOME=");
+    assert_eq!(run.cwd, home, "stderr: {}", run.stderr);
+}
+
 #[test]
 fn f_explain_reports_on_stderr_without_moving_or_recording_flag_last_and_flag_first() {
     let world = sandbox(&["proj/tokio"]);

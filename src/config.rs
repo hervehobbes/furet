@@ -13,6 +13,8 @@ pub struct Settings {
     pub typo_min_length: usize,
     /// Overrides for the disk fallback walk (SPEC section 11).
     pub fallback: FallbackSettings,
+    /// Absolute path `f` with no argument jumps to; `None` keeps the shell default.
+    pub home: Option<String>,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -33,6 +35,7 @@ impl Default for Settings {
         Settings {
             typo_min_length: stage2::TYPO_MIN_QUERY_LEN,
             fallback: FallbackSettings::default(),
+            home: None,
         }
     }
 }
@@ -71,6 +74,12 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
                     .push("typo_min_length must be an integer >= 1; using the default".to_owned()),
             },
             "fallback" => parse_fallback(value, &mut settings.fallback, &mut warnings),
+            "home" => match value.as_str().filter(|text| !text.is_empty()) {
+                Some(text) => settings.home = Some(text.to_owned()),
+                None => {
+                    warnings.push("home must be a non-empty string; using no override".to_owned())
+                }
+            },
             "ambiguity" | "keyboard_layout" | "engine" => {
                 warnings.push(format!("{key} is not supported yet; ignored"));
             }
@@ -318,6 +327,36 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("fallback.exclude"));
+    }
+
+    #[test]
+    fn home_absent_yields_none() {
+        let (settings, warnings) = parse("");
+        assert_eq!(settings.home, None);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_valid_home_string_overrides_the_default() {
+        let (settings, warnings) = parse("home = \"C:/Users/dev\"");
+        assert_eq!(settings.home.as_deref(), Some("C:/Users/dev"));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_wrong_type_home_warns_and_keeps_none() {
+        let (settings, warnings) = parse("home = 5");
+        assert_eq!(settings.home, None);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("home"));
+    }
+
+    #[test]
+    fn an_empty_home_string_warns_and_keeps_none() {
+        let (settings, warnings) = parse("home = \"\"");
+        assert_eq!(settings.home, None);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("home"));
     }
 
     #[test]

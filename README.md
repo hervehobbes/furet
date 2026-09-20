@@ -33,7 +33,8 @@ wires a prompt hook that records every directory change.
 - `f <path>` — jump straight to `<path>` if it exists on disk.
 - `f ..`, `f ...` — go up 1, 2, ... levels.
 - `f -` — jump back to the previous directory in this session.
-- `f` (no argument) — jump home.
+- `f` (no argument) — jump home, or the configured `home` directory when set
+  and valid.
 - `f <query> --explain` — print the scoring report for `<query>` on stderr
   without jumping or recording.
 - `fi [<query>]` — interactively pick from ranked matches (uses `fzf` if
@@ -47,7 +48,7 @@ wires a prompt hook that records every directory change.
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
 is normal, and any invalid key falls back to its default with a `WARN` log
-line naming the key. Only `furet query` reads it.
+line naming the key. `furet query` and `furet home` read it.
 
 | Key | Type | Default | Valid |
 |---|---|---|---|
@@ -56,6 +57,7 @@ line naming the key. Only `furet query` reads it.
 | `fallback.up` | integer | 1 | `0..=5` |
 | `fallback.no_ignore` | bool | false | — |
 | `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
+| `home` | string | unset | absolute path, `/` accepted as separator, no `~`/env-var expansion |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the
 defaults, it never adds to them.
