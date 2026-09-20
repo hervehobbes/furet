@@ -87,7 +87,8 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 
 Only `furet query`'s resolved jump target reaches stdout; everything else
 (menus, `--explain`, errors) goes to stderr, with one documented exception
-below.
+below. Every invocation also writes structured logs to `<data dir>/logs/`
+(SPEC §17) — never to stdout or stderr.
 
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
   one visit; `source` defaults to `hook`.

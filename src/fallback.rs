@@ -7,6 +7,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use crate::clock::Timestamp;
 use crate::paths;
 use crate::rank::Candidate;
+use tracing::{debug, warn};
 
 /// Depth walked under the current directory itself.
 pub const CHILD_DEPTH: usize = 1;
@@ -18,6 +19,7 @@ const EXCLUDED_NAMES: &[&str] = &["node_modules", "bin", "obj", ".git", "target"
 /// Discovers directories on disk when the database has none to offer
 /// (SPEC section 11): children of `current_dir`, then of each ancestor.
 pub fn discover(current_dir: &Path, respect_gitignore: bool) -> Vec<Candidate> {
+    debug!(current = %current_dir.display(), respect_gitignore, "fallback walk");
     let mut found: Vec<PathBuf> = Vec::new();
     walk_into(&mut found, current_dir, CHILD_DEPTH, respect_gitignore);
     let mut ancestor = current_dir.to_path_buf();
@@ -40,7 +42,14 @@ fn walk_into(found: &mut Vec<PathBuf>, root: &Path, depth: usize, respect_gitign
         .git_exclude(respect_gitignore)
         .ignore(respect_gitignore)
         .build();
-    for entry in walker.flatten() {
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                warn!(%error, "fallback walk skipped an unreadable path");
+                continue;
+            }
+        };
         if entry.depth() == 0 {
             continue;
         }
@@ -54,20 +63,32 @@ fn exclusion_overrides(root: &Path) -> Override {
     let mut builder = OverrideBuilder::new(root);
     for name in EXCLUDED_NAMES {
         if builder.add(&format!("!{name}")).is_err() {
+            warn!(name = %name, "exclusion override rejected; walking without exclusions");
             return Override::empty();
         }
     }
-    builder.build().unwrap_or_else(|_| Override::empty())
+    match builder.build() {
+        Ok(overrides) => overrides,
+        Err(_) => {
+            warn!("exclusion overrides could not be built; walking without exclusions");
+            Override::empty()
+        }
+    }
 }
 
 fn to_candidates(found: Vec<PathBuf>, current_dir: &Path) -> Vec<Candidate> {
     let Ok(current) = paths::canonical(current_dir) else {
+        warn!(
+            current = %current_dir.display(),
+            "the current directory does not canonicalize; no fallback candidates"
+        );
         return Vec::new();
     };
     let mut seen: HashSet<String> = HashSet::new();
     let mut candidates = Vec::new();
     for path in found {
         let Ok(canonical) = paths::canonical(&path) else {
+            warn!(path = %path.display(), "a discovered path does not canonicalize; skipped");
             continue;
         };
         if canonical.key == current.key || !seen.insert(canonical.key.clone()) {

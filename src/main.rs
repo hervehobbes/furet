@@ -15,7 +15,9 @@ use furet::rank::{self, Candidate, Stage};
 use furet::soft_delete;
 use furet::storage;
 use rusqlite::Connection;
+use tracing::{debug, error, info};
 
+mod logging;
 mod pwsh;
 
 #[derive(Parser)]
@@ -120,6 +122,8 @@ impl Source {
 }
 
 fn main() {
+    // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
+    let guard = logging::init();
     let matches = Cli::command()
         .after_help(database_help_line())
         .get_matches();
@@ -145,6 +149,7 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
     };
+    drop(guard);
     process::exit(code);
 }
 
@@ -160,6 +165,7 @@ fn report(outcome: Result<(), Box<dyn Error>>) -> i32 {
     match outcome {
         Ok(()) => 0,
         Err(error) => {
+            error!("command failed: {error}");
             eprintln!("furet: {error}");
             1
         }
@@ -172,6 +178,7 @@ fn add(
     source: Source,
     from: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
+    debug!(path, session, source = source.as_str(), from = ?from, "add");
     let clock = SystemClock::new();
     let base = env::current_dir()?;
     let dir = paths::resolve(path, &base)?;
@@ -192,6 +199,7 @@ fn add(
         session,
         from_dir_id,
     )?;
+    info!(path = %dir.path, source = source.as_str(), "visit recorded");
     Ok(())
 }
 
@@ -205,6 +213,7 @@ fn query_directories(
     color: bool,
     no_ignore: bool,
 ) -> Result<(), Box<dyn Error>> {
+    debug!(query, list, explain, color, no_ignore, "query");
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
@@ -236,6 +245,7 @@ fn query_directories(
         return Ok(());
     }
     let (pool, is_fallback) = resolve_pool(query, &current.path, candidates, no_ignore);
+    debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
     if explain {
         let origin = if is_fallback {
             Origin::Fallback
@@ -255,6 +265,7 @@ fn query_directories(
         print_lines(&lines);
         return Ok(());
     }
+    debug!(ranked = ranked.len(), "decision");
     let decision = decision::decide(&ranked);
     // WHY: SPEC section 15 never logs the empty-query-without-list regression case;
     // its `ranked` is always empty on the non-fallback path, so `stage` must stay
@@ -288,6 +299,11 @@ fn query_directories(
                     "none",
                 )?;
             }
+            info!(
+                stage = stage.as_deref().unwrap_or("-"),
+                outcome = "none",
+                "query outcome"
+            );
             Err(format!("no directory matches '{query}'").into())
         }
         Decision::Jump(candidate) => {
@@ -307,6 +323,12 @@ fn query_directories(
                     "jump",
                 )?;
             }
+            info!(
+                stage = stage.as_deref().unwrap_or("-"),
+                outcome = "jump",
+                target = %candidate.path,
+                "query outcome"
+            );
             print_result(&candidate.path);
             Ok(())
         }
@@ -330,6 +352,12 @@ fn query_directories(
             if is_fallback {
                 record_fallback_visit(&conn, &chosen.path, &clock)?;
             }
+            info!(
+                stage = stage.as_deref().unwrap_or("-"),
+                outcome = "menu",
+                target = %chosen.path,
+                "query outcome"
+            );
             print_result(&chosen.path);
             Ok(())
         }
@@ -413,6 +441,7 @@ fn record_fallback_visit(
 }
 
 fn up(n: u32) -> Result<(), Box<dyn Error>> {
+    debug!(n, "up");
     let cwd = env::current_dir()?;
     let target = up_from(&cwd, n)?;
     print_result(&target);
@@ -437,6 +466,7 @@ fn up_from(start: &Path, n: u32) -> Result<String, Box<dyn Error>> {
 }
 
 fn back(session: &str) -> Result<(), Box<dyn Error>> {
+    debug!(session, "back");
     let conn = storage::open()?;
     let previous = storage::last_visited_dir(&conn, session)?
         .ok_or("no previous directory for this session")?;
@@ -445,12 +475,14 @@ fn back(session: &str) -> Result<(), Box<dyn Error>> {
 }
 
 fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {
+    debug!(cmd, "init pwsh");
     print_result(&pwsh::script(cmd));
     Ok(())
 }
 
 // WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
 fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
+    debug!(failures, "queries");
     if !failures {
         return Err("furet queries requires --failures".into());
     }

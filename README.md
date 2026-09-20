@@ -41,6 +41,15 @@ wires a prompt hook that records every directory change.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
 
+## Logs
+
+Every invocation writes plain-text logs to `<data dir>/logs/` — a daily
+rotated `furet.<date>.log`, 7 files kept — and never to stdout or stderr.
+The data dir is `%LOCALAPPDATA%\furet` unless `FURET_DATA_DIR` is set.
+The default level is `info`; `FURET_LOG` overrides it with `EnvFilter`
+syntax (e.g. `FURET_LOG=debug`). A failure to open the log file never
+breaks a command.
+
 ## Status
 
 All V1 roadmap lots (0 through 11) are shipped: normalization, the two-stage

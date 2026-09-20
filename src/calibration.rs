@@ -1,4 +1,5 @@
 use crate::clock::Timestamp;
+use tracing::debug;
 
 /// Seconds within which a next visit after a jump signals a probable failure.
 pub const FAILURE_THRESHOLD_SECS: i64 = 10;
@@ -48,6 +49,11 @@ pub fn probable_failures<'a>(
     queries: &'a [QueryRecord],
     visits: &[VisitRecord],
 ) -> Vec<ProbableFailure<'a>> {
+    debug!(
+        queries = queries.len(),
+        visits = visits.len(),
+        "probable-failure calibration"
+    );
     queries
         .iter()
         .filter(|query| query.outcome == "jump")

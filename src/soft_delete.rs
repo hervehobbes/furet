@@ -1,5 +1,6 @@
 use crate::clock::Timestamp;
 use crate::storage::DirEntry;
+use tracing::{debug, warn};
 
 /// Injectable view of the filesystem (SPEC section 13), so reconciliation
 /// never touches `std::fs` or `std::path` itself.
@@ -29,6 +30,7 @@ pub struct Reconciled {
 /// Compares every entry against `fs` and returns the entries with accurate
 /// `missing` flags plus the storage writes that make the flags durable.
 pub fn reconcile(entries: Vec<DirEntry>, fs: &dyn Filesystem, now: Timestamp) -> Reconciled {
+    debug!(count = entries.len(), "soft-delete reconcile");
     let mut updates = Vec::new();
     let entries = entries
         .into_iter()
@@ -42,6 +44,7 @@ pub fn reconcile(entries: Vec<DirEntry>, fs: &dyn Filesystem, now: Timestamp) ->
                 (false, false) => {
                     entry.missing = true;
                     updates.push((entry.id, Some(now)));
+                    warn!(path = %entry.path, "directory flagged missing");
                 }
                 (true, false) | (false, true) => {}
             }

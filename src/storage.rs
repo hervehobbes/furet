@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 use thiserror::Error;
+use tracing::debug;
 
 use crate::calibration;
 use crate::clock::Timestamp;
@@ -55,14 +56,21 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE dirs (
         outcome TEXT NOT NULL
     );"];
 
+/// Resolves the directory holding the database and the log files:
+/// `FURET_DATA_DIR` when set, else the platform local data dir plus `furet`.
+pub fn data_dir() -> Result<PathBuf, StorageError> {
+    if let Some(dir) = env::var_os("FURET_DATA_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    dirs::data_local_dir()
+        .map(|base| base.join(APP_DIR_NAME))
+        .ok_or(StorageError::NoDataDir)
+}
+
 /// Resolves the database file path: `FURET_DATA_DIR/furet.db` when the
 /// variable is set (tests rely on this), else the platform data directory.
 pub fn db_path() -> Result<PathBuf, StorageError> {
-    if let Some(dir) = env::var_os("FURET_DATA_DIR") {
-        return Ok(Path::new(&dir).join(DB_FILE_NAME));
-    }
-    let base = dirs::data_local_dir().ok_or(StorageError::NoDataDir)?;
-    Ok(base.join(APP_DIR_NAME).join(DB_FILE_NAME))
+    Ok(data_dir()?.join(DB_FILE_NAME))
 }
 
 /// Opens the database at the resolved location, creating the file and its
@@ -73,6 +81,7 @@ pub fn open() -> Result<Connection, StorageError> {
 }
 
 fn open_at(path: &Path) -> Result<Connection, StorageError> {
+    debug!(path = %path.display(), "database open/migration");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| StorageError::CreateDataDir {
             path: parent.to_owned(),
@@ -161,6 +170,7 @@ pub fn insert_visit(
     session: &str,
     from_dir_id: Option<i64>,
 ) -> Result<(), StorageError> {
+    debug!(dir_id, source, session, "visit insert");
     conn.execute(
         "INSERT INTO visits (dir_id, ts, source, session, from_dir_id)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -238,6 +248,7 @@ pub fn insert_query(
     stage: &str,
     outcome: &str,
 ) -> Result<(), StorageError> {
+    debug!(cwd, query, stage, outcome, "query journal insert");
     conn.execute(
         "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

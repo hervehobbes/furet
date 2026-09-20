@@ -52,6 +52,27 @@ fn scalar(conn: &Connection, sql: &str) -> i64 {
         .expect("the scalar query reads")
 }
 
+fn log_contents(sandbox: &Sandbox) -> String {
+    let logs = sandbox.data.path().join("logs");
+    let mut names: Vec<PathBuf> = std::fs::read_dir(&logs)
+        .expect("the logs directory exists")
+        .map(|entry| entry.expect("a log directory entry").path())
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .expect("the entry has a name")
+                .to_string_lossy();
+            name.starts_with("furet.") && name.ends_with(".log")
+        })
+        .collect();
+    names.sort();
+    names
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("the log file reads"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn add(
     sandbox: &Sandbox,
     path: &Path,
@@ -1072,4 +1093,100 @@ fn help_prints_the_database_file_path_resolved_at_runtime() {
             expected.display()
         );
     }
+}
+
+#[test]
+fn add_writes_a_log_file_under_the_data_dir() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let out = add(&world, &tokio, "session-1", None, None);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let log = log_contents(&world);
+    let canonical = paths::canonical(&tokio)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    assert!(
+        log.contains("INFO") && log.contains(&canonical),
+        "the log must contain an INFO line with the recorded path {canonical}: {log:?}"
+    );
+}
+
+#[test]
+fn a_failing_query_logs_an_error_line() {
+    let world = sandbox(&[]);
+    let out = query(&world, "nothing", world.tree.path(), false);
+    assert!(!out.status.success(), "nothing matches an empty database");
+    assert!(out.stdout.is_empty());
+    let log = log_contents(&world);
+    let errors: Vec<&str> = log.lines().filter(|line| line.contains("ERROR")).collect();
+    assert_eq!(errors.len(), 1, "exactly one ERROR line, got: {log:?}");
+    assert!(
+        errors[0].contains("no directory matches 'nothing'"),
+        "the ERROR line carries the failure message: {:?}",
+        errors[0]
+    );
+}
+
+#[test]
+fn furet_log_env_var_enables_debug_lines() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let quiet = add(&world, &tokio, "session-1", None, None);
+    assert!(quiet.status.success(), "stderr: {}", text(&quiet.stderr));
+    assert!(
+        !log_contents(&world).contains("DEBUG"),
+        "no DEBUG line without FURET_LOG"
+    );
+    let verbose = run(world
+        .furet()
+        .env("FURET_LOG", "debug")
+        .arg("add")
+        .arg(&tokio)
+        .arg("--session")
+        .arg("session-2"));
+    assert!(
+        verbose.status.success(),
+        "stderr: {}",
+        text(&verbose.stderr)
+    );
+    assert!(
+        log_contents(&world).contains("DEBUG"),
+        "FURET_LOG=debug enables DEBUG lines: {:?}",
+        log_contents(&world)
+    );
+}
+
+#[test]
+fn an_unwritable_log_dir_does_not_break_the_command() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    std::fs::write(world.data.path().join("logs"), b"not a directory")
+        .expect("the blocker file named logs is written");
+    let out = add(&world, &tokio, "session-1", None, None);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "add writes nothing to stdout");
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
+fn logging_never_writes_to_stdout_or_stderr() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = run(world
+        .furet()
+        .env("FURET_LOG", "trace")
+        .arg("query")
+        .arg("tokio")
+        .current_dir(world.tree.path()));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let target = paths::canonical(&tokio)
+        .expect("the hit canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{target}\n"));
+    assert!(out.stderr.is_empty(), "stderr: {}", text(&out.stderr));
 }
