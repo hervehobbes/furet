@@ -1,4 +1,17 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 18 — new `tests/pwsh.rs`: 16 tests run the real `furet init pwsh`
+script in a real `pwsh -NoProfile -NonInteractive -File` process, asserting
+on the printed cwd, stdout/stderr, and the sqlite visits, covering all 15
+behaviors from the lot prompt (`f`'s jump/no-match/direct-path/up/back/dot/
+home/--explain/fallback-then-back, hook dedup + preservation, `fi`'s
+no-fzf menu + cancel and fzf branch, `--cmd` rename).
+Decisions: `Sandbox`/`db`/`scalar` copied from `tests/cli.rs`, not shared as
+a module; direct-path `f` calls use absolute quoted literals to avoid an
+incidental disk-fallback visit when a sibling name isn't a literal child of
+the current directory.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 17 — SPEC §4 `f <query> --explain` in pwsh: the `f` function
 detects a whole-token `--explain` anywhere in the arguments, strips every
 occurrence, rebuilds the query (same / → \), runs `furet query --explain --

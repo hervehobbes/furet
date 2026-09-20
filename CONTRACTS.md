@@ -127,7 +127,9 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
 - `furet back --session <s>` — prints the second-to-last directory visited
   in that session.
 - `furet init pwsh [--cmd <name>]` — prints the PowerShell integration
-  script (mirrors zoxide's `init` shape).
+  script (mirrors zoxide's `init` shape). The generated script is covered by
+  executed integration tests in `tests/pwsh.rs`, which run it in a real
+  `pwsh` process; these tests require pwsh 7.
 - `furet queries --failures` — prints tab-separated probable-mistake rows
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
