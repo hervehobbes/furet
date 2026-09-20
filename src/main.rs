@@ -122,7 +122,6 @@ impl Source {
 }
 
 fn main() {
-    // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
     let guard = logging::init();
     let matches = Cli::command()
         .after_help(database_help_line())
@@ -149,6 +148,7 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
     };
+    // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
     drop(guard);
     process::exit(code);
 }
@@ -555,3 +555,5 @@ mod tests {
         assert!(up_from(root.path(), 10_000).is_err());
     }
 }
+
+

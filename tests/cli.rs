@@ -31,6 +31,7 @@ impl Sandbox {
     fn furet(&self) -> Command {
         let mut cmd = Command::cargo_bin("furet").expect("the furet binary is built");
         cmd.env("FURET_DATA_DIR", self.data.path());
+        cmd.env_remove("FURET_LOG");
         cmd
     }
 }
@@ -1190,3 +1191,4 @@ fn logging_never_writes_to_stdout_or_stderr() {
     assert_eq!(text(&out.stdout), format!("{target}\n"));
     assert!(out.stderr.is_empty(), "stderr: {}", text(&out.stderr));
 }
+
