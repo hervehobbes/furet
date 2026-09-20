@@ -7,6 +7,7 @@ file governs every agent session in this repo, including GLM sessions.
 Everything in this repository is English: code, identifiers, comments, docs,
 commit messages, and every lot prompt written to `prompts/`. French exists
 only in `prompts/SPEC.md`, which is gitignored and never committed.
+`example.md` is written in French at Hervé's request (temporary exception).
 
 ## Reference engine
 Section 7 of the spec reprises a proven fuzzy-matching engine "as is." Look at
