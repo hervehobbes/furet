@@ -2,13 +2,11 @@
 Done: lot 14 — SPEC §17 file logging: every invocation writes plain-text
 logs (tracing + tracing-appender, daily rotation, `furet.<date>.log`, 7 kept)
 to `<data dir>/logs/`; default level `info`, overridable via `FURET_LOG`
-(EnvFilter syntax); WorkerGuard dropped explicitly before `process::exit`;
-init failure silently disables logging; 5 end-to-end tests; outer layers
-instrumented (main, storage, fallback, soft_delete, calibration), pure core
-untouched.
-Decisions: data-dir resolution factored into `storage::data_dir()` so logs
-follow `FURET_DATA_DIR`; a failed query logs both an info outcome and the
-error at `report`.
+(EnvFilter syntax); WorkerGuard dropped before `process::exit`; init failure
+silently disables logging; 5 end-to-end tests; outer layers instrumented
+(main, storage, fallback, soft_delete, calibration), pure core untouched.
+Decisions: `storage::data_dir()` factored out so logs follow FURET_DATA_DIR;
+a failed query logs an info outcome plus the error at `report`.
 Next: none assigned.
 
 ## 2026-09-20 — branch main — v0.1.0
