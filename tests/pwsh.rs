@@ -87,8 +87,12 @@ fn last_visit_session(conn: &Connection) -> String {
     .expect("the last visit's session reads back")
 }
 
+fn pwsh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
 fn quote(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', "''"))
+    pwsh_quote(&path.to_string_lossy())
 }
 
 const CWD_MARKER: &str = "FURET_TEST_CWD=";
@@ -171,6 +175,46 @@ fn fzf_stub(target: &str) -> String {
 const HIDE_FZF: &str = "$env:PATH = ((($env:PATH -split ';') | Where-Object { \
     -not (Test-Path (Join-Path $_ 'fzf.exe')) -and -not (Test-Path (Join-Path $_ 'fzf')) \
 }) -join ';')\n";
+
+const COMPLETION_MARKER: &str = "FURET_TEST_COMPLETION=";
+
+// WHY: TabExpansion2 is the function a real Tab press runs, so this exercises the completer interactively.
+fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
+    let body = format!(
+        "$completed = TabExpansion2 -inputScript {line} -cursorColumn {column}\n\
+         foreach ($match in $completed.CompletionMatches) {{\n\
+         Write-Output ('{marker}' + $match.CompletionText)\n\
+         }}",
+        line = pwsh_quote(line),
+        column = line.chars().count(),
+        marker = COMPLETION_MARKER,
+    );
+    let run = run_pwsh(sandbox, "", init_args, sandbox.tree.path(), &body);
+    run.stdout
+        .lines()
+        .filter_map(|l| l.strip_prefix(COMPLETION_MARKER))
+        .map(str::to_owned)
+        .collect()
+}
+
+// WHY: the expectation calls furet itself, so the ordering claim rests on the real ranking.
+fn query_list(sandbox: &Sandbox, args: &[&str]) -> Vec<String> {
+    let out = sandbox
+        .furet()
+        .current_dir(sandbox.tree.path())
+        .args(args)
+        .output()
+        .expect("furet query --list runs");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
 
 #[test]
 fn f_query_jumps_to_the_ranked_target_and_records_one_jump_visit() {
@@ -482,4 +526,107 @@ fn init_pwsh_cmd_j_defines_j_not_f_and_j_query_jumps() {
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
     assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn tab_completing_a_single_token_lists_the_ranked_candidates_in_order() {
+    let world = sandbox(&["aaa/tokio", "zzz/tokio-tests"]);
+    seed(&world, &world.child("aaa/tokio"), "seed");
+    seed(&world, &world.child("zzz/tokio-tests"), "seed");
+    let expected = query_list(&world, &["query", "--list", "tok"]);
+    assert_eq!(expected.len(), 2, "both seeded directories rank for tok");
+    assert_eq!(
+        completions(&world, "", "f tok"),
+        expected,
+        "completions must equal furet query --list tok in order"
+    );
+}
+
+#[test]
+fn tab_completing_an_empty_word_lists_by_recency_like_an_empty_query() {
+    let world = sandbox(&["alpha", "beta"]);
+    seed(&world, &world.child("alpha"), "seed");
+    seed(&world, &world.child("beta"), "seed");
+    let expected = query_list(&world, &["query", "--list", ""]);
+    assert_eq!(expected.len(), 2, "both seeded directories are listed");
+    assert_eq!(
+        completions(&world, "", "f "),
+        expected,
+        "an empty word must complete like an empty query"
+    );
+}
+
+#[test]
+fn tab_completing_a_second_token_proposes_no_furet_candidate() {
+    let world = sandbox(&["reddit/ui"]);
+    seed(&world, &world.child("reddit/ui"), "seed");
+    let candidate = canonical(&world.child("reddit/ui"));
+    let got = completions(&world, "", "f reddit u");
+    assert!(
+        !got.iter().any(|text| text.contains(&candidate)),
+        "no completion may propose the furet candidate {candidate}: {got:?}"
+    );
+}
+
+#[test]
+fn tab_completing_special_forms_proposes_no_furet_candidate() {
+    let world = sandbox(&["tokio"]);
+    seed(&world, &world.child("tokio"), "seed");
+    let candidate = canonical(&world.child("tokio"));
+    for line in ["f -", "f --explain", "f .."] {
+        let got = completions(&world, "", line);
+        assert!(
+            !got.iter().any(|text| text.contains(&candidate)),
+            "{line:?} must not complete the furet candidate {candidate}: {got:?}"
+        );
+    }
+}
+
+#[test]
+fn tab_completing_quotes_a_path_with_space_and_apostrophe_and_jumps_with_it() {
+    let world = sandbox(&["it's here"]);
+    let target = world.child("it's here");
+    seed(&world, &target, "seed");
+    let got = completions(&world, "", "f it");
+    assert_eq!(got, vec![quote(&target)]);
+    let body = format!("f {}", quote(&target));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&target), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(
+        scalar(&conn, "SELECT COUNT(*) FROM visits WHERE source = 'jump'"),
+        1
+    );
+}
+
+#[test]
+fn init_pwsh_cmd_j_completes_j_and_leaves_f_without_a_furet_candidate() {
+    let world = sandbox(&["aaa/tokio"]);
+    seed(&world, &world.child("aaa/tokio"), "seed");
+    let candidate = canonical(&world.child("aaa/tokio"));
+    assert_eq!(
+        completions(&world, "--cmd j", "j tok"),
+        vec![candidate.clone()]
+    );
+    let f = completions(&world, "--cmd j", "f tok");
+    assert!(
+        !f.iter().any(|text| text.contains(&candidate)),
+        "f must have no furet candidate {candidate}: {f:?}"
+    );
+}
+
+#[test]
+fn tab_completion_leaves_lastexitcode_untouched() {
+    let world = sandbox(&["tokio"]);
+    seed(&world, &world.child("tokio"), "seed");
+    let body = "$global:LASTEXITCODE = 42\n\
+                [void] (TabExpansion2 -inputScript 'f tok' -cursorColumn 5)\n\
+                Write-Output ('FURET_TEST_EXIT=' + $global:LASTEXITCODE)";
+    let run = run_pwsh(&world, "", "", world.tree.path(), body);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_EXIT="),
+        "42",
+        "stderr: {}",
+        run.stderr
+    );
 }

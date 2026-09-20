@@ -156,7 +156,13 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 - `furet back --session <s>` — prints the second-to-last directory visited
   in that session.
 - `furet init pwsh [--cmd <name>]` — prints the PowerShell integration
-  script (mirrors zoxide's `init` shape). The generated script is covered by
+  script (mirrors zoxide's `init` shape). The script registers a tab
+  completer (`Register-ArgumentCompleter` on the jump function's
+  `FuretArgs`): it completes only the first, single argument token, returning
+  the ranked `furet query --list` lines in order (an empty word completes the
+  recency list; `-`/`--explain` and `.`/`..`/`...` words get nothing; paths
+  with PowerShell metacharacters are emitted single-quoted, `'` doubled).
+  The generated script is covered by
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.
 - `furet queries --failures` — prints tab-separated probable-mistake rows

@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: lot 25 — the pwsh jump function registers an argument completer:
+plain `<Tab>` on the first, single argument token cycles through `furet
+query --list`'s ranked lines (empty word = recency; `-`/`..`+ excluded;
+spaces/`'` single-quoted, `'` doubled); stderr discarded, LASTEXITCODE
+snapshotted+restored. 7 executed pwsh tests, 1 unit test, docs updated.
+Decisions: zoxide has no pwsh completer at all — its `z foo<Space><Tab>`
+(zsh/fish/bash templates) triggers on a trailing space and rewrites the
+whole line to `z <result>`; here (Hervé's lot prompt) plain `<Tab>` on the
+current word, one CompletionResult per line. Next: reviewer pass.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: Hervé's review fixup on lot 22 — the flat twin in the camelCase hump
 case moved from `/dev/toolwindows` to `/archive/toolwindows` so the two paths
 no longer share a case-insensitive comparison key; expectation unchanged and

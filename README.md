@@ -30,6 +30,8 @@ wires a prompt hook that records every directory change.
 ## Usage
 
 - `f <query>` — jump to the best-ranked directory matching `<query>`.
+- `f <partial><Tab>` — cycle through the directories furet ranks for
+  `<partial>` (first argument only); accepting one inserts the full path.
 - `f <path>` — jump straight to `<path>` if it exists on disk.
 - `f ..`, `f ...` — go up 1, 2, ... levels.
 - `f -` — jump back to the previous directory in this session.

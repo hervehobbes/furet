@@ -136,6 +136,46 @@ function global:fi {
     Set-Location -LiteralPath $target
     __furet_record $target $from 'jump'
 }
+
+# WHY: a plain <Tab> on the current word cycles through `furet query --list`
+# in ranked order; zoxide instead triggers on a trailing space and rewrites
+# the whole line, which this completer deliberately does not do. stderr is
+# discarded and LASTEXITCODE restored so a Tab press stays side-effect free.
+Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if (-not ($commandAst -is [System.Management.Automation.Language.CommandAst])) {
+        return
+    }
+    $arguments = $commandAst.CommandElements.Count - 1
+    if ($arguments -gt 1 -or ($arguments -eq 1 -and [string]::IsNullOrEmpty($wordToComplete))) {
+        return
+    }
+    if ($wordToComplete.StartsWith('-') -or $wordToComplete -match '^\.+$') {
+        return
+    }
+
+    # WHY: Get-Variable hands back a live PSVariable reference, so the value is
+    # snapshotted before furet runs, not read back in the finally block.
+    $lastExit = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    if ($null -ne $lastExit) {
+        $lastExit = $lastExit.Value
+    }
+    try {
+        $word = $wordToComplete.Replace('/', '\')
+        foreach ($line in @(furet query --list -- $word 2>$null)) {
+            $completionText = $line
+            if ($line -notmatch '^[\w\\/:.\-]+$') {
+                $completionText = "'" + $line.Replace("'", "''") + "'"
+            }
+            [System.Management.Automation.CompletionResult]::new($completionText, $line, 'ParameterValue', $line)
+        }
+    } finally {
+        if ($null -ne $lastExit) {
+            $global:LASTEXITCODE = $lastExit
+        }
+    }
+}
 "#;
 
 /// Renders the PowerShell integration script for the jump function `cmd`.
@@ -172,5 +212,12 @@ mod tests {
         let rendered = script("f");
         assert!(rendered.contains("Choose a directory:"));
         assert!(rendered.contains("Enter to confirm, Esc to cancel"));
+    }
+
+    #[test]
+    fn script_registers_a_tab_completer_on_the_jump_function() {
+        let rendered = script("f");
+        assert!(rendered.contains("Register-ArgumentCompleter"));
+        assert!(rendered.contains("-CommandName f"));
     }
 }

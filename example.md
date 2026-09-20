@@ -82,6 +82,21 @@ PS C:\dev\furet> f reddit ui
 PS C:\dev\RedditForKarakeep\ui>
 ```
 
+### Complétion avec Tab
+
+`Tab` complète le premier argument avec les répertoires que furet classe
+pour le fragment tapé, dans l'ordre exact de `furet query --list` :
+
+```powershell
+PS C:\dev\furet> f mcp<Tab>   # propose CodeGroups.Mcp, mcp, mcp.Tests...
+PS C:\dev\furet> f C:\dev\CodeGroups\CodeGroups.Mcp
+```
+
+Accepter une proposition insère le chemin complet ; `Entrée` saute ensuite
+par la branche chemin direct de `f`. Sans fragment (`f <Tab>`), la liste
+complète est proposée. La complétion ne s'applique qu'au premier argument :
+ni `-`/`--explain`, ni `.`/`..`/`...`, ni un deuxième fragment.
+
 ### Chemin direct
 
 Si l'argument est un chemin qui existe tel quel, `f` y saute directement
