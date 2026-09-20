@@ -139,6 +139,16 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
   never fails because of the config. The pwsh `f` with no argument calls it
   and falls back to `$HOME` on empty output.
+- `furet import zoxide` — reads `<score> <path>` lines from stdin (as
+  produced by `zoxide query -ls`), canonicalizes each path through
+  `paths::canonical` (directories only), skips already-known directories,
+  and records the rest as `visits(source = 'import', session = 'import')`
+  with synthetic timestamps ordered by score descending then path ascending
+  (`src/import.rs`, `main::import_zoxide`). zoxide's score is discarded once
+  it has ordered the import — D1 stays the only recency rule. One
+  transaction for the whole import; stdout stays empty; a summary line
+  (`imported N, skipped M (known K, not a directory D, malformed X)`) goes
+  to stderr. No `queries` journal entry.
 
 ### Exit codes
 
@@ -161,6 +171,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
+| `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 
 ### Accepted spec discrepancies
 

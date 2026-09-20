@@ -44,6 +44,19 @@ wires a prompt hook that records every directory change.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
 
+## Importing from zoxide
+
+Start with a filled database instead of an empty one:
+
+```powershell
+zoxide query -ls | furet import zoxide
+```
+
+Reads `<score> <path>` lines from stdin (zoxide's own score is discarded —
+only the list of directories matters, SPEC §3). Already-known directories
+are skipped, so running it again is a no-op. furet never runs zoxide or
+reads its binary database directly.
+
 ## Configuration
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
@@ -76,7 +89,8 @@ breaks a command.
 All V1 roadmap lots (0 through 11) are shipped: normalization, the two-stage
 fuzzy engine, SQLite storage, `furet add`/`query`/`up`/`back`, the pwsh
 integration (`f`, `fi`), soft delete, `--explain`, disk fallback, and the
-query journal. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and
-CLI contracts.
+query journal, plus later items such as importing zoxide's database
+(`furet import zoxide`). See [CONTRACTS.md](CONTRACTS.md) for the engine,
+storage, and CLI contracts.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

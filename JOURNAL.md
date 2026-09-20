@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 20 — `furet import zoxide` reads `<score> <path>` lines from
+stdin, canonicalizes each path (directories only), skips already-known
+directories, and records the rest with synthetic timestamps (score desc,
+path asc) under `source = session = 'import'`, one transaction. New pure
+`src/import.rs` (11 unit tests); `storage::known_keys`; 6 cli.rs e2e tests,
+1 executed pwsh test (accented path).
+Decisions: score only orders the import, never stored or reused (D1 stays
+the only recency rule); malformed includes non-UTF-8 lines, not a stdin
+read error. README/CONTRACTS/example.md updated. Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: `paths::canonical` now rejects a resolved path that is not a directory
 (SPEC §1), returning a new `PathError::NotADirectory` variant alongside the
 renamed `PathError::Canonicalize`; `home_command` reuses `paths::unify_separators`

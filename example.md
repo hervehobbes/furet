@@ -196,6 +196,17 @@ PS C:\dev\furet> furet queries --failures
 `--failures` liste les sauts qui étaient probablement des erreurs
 (SPEC §15) — utile pour repérer un mauvais classement à corriger.
 
+### Importer la base zoxide
+
+Pour démarrer avec une base déjà remplie plutôt que vide :
+
+```powershell
+PS C:\dev\furet> zoxide query -ls | furet import zoxide
+```
+
+Les répertoires déjà connus sont ignorés ; relancer la commande ne fait
+donc rien de plus (idempotent).
+
 ### Remonter ou revenir en arrière sans le hook
 
 ```powershell

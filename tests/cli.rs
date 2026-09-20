@@ -110,6 +110,12 @@ fn query_answering(sandbox: &Sandbox, query: &str, cwd: &Path, answer: &str) -> 
     run(&mut cmd)
 }
 
+fn import_zoxide(sandbox: &Sandbox, stdin: &str) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("import").arg("zoxide").write_stdin(stdin);
+    run(&mut cmd)
+}
+
 fn write_config(sandbox: &Sandbox, contents: &str) {
     std::fs::write(sandbox.data.path().join("config.toml"), contents)
         .expect("the config file is written");
@@ -1530,6 +1536,122 @@ fn home_prints_nothing_and_warns_on_a_relative_path() {
             .any(|line| line.contains("WARN") && line.contains("home")),
         "{log:?}"
     );
+}
+
+#[test]
+fn import_zoxide_records_directories_with_the_import_source_and_session() {
+    let world = sandbox(&["tokei", "tokio"]);
+    let tokei = world.child("tokei");
+    let tokio = world.child("tokio");
+    let stdin = format!(
+        "12.5 {}\n3 {}\n",
+        tokei.to_string_lossy(),
+        tokio.to_string_lossy()
+    );
+    let out = import_zoxide(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert!(text(&out.stderr).starts_with("imported 2, skipped 0"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 2);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
+    assert_eq!(
+        scalar(
+            &conn,
+            "SELECT COUNT(*) FROM visits WHERE source = 'import' AND session = 'import'"
+        ),
+        2
+    );
+}
+
+#[test]
+fn importing_the_same_zoxide_export_twice_imports_nothing_the_second_time() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let stdin = format!("12.5 {}\n", tokio.to_string_lossy());
+    let first = import_zoxide(&world, &stdin);
+    assert!(first.status.success(), "stderr: {}", text(&first.stderr));
+    assert!(text(&first.stderr).starts_with("imported 1, skipped 0"));
+    let second = import_zoxide(&world, &stdin);
+    assert!(second.status.success(), "stderr: {}", text(&second.stderr));
+    assert!(text(&second.stderr).starts_with("imported 0, skipped 1 (known 1"));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
+fn a_directory_already_visited_through_add_is_skipped_and_keeps_its_visits() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let conn = db(&world);
+    let original_ts: i64 = conn
+        .query_row("SELECT ts FROM visits", [], |row| row.get(0))
+        .expect("the original visit reads back");
+    let stdin = format!("12.5 {}\n", tokio.to_string_lossy());
+    let out = import_zoxide(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(text(&out.stderr).starts_with("imported 0, skipped 1 (known 1"));
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    let (source, ts): (String, i64) = conn
+        .query_row("SELECT source, ts FROM visits", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("the untouched visit reads back");
+    assert_eq!(source, "hook");
+    assert_eq!(ts, original_ts);
+}
+
+#[test]
+fn a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let file = world.tree.path().join("readme.txt");
+    std::fs::write(&file, b"content").expect("the scratch file is written");
+    let missing = world.tree.path().join("nope");
+    let stdin = format!(
+        "12.5 {}\n3 {}\n2 {}\nnot-a-score {}\n",
+        tokio.to_string_lossy(),
+        missing.to_string_lossy(),
+        file.to_string_lossy(),
+        tokio.to_string_lossy(),
+    );
+    let out = import_zoxide(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 1, skipped 3 (known 0, not a directory 2, malformed 1)\n"
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn importing_empty_stdin_exits_zero_and_imports_nothing() {
+    let world = sandbox(&[]);
+    let out = import_zoxide(&world, "");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "imported 0, skipped 0 (known 0, not a directory 0, malformed 0)\n"
+    );
+}
+
+#[test]
+fn an_imported_directory_is_reachable_by_query() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    let stdin = format!("12.5 {}\n", tokio.to_string_lossy());
+    assert!(import_zoxide(&world, &stdin).status.success());
+    let out = query(&world, "tokio", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&tokio)
+        .expect("the imported directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
 }
 
 #[test]

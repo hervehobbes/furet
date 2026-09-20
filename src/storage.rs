@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -295,6 +296,15 @@ pub fn visit_log(conn: &Connection) -> Result<Vec<calibration::VisitRecord>, Sto
     Ok(records)
 }
 
+/// Every `dirs.key` currently stored, used to keep `furet import` idempotent.
+pub fn known_keys(conn: &Connection) -> Result<HashSet<String>, StorageError> {
+    let mut stmt = conn.prepare("SELECT key FROM dirs")?;
+    let keys = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<HashSet<String>, _>>()?;
+    Ok(keys)
+}
+
 /// The `path` of the `dirs` row `dir_id`, or `None` when no such row exists.
 pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, StorageError> {
     let mut stmt = conn.prepare("SELECT path FROM dirs WHERE id = ?1")?;
@@ -309,7 +319,8 @@ pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, 
 mod tests {
     use super::{
         db_path, dir_entries, dir_id_by_key, dir_path_by_id, insert_query, insert_visit,
-        last_visited_dir, open, open_at, query_log, set_missing_since, upsert_dir, visit_log,
+        known_keys, last_visited_dir, open, open_at, query_log, set_missing_since, upsert_dir,
+        visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -726,6 +737,20 @@ mod tests {
             .expect("the single visit inserts");
         let single = last_visited_dir(&conn, "one-visit").expect("the single-visit lookup runs");
         assert_eq!(single, None);
+    }
+
+    #[test]
+    fn known_keys_reports_every_stored_key() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the first fixture dir upserts");
+        upsert_dir(&conn, "c:\\dev\\helix", "c:\\dev\\helix", at(100))
+            .expect("the second fixture dir upserts");
+        let keys = known_keys(&conn).expect("known keys read back");
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains("c:\\dev\\tokio"));
+        assert!(keys.contains("c:\\dev\\helix"));
     }
 
     fn row_count(conn: &Connection, table: &str) -> i64 {

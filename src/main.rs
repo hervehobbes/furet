@@ -1,6 +1,6 @@
 use std::env;
 use std::error::Error;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 use std::process;
 
@@ -11,6 +11,7 @@ use furet::config::{self, Settings};
 use furet::decision::{self, Decision};
 use furet::explain::{self, Origin};
 use furet::fallback;
+use furet::import;
 use furet::paths;
 use furet::rank::{self, Candidate, Stage};
 use furet::soft_delete;
@@ -89,6 +90,11 @@ enum Command {
     },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
+    /// Import directories from another tool's database.
+    Import {
+        /// Source database to import from.
+        source: ImportSource,
+    },
 }
 
 #[derive(Subcommand)]
@@ -99,6 +105,12 @@ enum InitShell {
         #[arg(long, default_value = "f")]
         cmd: String,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ImportSource {
+    /// Import from `zoxide query -ls` on stdin.
+    Zoxide,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -151,6 +163,9 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
         Command::Home => report(home_command()),
+        Command::Import { source } => report(match source {
+            ImportSource::Zoxide => import_zoxide(),
+        }),
     };
     // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
     drop(guard);
@@ -536,6 +551,87 @@ fn home_command() -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+const IMPORT_SOURCE: &str = "import";
+
+fn import_zoxide() -> Result<(), Box<dyn Error>> {
+    debug!("import zoxide");
+    let mut raw = Vec::new();
+    io::stdin().read_to_end(&mut raw)?;
+    let clock = SystemClock::new();
+    let now = clock.now();
+
+    let mut malformed = 0usize;
+    let mut not_a_directory = 0usize;
+    let mut candidates = Vec::new();
+    for line in stdin_lines(&raw) {
+        let text = match std::str::from_utf8(strip_cr(line)) {
+            Ok(text) => text,
+            Err(_) => {
+                malformed += 1;
+                continue;
+            }
+        };
+        let entry = match import::parse_line(text) {
+            Some(entry) => entry,
+            None => {
+                malformed += 1;
+                continue;
+            }
+        };
+        match paths::canonical(Path::new(&entry.path)) {
+            Ok(dir) => candidates.push((entry.score, dir)),
+            Err(error) => {
+                warn!(%error, path = %entry.path, "import zoxide: not a directory");
+                not_a_directory += 1;
+            }
+        }
+    }
+
+    let mut conn = storage::open()?;
+    let known_keys = storage::known_keys(&conn)?;
+    let known = candidates
+        .iter()
+        .filter(|(_, dir)| known_keys.contains(&dir.key))
+        .count();
+    let planned = import::plan(candidates, &known_keys, now);
+
+    let tx = conn.transaction()?;
+    for entry in &planned {
+        let dir_id = storage::upsert_dir(&tx, &entry.path, &entry.key, entry.ts)?;
+        storage::insert_visit(&tx, dir_id, entry.ts, IMPORT_SOURCE, IMPORT_SOURCE, None)?;
+    }
+    tx.commit()?;
+
+    let imported = planned.len();
+    let skipped = malformed + not_a_directory + known;
+    info!(
+        imported,
+        skipped, known, not_a_directory, malformed, "import zoxide"
+    );
+    eprintln!(
+        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed})"
+    );
+    Ok(())
+}
+
+fn stdin_lines(raw: &[u8]) -> Vec<&[u8]> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let mut lines: Vec<&[u8]> = raw.split(|&byte| byte == b'\n').collect();
+    if lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+fn strip_cr(line: &[u8]) -> &[u8] {
+    match line.split_last() {
+        Some((b'\r', rest)) => rest,
+        _ => line,
+    }
 }
 
 fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {

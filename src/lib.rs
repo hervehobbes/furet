@@ -4,6 +4,7 @@ pub mod config;
 pub mod decision;
 pub mod explain;
 pub mod fallback;
+pub mod import;
 pub mod normalize;
 pub mod paths;
 pub mod rank;

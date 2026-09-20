@@ -452,6 +452,25 @@ fn fi_fzf_branch_uses_the_stub_line_strips_ansi_and_jumps() {
 }
 
 #[test]
+fn import_zoxide_through_a_real_pwsh_pipe_imports_an_accented_path() {
+    let world = sandbox(&["r\u{e9}f\u{e9}rence"]);
+    let target = world.child("r\u{e9}f\u{e9}rence");
+    let body = format!("'  12.5 {}' | furet import zoxide", canonical(&target));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert!(
+        run.stderr.contains("imported 1, skipped 0"),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
+    let path: String = conn
+        .query_row("SELECT path FROM dirs", [], |row| row.get(0))
+        .expect("the imported dir row reads back");
+    assert_eq!(path, canonical(&target));
+}
+
+#[test]
 fn init_pwsh_cmd_j_defines_j_not_f_and_j_query_jumps() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
