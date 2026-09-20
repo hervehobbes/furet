@@ -709,6 +709,127 @@ fn init_pwsh_records_a_real_session_visit_after_every_successful_query_including
 }
 
 #[test]
+fn init_pwsh_explain_prints_the_report_without_jumping_or_recording() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+
+    let branch_open = "if ($FuretArgs -contains '--explain') {";
+    let open_pos = script
+        .find(branch_open)
+        .expect("the explain branch opens on a whole-token test of --explain");
+    let explain_call = "furet query --explain -- $query";
+    let call_pos = script[open_pos..]
+        .find(explain_call)
+        .expect("the explain branch dispatches furet query --explain")
+        + open_pos;
+    assert_eq!(
+        script.matches(explain_call).count(),
+        1,
+        "there is exactly one explain dispatch site"
+    );
+    let branch = &script[open_pos..call_pos];
+    assert!(
+        branch.contains("Where-Object { $_ -ne '--explain' }"),
+        "the branch strips every --explain occurrence before rebuilding $query"
+    );
+    assert!(
+        branch.contains("-replace '/', '\\'"),
+        "the rebuilt query applies the same / to \\ replacement"
+    );
+    assert!(
+        !branch.contains("Set-Location"),
+        "the explain branch must never move the caller"
+    );
+    assert!(
+        !branch.contains("__furet_record"),
+        "the explain branch must never record a visit"
+    );
+    assert!(
+        !branch.contains("$LASTEXITCODE"),
+        "the explain branch returns whatever the exit code is"
+    );
+    let after_call = &script[call_pos + explain_call.len()..];
+    let expected_tail = "\n        return\n    }\n";
+    assert!(
+        after_call.starts_with(expected_tail),
+        "the explain dispatch must be immediately followed by a bare return, \
+         got: {}",
+        &after_call[..expected_tail.len().min(after_call.len())]
+    );
+}
+
+#[test]
+fn init_pwsh_explain_works_with_the_flag_first_in_the_argument_list() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+
+    let branch_open = "if ($FuretArgs -contains '--explain') {";
+    let open_pos = script.find(branch_open).expect(
+        "the trigger is a membership test over every argument, so the \
+                 flag is detected wherever it appears",
+    );
+    let explain_call = "furet query --explain -- $query";
+    let call_pos = script[open_pos..]
+        .find(explain_call)
+        .expect("the explain dispatch is present")
+        + open_pos;
+    let branch = &script[open_pos..call_pos];
+    assert!(
+        !branch.contains("$FuretArgs["),
+        "the branch must not slice the argument list by position"
+    );
+    assert!(
+        !branch.contains("-Skip"),
+        "the branch must not drop a fixed number of leading arguments"
+    );
+    assert!(
+        branch.contains("Where-Object { $_ -ne '--explain' }"),
+        "every occurrence is removed token by token, so flag-first reaches the \
+         same dispatch as flag-last"
+    );
+}
+
+#[test]
+fn init_pwsh_treats_a_token_merely_containing_explain_as_a_plain_query() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    let script = text(&out.stdout);
+
+    assert!(
+        script.contains("if ($FuretArgs -contains '--explain') {"),
+        "the trigger compares whole tokens, so foo--explain is not the flag"
+    );
+    assert!(
+        script.contains("Where-Object { $_ -ne '--explain' }"),
+        "the removal keeps tokens that merely contain --explain"
+    );
+    assert!(
+        !script.contains("-replace '--explain'"),
+        "the flag is never stripped by substring replacement"
+    );
+    let plain_join = "$query = ($FuretArgs -join ' ') -replace '/', '\\'";
+    let join_pos = script.find(plain_join).expect(
+        "without the flag the query is still the raw join of every \
+                 argument",
+    );
+    assert!(
+        script
+            .find("if ($FuretArgs -contains '--explain') {")
+            .expect("the explain branch opens")
+            < join_pos,
+        "the explain branch sits before any other dispatch"
+    );
+    let query_call = "$target = furet query -- $query";
+    assert_eq!(
+        script.matches(query_call).count(),
+        1,
+        "the general query dispatch is unchanged and still the only one"
+    );
+}
+
+#[test]
 fn init_pwsh_defines_fi_with_an_fzf_branch_and_a_console_menu_branch() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("init").arg("pwsh"));

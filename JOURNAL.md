@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: lot 17 — SPEC §4 `f <query> --explain` in pwsh: the `f` function
+detects a whole-token `--explain` anywhere in the arguments, strips every
+occurrence, rebuilds the query (same / → \), runs `furet query --explain --
+$query` without moving or recording; `fi` untouched; 3 script-text tests;
+README Usage line; example.md shows `f mcp --explain` (direct form noted),
+menu sample matched to `render_menu`, bare `furet queries` removed.
+Decisions: branch placed first so bare `f --explain` reports instead of
+jumping home; smoke-tested the real pwsh run end to end.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 15 follow-ups — `fallback.depth` now bounded to `1..=5`,
 `fallback.up` to `0..=5` (`FALLBACK_MAX_DEPTH`/`FALLBACK_MAX_UP`), out of
 range warns and keeps the default; `exclude = []` documented in README and

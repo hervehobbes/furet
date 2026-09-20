@@ -127,9 +127,10 @@ installé, sinon un menu numéroté dans la console) :
 
 ```powershell
 PS C:\dev\furet> fi banque
-1) C:\dev\formation_dotnet\BanqueDLL
-2) C:\dev\formation_dotnet\BanqueDllTests
-Choix :
+Choose a directory:
+  1) C:\dev\formation_dotnet\BanqueDLL
+  2) C:\dev\formation_dotnet\BanqueDllTests
+Enter to confirm, Esc to cancel
 ```
 
 Appelé sans argument, `fi` propose tous les répertoires connus, du plus
@@ -157,11 +158,12 @@ C:\dev\RedditForKarakeep\mcp
 ### Comprendre pourquoi un chemin a gagné
 
 ```powershell
-PS C:\dev\furet> furet query mcp --explain
+PS C:\dev\furet> f mcp --explain
 ```
 
 Affiche le détail du score (étape 1 vs étape 2, bonus, récence) sur
-`stderr`, sans effectuer le saut.
+`stderr`, sans effectuer le saut ni enregistrer de visite. La forme
+directe `furet query mcp --explain` fonctionne aussi, sans le hook pwsh.
 
 ### Colorer la liste et ignorer les règles `.gitignore` du fallback disque
 
@@ -185,7 +187,6 @@ PS C:\dev\furet> furet add C:\dev\sourcier-mesures --session $PID
 ### Consulter le journal des requêtes
 
 ```powershell
-PS C:\dev\furet> furet queries
 PS C:\dev\furet> furet queries --failures
 ```
 

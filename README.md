@@ -34,6 +34,8 @@ wires a prompt hook that records every directory change.
 - `f ..`, `f ...` — go up 1, 2, ... levels.
 - `f -` — jump back to the previous directory in this session.
 - `f` (no argument) — jump home.
+- `f <query> --explain` — print the scoring report for `<query>` on stderr
+  without jumping or recording.
 - `fi [<query>]` — interactively pick from ranked matches (uses `fzf` if
   installed, else a numbered console menu).
 - `furet query <query> --explain` — print the scoring report for `<query>`

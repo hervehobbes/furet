@@ -37,6 +37,14 @@ function global:prompt {
 function global:__FURET_CMD__ {
     param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
 
+    # WHY: --explain is answered before every other dispatch, so even a bare
+    # `f --explain` reports on the pool instead of jumping home.
+    if ($FuretArgs -contains '--explain') {
+        $query = (($FuretArgs | Where-Object { $_ -ne '--explain' }) -join ' ') -replace '/', '\'
+        furet query --explain -- $query
+        return
+    }
+
     $query = ($FuretArgs -join ' ') -replace '/', '\'
     $from = (Get-Location).Path
 
