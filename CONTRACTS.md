@@ -129,10 +129,12 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 
 ## CLI contract
 
-Only `furet query`'s resolved jump target reaches stdout; everything else
-(menus, `--explain`, errors) goes to stderr, with one documented exception
-below. Every invocation also writes structured logs to `<data dir>/logs/`
-(SPEC §17) — never to stdout or stderr.
+Only jump targets reach stdout: `furet query`'s resolved match and its
+`--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
+configured directory — plus `init pwsh`'s generated script. Everything
+else (menus, `--explain`, errors) goes to stderr, with one documented
+exception below. Every invocation also writes structured logs to
+`<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
 
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
   one visit; `source` defaults to `hook`.
@@ -173,7 +175,7 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
 ### Exit codes
 
 Every subcommand routes through `main::report`
-(`src/main.rs:148`): `Ok(())` → **0**, any `Err` → **1**, message printed to
+(`src/main.rs:183`): `Ok(())` → **0**, any `Err` → **1**, message printed to
 stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 `--source`/`ValueEnum`, missing required arg) never reaches `report` at all
 — clap exits **2** directly, confirmed by running

@@ -14,7 +14,7 @@ pub const SHORT_QUERY_MAX_DISTANCE: usize = 1;
 pub const LONG_QUERY_MIN_LEN: usize = 6;
 
 /// Shortest normalized mono-token query stage 2 accepts; the default behind
-/// the future `typo_min_length` override.
+/// the `typo_min_length` config override (SPEC section 16).
 pub const TYPO_MIN_QUERY_LEN: usize = 4;
 
 /// Highest score stage 2 can return; it sits below `stage1::SCORE_FLOOR`.

@@ -86,11 +86,14 @@ breaks a command.
 
 ## Status
 
-All V1 roadmap lots (0 through 11) are shipped: normalization, the two-stage
-fuzzy engine, SQLite storage, `furet add`/`query`/`up`/`back`, the pwsh
-integration (`f`, `fi`), soft delete, `--explain`, disk fallback, and the
-query journal, plus later items such as importing zoxide's database
-(`furet import zoxide`). See [CONTRACTS.md](CONTRACTS.md) for the engine,
-storage, and CLI contracts.
+Roadmap lots 0 through 21 are shipped: normalization, the two-stage fuzzy
+engine, SQLite storage, `furet add`/`query`/`up`/`back`/`home`, the pwsh
+integration (`f`, `fi`) covered by executed pwsh tests, soft delete,
+`--explain`, disk fallback, and the query journal — plus the database path
+in `--help`, daily-rotated file logging, `config.toml` overrides, the
+configurable `home`, stage-2's query-length rule, and importing zoxide's
+database (`furet import zoxide`). Lot 22 added a 42-case ranking scenario
+suite. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI
+contracts.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

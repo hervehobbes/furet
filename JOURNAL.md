@@ -1,4 +1,14 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: lot 23 — docs-only, brought the docs back in line with the code:
+ROADMAP rows 12–21, README Status (lots 0–21 + the lot-22 scenario suite),
+ARCHITECTURE's new modules with their layer, DATABASE.md's `session`
+(`fallback`, `import`) and `source` values, CONTRACTS fixes (stdout opener
+now names `--list`/`up`/`back`/`home`/`init pwsh`; `main::report` line
+148 → 183), `stage2::TYPO_MIN_QUERY_LEN` doc no longer says "future".
+Decisions: none — every sentence checked against the code; example.md
+verified against the CLI unchanged. Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: lot 22 — 20 new SPEC §13 scenario cases: 5 new theme files
 (`normalization`, `multi_token`, `folder_bonus`, `d1`, `menu`) and 4
 `exclusions.toml` extensions; 42 cases total, green on first run.

@@ -43,9 +43,32 @@ Applied by `storage::open()` on every connection:
 | `id` | INTEGER | `PRIMARY KEY AUTOINCREMENT` | Surrogate row id. |
 | `dir_id` | INTEGER | `NOT NULL`, `REFERENCES dirs (id)` | The visited directory. |
 | `ts` | INTEGER | `NOT NULL` | Unix seconds of the visit. |
-| `source` | TEXT | `NOT NULL`, `CHECK (source IN ('hook', 'jump', 'back', 'up', 'fallback', 'import'))` | What triggered the visit. |
-| `session` | TEXT | `NOT NULL` | Terminal-session identifier the visit belongs to. |
+| `source` | TEXT | `NOT NULL`, `CHECK (source IN ('hook', 'jump', 'back', 'up', 'fallback', 'import'))` | What triggered the visit (see the source values below). |
+| `session` | TEXT | `NOT NULL` | Terminal-session identifier the visit belongs to (see the session values below). |
 | `from_dir_id` | INTEGER | nullable, `REFERENCES dirs (id)` | Origin directory of the jump, when known. |
+
+#### `session` values
+
+Most rows carry the caller's terminal-session id (`furet add --session`;
+the pwsh integration mints one GUID per shell). The binary itself writes
+two fixed values, both chosen distinct from any real session id so
+`storage::last_visited_dir` (the `f -` lookup) never sees them:
+
+- `fallback` — `main::record_fallback_visit` (`FALLBACK_SESSION`,
+  `src/main.rs`) books a disk-fallback winner under it (SPEC §11).
+- `import` — `furet import zoxide` (`IMPORT_SOURCE`, `src/main.rs`) stamps
+  every imported row with it, as both the session and the `source`.
+
+#### `source` values
+
+| Value | Written by | Meaning |
+|---|---|---|
+| `hook` | the pwsh prompt hook (also `furet add`'s default `--source`) | A directory change made outside `f`, i.e. any plain `cd`. |
+| `jump` | the pwsh `f` and `fi` functions | A jump the function performed: query match, direct path, menu/fzf pick, or no-argument home. |
+| `up` | the pwsh `f ..`/`f ...` branch | An ancestor climb through `furet up`. |
+| `back` | the pwsh `f -` branch | A return to the session's previous directory through `furet back`. |
+| `fallback` | `main::record_fallback_visit` | The disk-fallback winner recorded when no known directory matched (SPEC §11). |
+| `import` | `furet import zoxide` | A directory seeded from `zoxide query -ls` (SPEC §3). |
 
 ### `queries` — one row per logged query decision (SPEC §15)
 
