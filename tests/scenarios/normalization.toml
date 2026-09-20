@@ -33,6 +33,6 @@ name = "a camelCase hump outranks the flat lowercase spelling"
 query = "tw"
 dirs = [
     { path = "/dev/ToolWindows", visited = "-2d" },
-    { path = "/dev/toolwindows", visited = "-1h" },
+    { path = "/archive/toolwindows", visited = "-1h" },
 ]
 jump = "/dev/ToolWindows"

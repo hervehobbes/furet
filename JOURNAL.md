@@ -1,4 +1,13 @@
 ## 2026-09-20 — branch main — v0.1.1
+Done: Hervé's review fixup on lot 22 — the flat twin in the camelCase hump
+case moved from `/dev/toolwindows` to `/archive/toolwindows` so the two paths
+no longer share a case-insensitive comparison key; expectation unchanged and
+scenarios green.
+Decisions: none — `/archive` cannot match query `tw`, so no folder bonus on
+either side and the 43 vs 33 outcome stands.
+Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.1
 Done: lot 24 — the `--help`/`-h` trailer now also prints `Config file: …
 (found | not found, defaults apply)` and `Log directory:` beside the database
 line; `storage::config_path`/`logs_dir` are the single source of truth
