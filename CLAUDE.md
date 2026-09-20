@@ -53,8 +53,9 @@ State the choice and a one-line reason in the lot prompt:
   - `core-algorithm`: SPEC §7 and §9 only, must prove invariants with
     proptest (stage 1 > stage 2, deterministic total order, D1 tie-break).
   - `reviewer`: read-only, checks diff + raw DoD output after every lot.
-Every GLM lot is followed by the `reviewer` subagent checking the diff and
-the raw DoD output before the next lot starts.
+Every GLM lot is followed by the reviewer subagent, launched from a Claude
+Code session (a GLM session cannot run it and must not imitate it), checking
+the diff and the raw DoD output before the next lot starts.
 
 ## Journal
 `JOURNAL.md`, newest entry first, written by the executor, at most 10 lines,
