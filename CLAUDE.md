@@ -63,6 +63,13 @@ starting with one short sentence:
 Done: … / Decisions: … / Next: …
 ```
 
+## Database docs
+`DATABASE.md` documents every table, field, and index in the SQLite schema
+(`src/storage.rs`'s `MIGRATIONS`). Any lot that changes the schema — a new
+table, column, index, or migration — updates `DATABASE.md` in the same lot.
+Per the Process rule above, a schema change is always its own lot, so this
+never spans lots.
+
 ## Guardrails (technical, not prose)
 Enforced by `.claude/settings.json`: no editing `tools/hooks/**` or
 `.claude/**`, no `git commit --no-verify`, no `git push --force`. These are
