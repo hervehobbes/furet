@@ -135,7 +135,8 @@ below. Every invocation also writes structured logs to `<data dir>/logs/`
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`.
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
-  nothing when it is unset, a relative path, or does not resolve on disk;
+  nothing when it is unset, a relative path, or does not resolve to an
+  existing directory (missing, or a file — SPEC §1, `paths::PathError`);
   never fails because of the config. The pwsh `f` with no argument calls it
   and falls back to `$HOME` on empty output.
 
@@ -150,7 +151,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 
 | Subcommand | Exit 0 | Exit 1 |
 |---|---|---|
-| `add` | path canonicalizes and the visit is recorded | path does not exist/canonicalize (`add_rejects_a_path_that_does_not_exist`), or a DB error |
+| `add` | path canonicalizes to a directory and the visit is recorded | path does not exist (`add_rejects_a_path_that_does_not_exist`), path is a file, not a directory (`add_rejects_a_file_path`, `paths::PathError::NotADirectory`), or a DB error |
 | `query` (plain) | a candidate resolves (stage 1, stage 2, or fallback) and prints it | nothing matches at all (`query_with_no_recorded_directory_and_no_fallback_hit_fails_on_stderr`), or a menu is cancelled (`query_menu_cancels_on_an_out_of_range_number`, `..._on_an_empty_answer_and_on_no_answer_at_all`) |
 | `query --list` | always, even with zero candidates (`query_list_with_no_candidate_prints_nothing_and_exits_zero`) | — |
 | `query --explain` | always, even with zero candidates (`explain_exits_zero_when_nothing_matches`) | — |
@@ -159,7 +160,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 | `init pwsh` | always — pure string rendering, no fallible step | — |
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
-| `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
+| `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 
 ### Accepted spec discrepancies
 

@@ -285,6 +285,18 @@ fn add_rejects_a_path_that_does_not_exist() {
 }
 
 #[test]
+fn add_rejects_a_file_path() {
+    let world = sandbox(&[]);
+    let file = world.tree.path().join("readme.txt");
+    std::fs::write(&file, b"content").expect("the scratch file is written");
+    let out = add(&world, &file, "session-1", None, None);
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(!out.stderr.is_empty());
+    assert!(!world.data.path().join("furet.db").exists());
+}
+
+#[test]
 fn query_with_no_recorded_directory_and_no_fallback_hit_fails_on_stderr() {
     let world = sandbox(&["tokio"]);
     // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
@@ -1475,6 +1487,24 @@ fn home_prints_nothing_and_warns_when_the_directory_is_missing() {
     let world = sandbox(&[]);
     let missing = world.child("nope");
     let forward = missing.to_string_lossy().replace('\\', "/");
+    write_config(&world, &format!("home = \"{forward}\""));
+    let out = run(world.furet().arg("home"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let log = log_contents(&world);
+    assert!(
+        log.lines()
+            .any(|line| line.contains("WARN") && line.contains("home")),
+        "{log:?}"
+    );
+}
+
+#[test]
+fn home_prints_nothing_and_warns_when_home_is_a_file() {
+    let world = sandbox(&[]);
+    let file = world.tree.path().join("readme.txt");
+    std::fs::write(&file, b"content").expect("the scratch file is written");
+    let forward = file.to_string_lossy().replace('\\', "/");
     write_config(&world, &format!("home = \"{forward}\""));
     let out = run(world.furet().arg("home"));
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));

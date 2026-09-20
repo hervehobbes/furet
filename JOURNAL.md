@@ -1,4 +1,15 @@
 ## 2026-09-20 — branch main — v0.1.0
+Done: `paths::canonical` now rejects a resolved path that is not a directory
+(SPEC §1), returning a new `PathError::NotADirectory` variant alongside the
+renamed `PathError::Canonicalize`; `home_command` reuses `paths::unify_separators`
+(now `pub`) instead of its own `.replace`. 2 paths unit tests, 2 cli.rs e2e
+tests (`add_rejects_a_file_path`, `home_prints_nothing_and_warns_when_home_is_a_file`).
+Decisions: audited every `canonical`/`resolve` caller (`add`, `query`'s cwd,
+`up`, `fallback`, `home`) — all only ever see real directories or user input
+meant to be one, so directories-only is correct everywhere; CONTRACTS.md
+updated. Next: none assigned.
+
+## 2026-09-20 — branch main — v0.1.0
 Done: lot 19 — new `home` config key (`config::Settings.home`, absolute path,
 `/` accepted) and `furet home` subcommand: prints the canonicalized value or
 nothing (warns on a relative path or a missing directory, silent when

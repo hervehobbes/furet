@@ -5,10 +5,13 @@ use thiserror::Error;
 
 /// Failure to resolve a user-supplied path to a directory on disk.
 #[derive(Debug, Error)]
-#[error("cannot resolve '{input}' to a directory on disk: {source}")]
-pub struct PathError {
-    input: String,
-    source: io::Error,
+pub enum PathError {
+    /// The path does not exist, or `dunce::canonicalize` otherwise failed.
+    #[error("cannot resolve '{input}' to a directory on disk: {source}")]
+    Canonicalize { input: String, source: io::Error },
+    /// The path exists but names a file, not a directory (SPEC section 1).
+    #[error("'{input}' exists but is not a directory")]
+    NotADirectory { input: String },
 }
 
 /// The canonical description of a directory (SPEC section 6).
@@ -46,13 +49,18 @@ pub fn resolve(input: &str, base: &Path) -> Result<CanonicalDir, PathError> {
     canonical(&joined)
 }
 
-/// Canonicalizes an existing absolute path with `dunce` (junctions and
-/// symlinks resolved) and derives its key, name, and folder.
+/// Canonicalizes an existing directory with `dunce` (junctions and symlinks
+/// resolved), rejecting files, and derives its key, name, and folder.
 pub fn canonical(path: &Path) -> Result<CanonicalDir, PathError> {
-    let raw = dunce::canonicalize(path).map_err(|source| PathError {
+    let raw = dunce::canonicalize(path).map_err(|source| PathError::Canonicalize {
         input: path.display().to_string(),
         source,
     })?;
+    if !raw.is_dir() {
+        return Err(PathError::NotADirectory {
+            input: path.display().to_string(),
+        });
+    }
     let text = strip_trailing_separator(raw.to_string_lossy().into_owned());
     let split = split(&text);
     Ok(CanonicalDir {
@@ -78,7 +86,8 @@ pub fn split(path: &str) -> SplitPath {
     }
 }
 
-fn unify_separators(input: &str) -> String {
+/// Replaces every `/` with `\` so downstream parsing sees one separator.
+pub fn unify_separators(input: &str) -> String {
     input.replace('/', "\\")
 }
 
@@ -219,5 +228,20 @@ mod tests {
         let (root, _child) = scratch("tokio");
         let missing = root.path().join("nope");
         assert!(canonical(&missing).is_err());
+    }
+
+    #[test]
+    fn canonicalizing_a_file_path_is_rejected() {
+        let (_root, child) = scratch("tokio");
+        let file = child.join("readme.txt");
+        std::fs::write(&file, b"content").expect("the scratch file is written");
+        let error = canonical(&file).expect_err("a file cannot canonicalize to a directory");
+        assert!(error.to_string().contains("readme.txt"));
+    }
+
+    #[test]
+    fn canonicalizing_a_directory_path_succeeds() {
+        let (_root, child) = scratch("tokio");
+        assert!(canonical(&child).is_ok());
     }
 }

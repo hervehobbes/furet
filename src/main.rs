@@ -523,7 +523,7 @@ fn home_command() -> Result<(), Box<dyn Error>> {
     let Some(configured) = settings.home else {
         return Ok(());
     };
-    let unified = configured.replace('/', "\\");
+    let unified = paths::unify_separators(&configured);
     let candidate = Path::new(&unified);
     if !candidate.is_absolute() {
         warn!(home = %configured, "config home must be an absolute path; ignored");
