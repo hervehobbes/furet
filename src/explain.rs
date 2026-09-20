@@ -44,6 +44,7 @@ pub struct Report<'a> {
     pub decision: Decision<'a>,
     pub deciding_criterion: Option<TieBreak>,
     pub origin: Origin,
+    pub stage2_max_distance: usize,
 }
 
 /// Ranks and decides exactly as `furet query` would, keeping the score
@@ -94,6 +95,7 @@ pub fn explain<'a>(
         deciding_criterion: rank::deciding_criterion(&ranked),
         evaluations,
         origin,
+        stage2_max_distance: stage2::query_max_distance(query),
     }
 }
 
@@ -146,7 +148,7 @@ pub fn render(report: &Report) -> String {
             if let Some(distance) = stage2_distance {
                 rendered.push_str(&format!(
                     "    distance {distance} (max {})\n",
-                    stage2::MAX_DISTANCE
+                    report.stage2_max_distance
                 ));
             }
         }
@@ -162,7 +164,7 @@ pub fn render(report: &Report) -> String {
             rendered.push_str(&format!(
                 "  {}: {}\n",
                 candidate.path,
-                reason_label(*reason)
+                reason_label(*reason, report.stage2_max_distance)
             ));
         }
     }
@@ -213,13 +215,13 @@ fn stage_label(stage: Stage) -> &'static str {
     }
 }
 
-fn reason_label(reason: Elimination) -> String {
+fn reason_label(reason: Elimination, max_distance: usize) -> String {
     match reason {
         Elimination::CurrentDirectory => "current directory".to_owned(),
         Elimination::Disappeared => "disappeared".to_owned(),
         Elimination::NoSubsequence => "no subsequence".to_owned(),
         Elimination::DistanceTooFar { distance } => {
-            format!("distance {distance} > {}", stage2::MAX_DISTANCE)
+            format!("distance {distance} > {max_distance}")
         }
     }
 }
@@ -302,7 +304,7 @@ mod tests {
         gone.missing = true;
         vec![
             dir("/dev/tokio", "tokio", "/dev", 1),
-            dir("/dev/tokei", "tokei", "/dev", 2),
+            dir("/dev/tokyo", "tokyo", "/dev", 2),
             dir("/dev/zellij", "zellij", "/dev", 3),
             dir("/dev/helix", "helix", "/dev", 4),
             gone,
@@ -410,6 +412,27 @@ mod tests {
     }
 
     #[test]
+    fn an_elimination_names_the_threshold_the_query_length_applies() {
+        let short = [dir("/dev/tokei", "tokei", "/dev", 1)];
+        let report = explain("tokio", "", &short, Origin::Database, TYPO_MIN_QUERY_LEN);
+        assert_eq!(report.stage2_max_distance, 1);
+        assert_eq!(
+            reason(&report, "/dev/tokei"),
+            Some(Elimination::DistanceTooFar { distance: 2 })
+        );
+        let rendered = render(&report);
+        assert!(
+            rendered.contains("/dev/tokei: distance 2 > 1"),
+            "{rendered}"
+        );
+        let long = [dir("/dev/neovim", "neovim", "/dev", 1)];
+        let accepted = explain("meovin", "", &long, Origin::Database, TYPO_MIN_QUERY_LEN);
+        assert_eq!(accepted.stage2_max_distance, 2);
+        let rendered = render(&accepted);
+        assert!(rendered.contains("distance 2 (max 2)"), "{rendered}");
+    }
+
+    #[test]
     fn stage_one_wins_before_stage_two_and_both_keep_their_detail() {
         let candidates = world();
         let report = explain(
@@ -420,7 +443,7 @@ mod tests {
             TYPO_MIN_QUERY_LEN,
         );
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 90)));
-        assert_eq!(matched(&report, "/dev/tokei"), Some((Stage::Two, 1)));
+        assert_eq!(matched(&report, "/dev/tokyo"), Some((Stage::Two, 2)));
         let detail: Vec<(bool, bool)> = report
             .evaluations
             .iter()
@@ -495,12 +518,12 @@ mod tests {
             \x20   token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85\n\
             \x20   order bonus +5\n\
             \x20   folder bonus +0\n\
-            \x20 stage 2 score 1 /dev/tokei\n\
-            \x20   distance 2 (max 2)\n\
+            \x20 stage 2 score 2 /dev/tokyo\n\
+            \x20   distance 1 (max 1)\n\
             eliminated candidates:\n\
             \x20 /dev/gone: disappeared\n\
             \x20 /dev/helix: current directory\n\
-            \x20 /dev/zellij: distance 4 > 2\n\
+            \x20 /dev/zellij: distance 4 > 1\n\
             deciding criterion: score\n\
             decision: jump /dev/tokio\n";
         assert_eq!(rendered, expected);

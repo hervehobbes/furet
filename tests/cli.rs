@@ -437,11 +437,11 @@ fn query_list_dumps_a_tie_without_asking_anything() {
 
 #[test]
 fn query_never_returns_the_current_directory() {
-    let world = sandbox(&["tokei", "tokio"]);
-    let tokei = world.child("tokei");
+    let world = sandbox(&["tokyo", "tokio"]);
+    let tokyo = world.child("tokyo");
     let tokio = world.child("tokio");
     assert!(
-        add(&world, &tokei, "session-1", None, None)
+        add(&world, &tokyo, "session-1", None, None)
             .status
             .success()
     );
@@ -466,10 +466,10 @@ fn query_never_returns_the_current_directory() {
         "stderr: {}",
         text(&from_inside.stderr)
     );
-    let tokei_line = paths::canonical(&tokei)
+    let tokyo_line = paths::canonical(&tokyo)
         .expect("the runner-up canonicalizes")
         .path;
-    assert_eq!(text(&from_inside.stdout), format!("{tokei_line}\n"));
+    assert_eq!(text(&from_inside.stdout), format!("{tokyo_line}\n"));
 }
 
 #[test]

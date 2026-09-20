@@ -2,8 +2,16 @@ use crate::normalize::Normalized;
 
 const WINDOW_SLACK: usize = 2;
 
-/// Largest optimal string alignment distance stage 2 still accepts.
+/// Largest optimal string alignment distance stage 2 still accepts, for a
+/// query of at least `LONG_QUERY_MIN_LEN` normalized characters.
 pub const MAX_DISTANCE: usize = 2;
+
+/// Largest distance stage 2 accepts below `LONG_QUERY_MIN_LEN`, where two
+/// edits would rewrite half the query.
+pub const SHORT_QUERY_MAX_DISTANCE: usize = 1;
+
+/// Query length, in normalized characters, from which `MAX_DISTANCE` applies.
+pub const LONG_QUERY_MIN_LEN: usize = 6;
 
 /// Shortest normalized mono-token query stage 2 accepts; the default behind
 /// the future `typo_min_length` override.
@@ -15,14 +23,10 @@ pub const SCORE_CAP: u32 = 3;
 /// Stage-2 score in `1..=3`, a fallback the caller reaches only once
 /// `stage1::score` returned `None`; optimal string alignment distance.
 pub fn score(query: &str, name: &str, min_length: usize) -> Option<u32> {
-    let mut tokens = query.split_whitespace();
-    let token = Normalized::new(tokens.next()?);
-    if tokens.next().is_some() || token.len() < min_length {
-        return None;
-    }
+    let token = eligible_token(query, min_length)?;
     let candidate = Normalized::new(name);
     let distance = best_window_distance(token.chars(), candidate.chars());
-    if distance > MAX_DISTANCE {
+    if distance > max_distance(token.len()) {
         return None;
     }
     Some(SCORE_CAP - distance as u32)
@@ -31,13 +35,35 @@ pub fn score(query: &str, name: &str, min_length: usize) -> Option<u32> {
 /// Raw best-window distance whenever the query is eligible for stage 2 at
 /// all, including the distances `score` rejects as too far.
 pub fn explain(query: &str, name: &str, min_length: usize) -> Option<usize> {
+    let token = eligible_token(query, min_length)?;
+    let candidate = Normalized::new(name);
+    Some(best_window_distance(token.chars(), candidate.chars()))
+}
+
+/// Largest distance `score` accepts for a query of `query_len` normalized
+/// characters: 1 below `LONG_QUERY_MIN_LEN`, `MAX_DISTANCE` from there on.
+pub fn max_distance(query_len: usize) -> usize {
+    if query_len < LONG_QUERY_MIN_LEN {
+        SHORT_QUERY_MAX_DISTANCE
+    } else {
+        MAX_DISTANCE
+    }
+}
+
+/// The distance ceiling `score` applies to `query`, measured on its first
+/// normalized token; for reports, it ignores `min_length` eligibility.
+pub fn query_max_distance(query: &str) -> usize {
+    let token = query.split_whitespace().next().unwrap_or_default();
+    max_distance(Normalized::new(token).len())
+}
+
+fn eligible_token(query: &str, min_length: usize) -> Option<Normalized> {
     let mut tokens = query.split_whitespace();
     let token = Normalized::new(tokens.next()?);
     if tokens.next().is_some() || token.len() < min_length {
         return None;
     }
-    let candidate = Normalized::new(name);
-    Some(best_window_distance(token.chars(), candidate.chars()))
+    Some(token)
 }
 
 fn best_window_distance(query: &[char], candidate: &[char]) -> usize {
@@ -92,8 +118,9 @@ fn optimal_string_alignment(left: &[char], right: &[char]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_DISTANCE, SCORE_CAP, TYPO_MIN_QUERY_LEN, best_window_distance, explain,
-        optimal_string_alignment, score,
+        LONG_QUERY_MIN_LEN, MAX_DISTANCE, SCORE_CAP, SHORT_QUERY_MAX_DISTANCE, TYPO_MIN_QUERY_LEN,
+        best_window_distance, explain, max_distance, optimal_string_alignment, query_max_distance,
+        score,
     };
     use crate::normalize::Normalized;
     use crate::stage1;
@@ -158,10 +185,56 @@ mod tests {
 
     #[test]
     fn a_distance_of_two_scores_one_and_a_distance_of_three_scores_nothing() {
-        assert_eq!(window_distance("tokio", "tokei"), MAX_DISTANCE);
-        assert_eq!(score("tokio", "tokei", TYPO_MIN_QUERY_LEN), Some(1));
+        assert_eq!(window_distance("meovin", "neovim"), MAX_DISTANCE);
+        assert_eq!(score("meovin", "neovim", TYPO_MIN_QUERY_LEN), Some(1));
         assert_eq!(window_distance("zellij", "zelda"), 3);
         assert_eq!(score("zellij", "zelda", TYPO_MIN_QUERY_LEN), None);
+    }
+
+    #[test]
+    fn the_maximum_distance_depends_on_the_query_length() {
+        assert_eq!(LONG_QUERY_MIN_LEN, 6);
+        assert_eq!(max_distance(4), SHORT_QUERY_MAX_DISTANCE);
+        assert_eq!(max_distance(5), SHORT_QUERY_MAX_DISTANCE);
+        assert_eq!(max_distance(6), MAX_DISTANCE);
+        assert_eq!(max_distance(10), MAX_DISTANCE);
+    }
+
+    #[test]
+    fn five_characters_refuse_the_distance_six_characters_accept() {
+        assert_eq!(window_distance("tokio", "tokei"), 2);
+        assert_eq!(score("tokio", "tokei", TYPO_MIN_QUERY_LEN), None);
+        assert_eq!(explain("tokio", "tokei", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(query_max_distance("tokio"), SHORT_QUERY_MAX_DISTANCE);
+        assert_eq!(query_max_distance("neovim"), MAX_DISTANCE);
+    }
+
+    #[test]
+    fn a_short_query_still_accepts_a_single_edit() {
+        assert_eq!(score("tokoi", "tokio", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("hlix", "helix", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score("obmi", "ombi", TYPO_MIN_QUERY_LEN), Some(2));
+    }
+
+    #[test]
+    fn a_four_character_query_refuses_every_two_edit_name() {
+        for name in ["outils", "prompts", "toolwindows", "temporaire"] {
+            assert_eq!(explain("ombi", name, TYPO_MIN_QUERY_LEN), Some(2), "{name}");
+            assert_eq!(score("ombi", name, TYPO_MIN_QUERY_LEN), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn an_accented_query_is_measured_after_normalization() {
+        let five = "re\u{301}uni";
+        let six = "re\u{301}unio";
+        assert_eq!(five.chars().count(), 6);
+        assert_eq!(Normalized::new(five).len(), 5);
+        assert_eq!(query_max_distance(five), SHORT_QUERY_MAX_DISTANCE);
+        assert_eq!(Normalized::new(six).len(), 6);
+        assert_eq!(query_max_distance(six), MAX_DISTANCE);
+        assert_eq!(explain(five, "rexnu", TYPO_MIN_QUERY_LEN), Some(2));
+        assert_eq!(score(five, "rexnu", TYPO_MIN_QUERY_LEN), None);
     }
 
     #[test]
@@ -221,24 +294,27 @@ mod tests {
     static ALPHABET: &[char] = &['a', 'b', 'c', 'k', 'o', 't', 'i', 'R', 'é', '-', '_', '.'];
 
     fn a_name_and_a_query_within_two_deletions() -> impl Strategy<Value = (String, String)> {
-        proptest::collection::vec(proptest::sample::select(ALPHABET), 6..14)
-            .prop_flat_map(|characters| {
-                let length = characters.len();
-                (
-                    Just(characters),
-                    proptest::collection::vec(0..length, 0..=MAX_DISTANCE),
-                )
-            })
-            .prop_map(|(characters, dropped)| {
-                let name: String = characters.iter().collect();
-                let query: String = characters
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| !dropped.contains(index))
-                    .map(|(_, character)| *character)
-                    .collect();
-                (name, query)
-            })
+        proptest::collection::vec(
+            proptest::sample::select(ALPHABET),
+            LONG_QUERY_MIN_LEN + MAX_DISTANCE..14,
+        )
+        .prop_flat_map(|characters| {
+            let length = characters.len();
+            (
+                Just(characters),
+                proptest::collection::vec(0..length, 0..=MAX_DISTANCE),
+            )
+        })
+        .prop_map(|(characters, dropped)| {
+            let name: String = characters.iter().collect();
+            let query: String = characters
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !dropped.contains(index))
+                .map(|(_, character)| *character)
+                .collect();
+            (name, query)
+        })
     }
 
     proptest! {
@@ -285,7 +361,22 @@ mod tests {
             if let Some(found) = score(&query, &name, TYPO_MIN_QUERY_LEN) {
                 let distance = usize::try_from(SCORE_CAP - found).unwrap_or(usize::MAX);
                 prop_assert_eq!(explain(&query, &name, TYPO_MIN_QUERY_LEN), Some(distance));
-                prop_assert!(distance <= MAX_DISTANCE);
+                prop_assert!(distance <= query_max_distance(&query));
+            }
+        }
+
+        #[test]
+        fn a_query_shorter_than_six_characters_never_accepts_two_edits(
+            query in "[a-zRé._-]{0,5}",
+            name in "[a-zRé._ -]{0,16}",
+        ) {
+            if score(&query, &name, TYPO_MIN_QUERY_LEN).is_some() {
+                prop_assert!(Normalized::new(&query).len() < LONG_QUERY_MIN_LEN);
+                let distance = explain(&query, &name, TYPO_MIN_QUERY_LEN);
+                prop_assert!(
+                    matches!(distance, Some(found) if found <= SHORT_QUERY_MAX_DISTANCE),
+                    "{distance:?}"
+                );
             }
         }
 
@@ -294,9 +385,10 @@ mod tests {
             query in "[a-zRé._ -]{0,12}",
             name in "[a-zRé._ -]{0,16}",
         ) {
+            let ceiling = query_max_distance(&query);
             match explain(&query, &name, TYPO_MIN_QUERY_LEN) {
                 None => prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), None),
-                Some(distance) if distance > MAX_DISTANCE => {
+                Some(distance) if distance > ceiling => {
                     prop_assert_eq!(score(&query, &name, TYPO_MIN_QUERY_LEN), None);
                 }
                 Some(distance) => {

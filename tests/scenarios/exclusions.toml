@@ -3,9 +3,9 @@ name = "a missing directory is dropped even though it matches best"
 query = "tokio"
 dirs = [
     { path = "/dev/tokio", visited = "-1h", missing = true },
-    { path = "/dev/tokei", visited = "-3d" },
+    { path = "/dev/tokyo", visited = "-3d" },
 ]
-jump = "/dev/tokei"
+jump = "/dev/tokyo"
 
 [[case]]
 name = "the current directory is dropped even though it matches best"

@@ -185,12 +185,12 @@ mod tests {
     #[test]
     fn a_higher_score_ranks_first_however_old_it_is() {
         let candidates = [
-            dir("/dev/tokei", "tokei", "/dev", 1),
+            dir("/dev/tokyo", "tokyo", "/dev", 1),
             dir("/dev/tokio", "tokio", "/dev", 240),
         ];
         assert_eq!(
             paths("tokio", "", &candidates),
-            ["/dev/tokio", "/dev/tokei"]
+            ["/dev/tokio", "/dev/tokyo"]
         );
     }
 
@@ -246,10 +246,10 @@ mod tests {
     fn a_missing_candidate_never_reaches_the_ranking() {
         let mut candidates = [
             dir("/dev/tokio", "tokio", "/dev", 1),
-            dir("/dev/tokei", "tokei", "/dev", 120),
+            dir("/dev/tokyo", "tokyo", "/dev", 120),
         ];
         candidates[0].missing = true;
-        assert_eq!(paths("tokio", "", &candidates), ["/dev/tokei"]);
+        assert_eq!(paths("tokio", "", &candidates), ["/dev/tokyo"]);
     }
 
     #[test]
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn every_stage_one_match_ranks_before_every_stage_two_match() {
         let candidates = [
-            dir("/dev/tokei", "tokei", "/dev", 1),
+            dir("/dev/tokyo", "tokyo", "/dev", 1),
             dir("/dev/tokio", "tokio", "/dev", 240),
         ];
         let ranked = rank("tokio", "", &candidates, stage2::TYPO_MIN_QUERY_LEN);
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn deciding_criterion_reads_the_real_ranking_the_same_way() {
         let candidates = [
-            dir("/dev/tokei", "tokei", "/dev", 1),
+            dir("/dev/tokyo", "tokyo", "/dev", 1),
             dir("/dev/tokio", "tokio", "/dev", 240),
         ];
         assert_eq!(

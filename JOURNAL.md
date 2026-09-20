@@ -1,3 +1,14 @@
+## 2026-09-20 — branch main — v0.1.1
+Done: lot 21 — stage 2's accepted distance now depends on the query length:
+`stage2::max_distance` returns 1 below `LONG_QUERY_MIN_LEN = 6` normalized
+characters, `MAX_DISTANCE = 2` from there on. `--explain` states the applied
+ceiling (`Report::stage2_max_distance`). New `tests/scenarios/stage2_length.toml`
+(5 cases), 5 unit tests, 1 proptest.
+Decisions: Hervé's call, a deliberate departure from SPEC §7.3 (documented in
+CONTRACTS.md); the matched line now reads `(max 1)` too, not just the
+elimination reason. Fixtures that relied on `tokio`/`tokei` at distance 2 use
+`tokyo` (distance 1). Next: none assigned.
+
 ## 2026-09-20 — branch main — v0.1.0
 Done: fixed a bug in `furet import zoxide` where same-key candidates (e.g.
 two case variants) were both planned and both inserted; `import::dedupe_by_key`

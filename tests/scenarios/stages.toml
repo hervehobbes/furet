@@ -3,7 +3,7 @@ name = "a stage-1 match wins over a much more recent stage-2 match"
 query = "tokio"
 dirs = [
     { path = "/dev/tokio", visited = "-10d" },
-    { path = "/dev/tokei", visited = "-1h" },
+    { path = "/dev/tokyo", visited = "-1h" },
 ]
 jump = "/dev/tokio"
 

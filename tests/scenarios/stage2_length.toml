@@ -1,0 +1,43 @@
+[[case]]
+name = "a four-character query refuses every name two edits away"
+query = "ombi"
+dirs = [
+    { path = "/dev/outils", visited = "-1h" },
+    { path = "/dev/prompts", visited = "-2h" },
+    { path = "/dev/toolwindows", visited = "-3h" },
+    { path = "/dev/temporaire", visited = "-4h" },
+]
+none = true
+
+[[case]]
+name = "a four-character query still catches its own transposition"
+query = "obmi"
+dirs = [
+    { path = "/media/ombi", visited = "-30d" },
+    { path = "/dev/outils", visited = "-1h" },
+    { path = "/dev/prompts", visited = "-2h" },
+    { path = "/dev/toolwindows", visited = "-3h" },
+    { path = "/dev/temporaire", visited = "-4h" },
+]
+jump = "/media/ombi"
+
+[[case]]
+name = "a six-character query reaches the name it dropped a letter from"
+query = "srcier"
+dirs = [
+    { path = "/dev/sourcier", visited = "-2d" },
+    { path = "/dev/prompts", visited = "-1h" },
+]
+jump = "/dev/sourcier"
+
+[[case]]
+name = "a five-character query at distance two matches nothing"
+query = "tokio"
+dirs = [{ path = "/dev/tokei", visited = "-1h" }]
+none = true
+
+[[case]]
+name = "a six-character query at distance two still matches"
+query = "meovin"
+dirs = [{ path = "/dev/neovim", visited = "-1h" }]
+jump = "/dev/neovim"

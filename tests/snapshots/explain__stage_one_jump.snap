@@ -8,11 +8,10 @@ evaluated candidates:
     token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85
     order bonus +5
     folder bonus +2
-  stage 2 score 1 <tmp>\tokio-lab\tokei
-    distance 2 (max 2)
 eliminated candidates:
   <tmp>\tokio-lab\gone: disappeared
   <tmp>\tokio-lab\helix: current directory
-  <tmp>\tokio-lab\zellij: distance 4 > 2
-deciding criterion: score
+  <tmp>\tokio-lab\tokei: distance 2 > 1
+  <tmp>\tokio-lab\zellij: distance 4 > 1
+deciding criterion: none (no runner-up)
 decision: jump <tmp>\tokio-lab\tokio

@@ -55,8 +55,19 @@ query (exactly one whitespace-separated token,
 against every
 sliding window of `name` of length `|query| ± 2`, clamped to `name`'s length
 (`a_sliding_window_matches_a_fragment_of_a_longer_name`). Score =
-`SCORE_CAP - distance` = `3 - distance` for `distance <= MAX_DISTANCE = 2`
+`SCORE_CAP - distance` = `3 - distance`
 (`a_one_edit_typo_scores_two`, `a_distance_of_two_scores_one_and_a_distance_of_three_scores_nothing`).
+
+The accepted distance depends on the query's length, in normalized
+characters (`stage2::max_distance`): below `LONG_QUERY_MIN_LEN = 6`,
+`SHORT_QUERY_MAX_DISTANCE = 1`; from 6 on, `MAX_DISTANCE = 2`
+(`the_maximum_distance_depends_on_the_query_length`,
+`five_characters_refuse_the_distance_six_characters_accept`,
+`a_query_shorter_than_six_characters_never_accepts_two_edits`).
+`stage2::explain` still returns the raw distance, so `--explain` reports
+both the applied ceiling (`distance 1 (max 1)`) and the reason behind a
+rejection (`distance 2 > 1`), keyed on `Report::stage2_max_distance`
+(`an_elimination_names_the_threshold_the_query_length_applies`).
 
 **Discrepancy**: SPEC §7.3 calls for full Damerau-Levenshtein distance
 (unrestricted transpositions). The implementation uses optimal string
@@ -65,6 +76,13 @@ alignment (OSA) instead — each substring may be edited at most once, so
 Deliberate lot-2 decision (`JOURNAL.md`, lot 2), pinned by
 `an_adjacent_transposition_counts_as_a_single_edit` and the
 `distance("ca", "abc") == 3` case; not reconciled with SPEC's wording.
+
+**Discrepancy**: SPEC §7.3 allows `distance <= 2` for every eligible query.
+The implementation caps a query shorter than 6 normalized characters at
+distance 1, because two edits on a 4-character query rewrite half of it and
+matched unrelated names. Deliberate lot-21 decision by Hervé, pinned by
+`a_four_character_query_refuses_every_two_edit_name` and
+`tests/scenarios/stage2_length.toml`.
 
 `decision::decide(ranked) -> Decision` (`src/decision.rs`) applies SPEC §9:
 a stage-1 best jumps unconditionally; a stage-2 best jumps alone at its
