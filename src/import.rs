@@ -44,7 +44,7 @@ pub struct Planned {
 }
 
 /// Drops already-known directories, orders survivors by score descending
-/// then path ascending, and assigns each a synthetic timestamp counting
+/// then path ascending, and assigns each a synthetic timestamp.
 pub fn plan(
     mut candidates: Vec<(f64, CanonicalDir)>,
     known_keys: &HashSet<String>,
