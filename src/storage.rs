@@ -572,25 +572,14 @@ mod tests {
         let nested = dir.path().join("nested");
         unsafe { std::env::set_var("FURET_DATA_DIR", &nested) };
         let resolved = db_path();
+        let config = config_path();
+        let logs = logs_dir();
         let connection = open();
         unsafe { std::env::remove_var("FURET_DATA_DIR") };
         assert_eq!(
             resolved.expect("db_path resolves under FURET_DATA_DIR"),
             nested.join("furet.db")
         );
-        let conn = connection.expect("open works under FURET_DATA_DIR");
-        assert_eq!(user_version(&conn), 1);
-        assert!(nested.join("furet.db").exists());
-    }
-
-    #[test]
-    fn furet_data_dir_overrides_the_config_and_logs_locations() {
-        let dir = tempfile::tempdir().expect("a fresh temporary directory");
-        let nested = dir.path().join("nested");
-        unsafe { std::env::set_var("FURET_DATA_DIR", &nested) };
-        let config = config_path();
-        let logs = logs_dir();
-        unsafe { std::env::remove_var("FURET_DATA_DIR") };
         assert_eq!(
             config.expect("config_path resolves under FURET_DATA_DIR"),
             nested.join("config.toml")
@@ -599,6 +588,9 @@ mod tests {
             logs.expect("logs_dir resolves under FURET_DATA_DIR"),
             nested.join("logs")
         );
+        let conn = connection.expect("open works under FURET_DATA_DIR");
+        assert_eq!(user_version(&conn), 1);
+        assert!(nested.join("furet.db").exists());
     }
 
     #[test]
