@@ -49,6 +49,10 @@ wires a prompt hook that records every directory change.
   line: `path`, `visits`, `last_visit`, `first_seen` (local time); `--all`
   also lists directories missing from disk, with a `present`/`missing`
   column.
+- `furet query <query> --list --color` — wrap each printed path in the
+  `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
+  `LS_COLORS` environment variable is set — PowerShell doesn't set it by
+  default, so set it yourself, e.g. `$env:LS_COLORS = "di=1;36"`.
 
 ## Importing from zoxide
 

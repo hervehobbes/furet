@@ -190,6 +190,18 @@ PS C:\dev\furet> furet query sourcier --list --color
 PS C:\dev\furet> furet query mesures --no-ignore
 ```
 
+`--color` habille chaque chemin affiché avec la couleur "répertoire"
+(l'entrée `di=`) lue dans la variable d'environnement `LS_COLORS`. Si
+`LS_COLORS` n'est pas définie — ce qui est le cas par défaut dans
+PowerShell, contrairement à un shell Unix — `--color` ne fait rien et le
+chemin s'affiche normalement. Pour la voir en action, définissez d'abord
+la variable :
+
+```powershell
+PS C:\dev\furet> $env:LS_COLORS = "di=1;36"
+PS C:\dev\furet> furet query sourcier --list --color
+```
+
 `--no-ignore` ne s'applique qu'au fallback disque (SPEC §11), utilisé
 quand aucune entrée connue ne correspond à la requête.
 
