@@ -33,7 +33,8 @@ const LOGS_DIR_NAME: &str = "logs";
 const APP_DIR_NAME: &str = "furet";
 
 // WHY: ts columns are INTEGER Unix seconds to match clock::Timestamp.
-const MIGRATIONS: &[&str] = &["CREATE TABLE dirs (
+const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE dirs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         path TEXT NOT NULL,
         key TEXT NOT NULL,
@@ -57,7 +58,11 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE dirs (
         result_dir_id INTEGER REFERENCES dirs (id),
         stage TEXT NOT NULL CHECK (stage IN ('1', '2', 'fallback', 'menu')),
         outcome TEXT NOT NULL
-    );"];
+    );",
+    // WHY: these indexes keep the ranking reads from scanning all of visits as it grows.
+    "CREATE INDEX idx_visits_dir_ts ON visits (dir_id, ts);
+    CREATE INDEX idx_visits_session_ts ON visits (session, ts);",
+];
 
 /// Resolves the directory holding the database and the log files:
 /// `FURET_DATA_DIR` when set, else the platform local data dir plus `furet`.
@@ -113,6 +118,10 @@ fn configure(conn: &Connection) -> Result<(), StorageError> {
     })?;
     // WHY: foreign_keys is a per-connection setting, never persisted by SQLite.
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    // WHY: NORMAL is WAL's pairing; it drops the per-commit fsync every `furet add` pays.
+    conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+    // WHY: concurrent prompt-hook writers wait up to 5 s instead of failing locked.
+    conn.busy_timeout(std::time::Duration::from_millis(5000))?;
     Ok(())
 }
 
@@ -424,12 +433,22 @@ mod tests {
         conn.last_insert_rowid()
     }
 
+    fn managed_index_count(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_dirs_key', 'idx_visits_dir_ts', 'idx_visits_session_ts')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sqlite_master is readable")
+    }
+
     #[test]
-    fn fresh_database_creates_all_tables_and_reaches_user_version_1() {
+    fn fresh_database_creates_all_tables_and_reaches_user_version_2() {
         let (_dir, path) = temp_db();
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 1);
+        assert_eq!(user_version(&conn), 2);
         assert_eq!(managed_table_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 3);
     }
 
     #[test]
@@ -437,8 +456,9 @@ mod tests {
         let (_dir, path) = temp_db();
         drop(opened(&path));
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 1);
+        assert_eq!(user_version(&conn), 2);
         assert_eq!(managed_table_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 3);
         let dirs_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
@@ -447,6 +467,44 @@ mod tests {
             )
             .expect("sqlite_master is readable");
         assert_eq!(dirs_tables, 1);
+    }
+
+    #[test]
+    fn a_version_1_database_migrates_to_version_2_adding_the_visits_indexes() {
+        let (_dir, path) = temp_db();
+        {
+            let old = Connection::open(&path).expect("the legacy database opens");
+            old.execute_batch(super::MIGRATIONS[0])
+                .expect("the version 1 schema applies");
+            old.execute_batch("PRAGMA user_version = 1;")
+                .expect("the legacy version is stamped");
+        }
+        let conn = opened(&path);
+        assert_eq!(user_version(&conn), 2);
+        assert_eq!(managed_table_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 3);
+        let dirs_tables: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("sqlite_master is readable");
+        assert_eq!(dirs_tables, 1);
+    }
+
+    #[test]
+    fn opened_databases_run_synchronous_normal_with_a_busy_timeout() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let synchronous: i64 = conn
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .expect("synchronous is readable");
+        assert_eq!(synchronous, 1, "SQLite's constant for NORMAL is 1");
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .expect("busy_timeout is readable");
+        assert_eq!(busy_timeout, 5000);
     }
 
     #[test]
@@ -638,7 +696,7 @@ mod tests {
             nested.join("logs")
         );
         let conn = connection.expect("open works under FURET_DATA_DIR");
-        assert_eq!(user_version(&conn), 1);
+        assert_eq!(user_version(&conn), 2);
         assert!(nested.join("furet.db").exists());
     }
 

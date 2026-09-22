@@ -1,3 +1,12 @@
+## 2026-09-22 — branch main — v0.1.1
+Done: lot 27 — migration 2 adds `idx_visits_dir_ts` and `idx_visits_session_ts`
+(covers `dir_entries`'s GROUP BY join and `last_visited_dir`'s session filter);
+`configure()` now sets `synchronous = NORMAL` and a 5 s `busy_timeout` on every
+connection. Measured on a 200k-visit copy: dir_entries 61→12 ms, back 12→0.01 ms,
+list 274→22 ms, one-row commit 1.16→0.03 ms. 2 new + 3 updated storage tests;
+DATABASE.md pragma/index tables updated.
+Decisions: none beyond the prompt. Next: reviewer pass.
+
 ## 2026-09-20 — branch main — v0.1.1
 Done: lot 26 — new `furet list [--all]`: one tab-separated line per known
 directory (`path`, `visits`, `last_visit`, `first_seen`, local time formatted
