@@ -1,6 +1,6 @@
 # Backlog
 
-- Idées de "marques/marqueurs", comme dans vim, pour nabiguer d'un répertoire à un autre
+- Idées de "marques/marqueurs", comme dans vim, pour naviguer d'un répertoire à un autre.
 
 **2. `furet remove <path>`**
 C'est l'équivalent de `zoxide remove` : oublier un répertoire indésirable. Point de conception à trancher : soit tu réutilises `missing_since`, mais ça mélange la sémantique avec le soft delete, soit tu ajoutes une colonne `removed_at`. Dans ce second cas, c'est un lot schéma à part, avec la mise à jour de `DATABASE.md`.
@@ -94,3 +94,95 @@ Dans `fi` (`pwsh.rs:108`), le bind `change:reload:furet query --list --color {q}
 4. **Ajouter `busy_timeout` (et `synchronous = NORMAL`) au BACKLOG** — je te propose l'entrée, tu restes seul rédacteur du BACKLOG selon CLAUDE.md.
 
 Sources : [RUSTSEC-2025-0055](https://rustsec.org/advisories/RUSTSEC-2025-0055.html), [base d'avis RustSec](https://github.com/rustsec/advisory-db), [man fzf](https://www.mankier.com), [fzf ADVANCED.md](https://sourcegraph.com).
+
+
+
+name: furet-sqlite-busy-timeout-backlog description: Open suggestion for furet — add busy_timeout/synchronous NORMAL pragmas to storage::configure(); omitted in lot 4 and still missing after lot 16 (2026-09-20) metadata: node_type: memory type: project originSessionId: sess_ba91f9ec-7bcf-4163-bc7e-7afd94528754
+During lot 4 (SQLite schema, commit cbe0fcb, 2026-09-19), the storage layer sets WAL and foreign_keys but deliberately does NOT set busy_timeout or synchronous = NORMAL (both set by zoxide) because the lot prompt didn't request them.
+
+Why: SPEC §5 enables WAL specifically because multiple terminals write concurrently; without busy_timeout, concurrent writes can fail immediately with SQLITE_BUSY.
+
+How to apply: Lot 5 (commit 7e90bb6, 2026-09-19) added the write path (furet add upserts + inserts) but its prompt did not include the pragmas, so they are still missing. furet add now does two separate writes (INSERT OR IGNORE + SELECT, then INSERT) with no busy_timeout, so concurrent adds from several terminals can hit SQLITE_BUSY. Propose adding these pragmas to configure() in src/storage.rs — or propose a BACKLOG.md entry for Hervé (agents propose, never write BACKLOG.md themselves, per CLAUDE.md). Lot 12 (2026-09-20, commit 1c51931, top-level --help shows the db path) also touched storage usage without adding them. Lot 13 (2026-09-20, commit 9b9bb47) added the root DATABASE.md (docs-only, documenting storage.rs's MIGRATIONS; CLAUDE.md now has a "Database docs" rule requiring it to be updated with any schema change) — still no busy_timeout; the suggestion remains open and would now also touch DATABASE.md's pragma table. Lot 14 (2026-09-20, commits 727830a + 8d109aa, SPEC §17 file logging) added tracing instrumentation to the outer layers but still no pragmas; a side benefit is that SQLITE_BUSY failures now surface as ERROR lines in the <data dir>/logs/furet.<date>.log file, making concurrent-write incidents observable when this is finally proposed. Security audit of 2026-09-22 re-flagged the gap (finding "concurrency/robustness"): BACKLOG.md as of that date still has no busy_timeout entry.
+
+
+
+
+## Propositions d'optimisations
+
+Compris — j'élargis l'analyse à la base de données (schéma, index, pragmas, croissance). Je refais le benchmark en version compacte (création en un seul appel `mkdir`, 1 000 répertoires) pour ancrer les chiffres sans y passer une minute.
+
+Les chemins `/tmp` POSIX ne sont pas résolus par le binaire Windows (piège déjà noté en mémoire). Je recommence avec des chemins Windows via `cygpath -w`.
+
+Base peuplée (1 000 répertoires). Je mesure maintenant les quatre hot paths end-to-end, puis je vérifierai les plans de requête SQLite à plus grande échelle sur une copie de la base.
+
+Chiffres de base obtenus — et confirmation en direct d'un bug déjà connu (`fi` appelle `query --list` sans `<QUERY>`, rejeté par clap : c'est l'entrée BACKLOG déjà proposée). Je décompose un peu plus (baseline sans base, requête stage-2 pure), puis je passe à la base à grande échelle.
+
+~22 ms de base (spawn processus), ~17 ms pour lire + réconcilier 1 000 répertoires, ~10 ms de plus pour le classement. Maintenant l'angle base de données demandé : je gonfle une copie de la base à échelle réaliste (200 k visites ≈ un an d'usage intensif) et je mesure l'effet des index et des pragmas manquants.
+
+Chiffres concluants — index manquants et pragma `synchronous` ont un effet mesuré massif à l'échelle. Je nettoie les répertoires de benchmark puis je rédige le rapport.
+
+# Optimisations possibles — rapport
+
+**Les gains les plus importants sont côté base de données, et ils sont maintenant mesurés** : deux index manquants divisent par 5 à 1 000 le coût des requêtes à l'échelle, et le pragma `synchronous` manque fait payer un `fsync` (~1,2 ms) à chaque `furet add` — c'est-à-dire à chaque changement de répertoire. Côté code, quatre corrections ciblées éliminent du travail redondant sur le chemin de requête.
+
+## Mesures de référence
+
+Mesuré sur ta machine avec un binaire release et une base de 1 000 répertoires (chaque chiffre = moyenne sur 20 exécutions) :
+
+| Commande | Temps par appel | Au-dessus de la base |
+|---|---|---|
+| `furet home` (plancher : spawn + logging) | 22 ms | — |
+| `furet query --list ""` (lecture + réconciliation) | 39 ms | +17 ms |
+| `furet query prj500` (classement stage 1) | 48 ms | +26 ms |
+| `furet query rpj5` (stage 2 sur les 1 000 candidats) | 49 ms | +27 ms |
+| `furet add` (écriture) | 31 ms | +9 ms |
+
+Le plancher de 22 ms est le coût du spawn de processus Windows — incompressible sans changer de design (daemon). Tout ce qui suit travaille sur la marge au-dessus.
+
+Au passage, confirmé en direct : `furet query --list` sans `<QUERY>` est rejeté par clap, donc la branche fzf de `fi` (`pwsh.rs:107`) liste toujours vide. C'est le bug que je t'avais proposé pour le BACKLOG — il n'y figure toujours pas ; l'incident de mesure le re-confirme.
+
+## 1. Base de données (les gains majeurs, mesurés à 200 k visites)
+
+J'ai gonflé une copie de ta base à 200 020 visites / 50 040 requêtes journalisées (≈ un an d'usage intensif, une visite par changement de prompt) :
+
+| Requête (appelée par) | Sans index | Avec index | Gain |
+|---|---|---|---|
+| `dir_entries` — **chaque `furet query`** | 61,1 ms | 11,9 ms | **5,1×** |
+| `last_visited_dir` — chaque `f -` | 11,9 ms | 0,01 ms | **~1 000×** |
+| `dir_listing` — `furet list` | 274 ms | 21,8 ms | **12,6×** |
+
+**P1 — Deux index manquants** (migration v2). Le schéma n'a qu'un index (`idx_dirs_key`). `EXPLAIN QUERY PLAN` montre que `dir_entries` fait un `SCAN visits` complet + tri temporaire pour son `GROUP BY` ; à 200 k visites, cette requête seule coûte 61 ms sur **chaque** saut. Correctif :
+
+```sql
+CREATE INDEX idx_visits_dir_ts ON visits (dir_id, ts);
+CREATE INDEX idx_visits_session_ts ON visits (session, ts);
+```
+
+Coût : 200 ms de création unique, +7 Mo sur une base de 8 Mo à cette échelle. Comme `visits` ne cesse de croître, sans index le temps de chaque requête croît linéairement avec ton historique — c'est le seul point qui se dégrade vraiment avec le temps. Ça se fait en lot migration (`MIGRATIONS` v2 + `user_version`, mise à jour de `DATABASE.md` comme l'exige CLAUDE.md).
+
+**P2 — `synchronous = NORMAL`** (à adosser au point busy_timeout du BACKLOG). Mesuré : un commit d'une ligne passe de **1,16 ms à 0,03 ms** sous WAL. SQLite force le fsync à chaque commit en `FULL` par défaut, or `furet add` commit une fois par changement de répertoire — y compris le double write upsert+visite. C'est le même correctif que je t'avais proposé avec `busy_timeout` ; il a maintenant un argument performance mesuré en plus de l'aspect contention.
+
+**P3 — `RETURNING id` dans `upsert_dir`** (`storage.rs:149-164`). Chaque `add` exécute un `INSERT ... ON CONFLICT` puis un `SELECT id` séparé ; SQLite ≥ 3.35 (tu as 3.53) permet `... DO UPDATE SET ... RETURNING id` — une instruction au lieu de deux, sur le chemin le plus fréquent de l'outil. Dans la boucle d'import, `prepare_cached` éviterait en outre de re-préparer les mêmes SQL 2N fois.
+
+**P4 — Croissance non bornée**. `visits` et `queries` ne sont jamais purgées : ~200 k lignes/an en usage intensif, lues intégralement en mémoire par `queries --failures` (`calibration`). Une rétention (ex. visites > 12 mois) ou un plafond rendrait P1 moins critique encore, et recoupe la note vie privée de l'audit sécurité. Décision de design pour toi — je peux rédiger l'entrée BACKLOG.
+
+## 2. Chemin de requête côté code
+
+**P5 — Réconciliation O(N) `is_dir()` à chaque requête** (`main.rs:278-285`). Chaque `furet query` statifie *tous* les répertoires connus avant même de classer — à 1 000 répertoires ça représente l'essentiel des +17 ms de lecture, et c'est le pire cas sur lecteurs réseau (chaque `is_dir` = un aller-retour réseau). Options : réconcilier uniquement le top-K après classement, ne le faire que dans `add`, ou avec une période de grâce. C'est un changement de comportement SPEC §13 — ton choix.
+
+**P6 — Double classement systématique** (`main.rs:437-445` puis `main.rs:322`). `resolve_pool` appelle `rank::rank` en entier juste pour tester la vacuité, puis `query_directories` reclasse tout. Faire retourner le classement par `resolve_pool` divise par deux le coût CPU de classement de chaque requête. Correctif trivial.
+
+**P7 — Re-normalisation de la requête par candidat** (`stage1.rs:19`, `stage2.rs:60-67`). `stage1::score` redécoupe et re-normalise la requête (`Normalized::new` = 3 allocations de Vec) pour *chaque* candidat — c'est invariant de boucle. Pré-normaliser les tokens une fois par requête (API `score_tokens(&[Normalized], ...)`) et cacher la forme normalisée nom/dossier par candidat élimine la majorité des allocations du classement.
+
+**P8 — Le tri recalcule sa clé à chaque comparaison** (`rank.rs:64`). `sort_by(|l, r| compare(&key(l), &key(r)))` reconstruit un `RankKey` par élément à chaque comparaison, dont un `name.chars().count()` O(longueur). Avec n log n comparaisons, c'est du travail redondant pur : précalculer les clés (decorate-sort) ou stocker `name_len` dans `Scored`.
+
+**P9 — Micro-gains** (même lot si tu veux) : `same_path` et `list_by_recency` allouent deux `to_lowercase` par candidat (`rank.rs:121`, `main.rs:488`) — une clé précalculée + comparaison caractère à caractère suffit ; `paths::split` pourrait emprunter (`&str`) au lieu d'allouer deux `String` par candidat ; `stage1::explain` refait tout le travail de `score` une seconde fois (`stage1.rs:80`) — anecdotique car diagnostic ; le DP de stage 2 alloue trois Vec par fenêtre et pourrait s'arrêter dès que `best == 0`.
+
+## Priorisation proposée
+
+1. **P1 + P2** — un lot « base de données » (migration index + pragmas) : les plus gros gains, mesurés, et ils empêchent la dégradation avec le temps. P2 est déjà en attente de BACKLOG.
+2. **P6 + P7 + P8** — un lot « moteur de classement » sans changement de comportement observable.
+3. **P3, P9** — en rabiot dans les lots ci-dessus.
+4. **P4, P5** — décisions de design (rétention, stratégie de réconciliation) : je te rédige les entrées BACKLOG si tu veux, la plume te reste.
+
+Dis-moi par quoi tu veux commencer — les lots 1 et 2 sont prêts à être spécifiés en prompts de lot comme les précédents.
