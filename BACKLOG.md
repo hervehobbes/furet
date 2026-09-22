@@ -186,3 +186,79 @@ Coût : 200 ms de création unique, +7 Mo sur une base de 8 Mo à cette échelle
 4. **P4, P5** — décisions de design (rétention, stratégie de réconciliation) : je te rédige les entrées BACKLOG si tu veux, la plume te reste.
 
 Dis-moi par quoi tu veux commencer — les lots 1 et 2 sont prêts à être spécifiés en prompts de lot comme les précédents.
+
+
+
+
+
+
+
+
+
+
+
+Je m'y mets : migration v2 (les deux index) + pragmas `synchronous = NORMAL` et `busy_timeout`. Je relis d'abord les conventions du projet (CLAUDE.md, DATABASE.md) pour respecter les règles de doc et de style.
+
+Conventions bien notées (lot schéma isolé, DATABASE.md dans le lot, DoD obligatoire, JOURNAL.md par l'exécuteur). Je vérifie le format des entrées de journal et l'habitude de bump de version avant d'écrire le code.
+
+Hervé a intégré l'audit sécurité dans BACKLOG.md entre-temps — arbre de travail propre, je peux committer sereinement. Je jette un œil au BACKLOG pour aligner mon lot avec ce qu'il a écrit.
+
+Le BACKLOG intègre mes rapports — parfait, je n'y touche pas. Je regarde le format d'un prompt de lot récent, puis j'écris le code.
+
+Format de prompt clair. Je lis MISTAKES.md (exigé par chaque lot) puis j'implémente.
+
+Règle notée (un seul test mutant l'environnement — mes tests n'y touchent pas). J'implémente maintenant les changements dans `storage.rs`.
+
+Maintenant les tests : mise à jour des trois assertions `user_version` existantes et ajout des deux nouveaux tests plus le helper.
+
+Code en place. Mise à jour de DATABASE.md (règle CLAUDE.md : même lot que le changement de schéma).
+
+J'écris le prompt d'archivage du lot et l'entrée de journal.
+
+Tout est écrit. Lancement du DoD complet (`tools/Run-DoD.ps1` : fmt, clippy, tests, build, version).
+
+Formatage à ajuster — j'applique `cargo fmt` et relance le DoD.
+
+DoD vert. Je montre les nouveaux tests de migration spécifiquement, puis je commite le lot.
+
+`prompts/` est ignoré par git (fichiers de lot locaux, comme les 26 précédents). Je vérifie et je commite sans ce répertoire.
+
+Committed (`e35db55`). Je clôture ma note mémoire sur le busy_timeout (suggestion maintenant implémentée), puis le rapport.
+
+Dernière étape de la convention de lot : la passe de review. Je l'exécute sur le diff du commit avant de clore.
+
+# Lot 27 livré — index + pragmas (P1 + P2)
+
+**Commit `e35db55`, DoD vert, review PASS.** Ta base existante migrera automatiquement vers `user_version = 2` au premier lancement du nouveau binaire (création des index en une transaction, ~200 ms à 200 k visites, bien moins à ta taille).
+
+## Ce qui a changé
+
+- **Migration 2** (`src/storage.rs`) : `idx_visits_dir_ts (dir_id, ts)` et `idx_visits_session_ts (session, ts)` — le script v1 est inchangé octet pour octet, seuls les nouveaux index s'ajoutent.
+- **`configure()`** : `PRAGMA synchronous = NORMAL` (supprime le `fsync` par commit que chaque `furet add` payait) et `busy_timeout` 5 000 ms via l'API rusqlite (les writers concurrents attendent au lieu d'échouer en `SQLITE_BUSY`).
+- **Tests** : 2 nouveaux (migration v1→v2 avec les deux index ; lecture des pragmas `synchronous=1`/`busy_timeout=5000`), 3 mis à jour (versions 1→2), aucun test mutant l'environnement — règle MISTAKES.md respectée.
+- **Docs** : `DATABASE.md` (table pragmas + 2 lignes d'index), `JOURNAL.md` (entrée du lot), prompt archivé dans `prompts/lot-27-db-indexes-pragmas.md` (répertoire gitignored, comme les 26 autres).
+
+## Preuve (sortie brute)
+
+```
+==> Step 4/5: cargo build --release
+   Compiling furet v0.1.1 (C:\dev\furet)
+    Finished `release` profile [optimized] target(s) in 40.11s
+==> Step 5/5: run the release binary with --version
+furet 0.1.1
+All DoD steps passed.
+```
+
+```
+test storage::tests::fresh_database_creates_all_tables_and_reaches_user_version_2 ... ok
+test storage::tests::a_version_1_database_migrates_to_version_2_adding_the_visits_indexes ... ok
+test storage::tests::opened_databases_run_synchronous_normal_with_a_busy_timeout ... ok
+test storage::tests::migrating_an_already_migrated_database_is_a_noop ... ok
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out
+```
+
+Le reviewer confirme point par point : scope exact du prompt, script v1 identique, pas de requête production touchée, `DATABASE.md` cohérent avec le code, politique de commentaires conforme, JOURNAL ≤ 10 lignes.
+
+## Suite possible
+
+Le lot « moteur de classement » (P6 double classement, P7 re-normalisation, P8 tri) est le suivant par priorité — dis-moi si je le lance. La passe de review de ce lot étant faite, rien ne bloque le suivant.
