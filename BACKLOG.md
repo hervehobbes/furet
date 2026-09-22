@@ -1,7 +1,6 @@
 # Backlog
 
 - Comment remplacer z par f ?
-Salut Hervé. Sans crédits GLM, tous les lots passeront par les subagents Claude, donc je privilégie des mécanismes courts et bien bornés.
 
 **1. Complétion Tab dans pwsh** (mon choix)
 `f mcp<Tab>` fait défiler les candidats classés, via `Register-ArgumentCompleter` qui appelle `furet query <texte> --list`. zoxide fait la même chose (`z foo<Space><Tab>`), donc tu as une référence à citer. Le lot touche uniquement `src/pwsh.rs` et `tests/pwsh.rs`, sans changement de schéma ni du moteur. Ça comble aussi une partie du besoin de ta proposition « flèches/Esc » du BACKLOG, sans dépendance terminal.
