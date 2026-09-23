@@ -53,6 +53,7 @@ enum Command {
     /// disk walk (SPEC section 11) when nothing matches.
     Query {
         /// Query text; quote it when it contains spaces.
+        #[arg(default_value = "")]
         query: String,
         /// Print every ranked candidate, best first; an empty query lists by
         /// recency instead.

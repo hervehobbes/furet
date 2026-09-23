@@ -4,10 +4,10 @@ expression: text
 ---
 Rank recorded directories and print the best match, falling back to a disk walk (SPEC section 11) when nothing matches
 
-Usage: furet query [OPTIONS] <QUERY>
+Usage: furet query [OPTIONS] [QUERY]
 
 Arguments:
-  <QUERY>  Query text; quote it when it contains spaces
+  [QUERY]  Query text; quote it when it contains spaces [default: ""]
 
 Options:
       --list       Print every ranked candidate, best first; an empty query lists by recency instead

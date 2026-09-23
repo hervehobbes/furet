@@ -1,3 +1,12 @@
+## 2026-09-23 — branch main — v0.1.1
+Done: lot 28 — `furet query`'s `<QUERY>` is optional (default empty), fixing
+`fi`'s fzf branch whose initial `furet query --list --color` was rejected by
+clap (exit 2), so fzf always started empty. 1 new cli test, query help
+snapshot and CONTRACTS.md updated.
+Decisions: security-audit finding F2 (fzf `{q}` under cmd.exe) checked
+against fzf 0.74.2 and dropped: fzf double-quotes and `^`-escapes `{q}`.
+Next: lot 29 (empty FURET_DATA_DIR).
+
 ## 2026-09-22 — branch main — v0.1.1
 Done: lot 27 — migration 2 adds `idx_visits_dir_ts` and `idx_visits_session_ts`
 (covers `dir_entries`'s GROUP BY join and `last_visited_dir`'s session filter);

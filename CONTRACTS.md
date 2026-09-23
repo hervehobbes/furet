@@ -147,10 +147,11 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
   one visit; `source` defaults to `hook`.
-- `furet query <text> [--list] [--explain] [--color] [--no-ignore]` — ranks
+- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
-  on a stage-2 tie, reading the answer from stdin.
+  on a stage-2 tie, reading the answer from stdin. An omitted `<text>` is
+  the empty query (`fi` relies on it for its initial fzf list).
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited

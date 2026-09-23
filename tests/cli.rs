@@ -1057,6 +1057,28 @@ fn query_list_with_an_empty_query_lists_by_recency_then_breaks_a_tie_on_path() {
 }
 
 #[test]
+fn query_list_without_a_query_argument_lists_by_recency_like_an_empty_query() {
+    let world = sandbox(&["tokio", "tokei"]);
+    let tokio = world.child("tokio");
+    let tokei = world.child("tokei");
+    for child in [&tokio, &tokei] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    visited_at(&world, &tokio, 1_700_000_001);
+    visited_at(&world, &tokei, 1_700_000_002);
+    let mut cmd = world.furet();
+    cmd.arg("query")
+        .arg("--list")
+        .arg("--color")
+        .current_dir(world.tree.path());
+    let bare = run(&mut cmd);
+    assert!(bare.status.success(), "stderr: {}", text(&bare.stderr));
+    let empty = query(&world, "", world.tree.path(), true);
+    assert_eq!(text(&bare.stdout), text(&empty.stdout));
+    assert_eq!(text(&bare.stdout).lines().count(), 2);
+}
+
+#[test]
 fn query_list_with_an_empty_query_excludes_missing_and_current_directories() {
     let world = sandbox(&["tokio", "gone"]);
     let tokio = world.child("tokio");
