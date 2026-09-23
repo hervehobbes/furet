@@ -1,4 +1,12 @@
 ## 2026-09-23 — branch main — v0.1.1
+Done: lot 30 — `furet query` ranks the database pool once (the old
+`resolve_pool` ranked it fully just to test emptiness, then it was ranked
+again); the fallback pool is built only when that ranking is empty.
+`upsert_dir` is one cached `INSERT ... RETURNING id` instead of INSERT +
+SELECT. Refactor only; existing suites green.
+Decisions: none. Next: lot 31 (P5, reconcile only matching candidates).
+
+## 2026-09-23 — branch main — v0.1.1
 Done: lot 29 — an empty `FURET_DATA_DIR` counts as unset (security audit
 F3): it used to resolve to a database relative to the current directory.
 Pure `resolve_data_dir` helper + 1 unit test without env mutation;

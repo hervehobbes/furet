@@ -302,7 +302,24 @@ fn query_directories(
         print_lines(&list_by_recency(&candidates, &current.path, color));
         return Ok(());
     }
-    let (pool, is_fallback) = resolve_pool(query, &current.path, candidates, no_ignore, &settings);
+    let db_ranked = rank::rank(query, &current.path, &candidates, settings.typo_min_length);
+    let is_fallback = !query.trim().is_empty() && db_ranked.is_empty();
+    let fallback_pool = if is_fallback {
+        fallback_candidates(&current.path, no_ignore, &settings)
+    } else {
+        Vec::new()
+    };
+    let (pool, ranked) = if is_fallback {
+        let ranked = rank::rank(
+            query,
+            &current.path,
+            &fallback_pool,
+            settings.typo_min_length,
+        );
+        (&fallback_pool, ranked)
+    } else {
+        (&candidates, db_ranked)
+    };
     debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
     if explain {
         let origin = if is_fallback {
@@ -310,17 +327,10 @@ fn query_directories(
         } else {
             Origin::Database
         };
-        let report = explain::explain(
-            query,
-            &current.path,
-            &pool,
-            origin,
-            settings.typo_min_length,
-        );
+        let report = explain::explain(query, &current.path, pool, origin, settings.typo_min_length);
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
-    let ranked = rank::rank(query, &current.path, &pool, settings.typo_min_length);
     if list {
         let lines: Vec<String> = ranked
             .iter()
@@ -428,31 +438,14 @@ fn query_directories(
     }
 }
 
-fn resolve_pool(
-    query: &str,
-    current_path: &str,
-    db_candidates: Vec<Candidate>,
-    no_ignore: bool,
-    settings: &Settings,
-) -> (Vec<Candidate>, bool) {
-    if query.trim().is_empty()
-        || !rank::rank(
-            query,
-            current_path,
-            &db_candidates,
-            settings.typo_min_length,
-        )
-        .is_empty()
-    {
-        return (db_candidates, false);
-    }
+fn fallback_candidates(current_path: &str, no_ignore: bool, settings: &Settings) -> Vec<Candidate> {
     let options = fallback::Options {
         child_depth: settings.fallback.depth,
         ancestor_levels: settings.fallback.up,
         respect_gitignore: !(no_ignore || settings.fallback.no_ignore),
         exclude: settings.fallback.exclude.clone(),
     };
-    (fallback::discover(Path::new(current_path), options), true)
+    fallback::discover(Path::new(current_path), options)
 }
 
 fn load_settings() -> Settings {

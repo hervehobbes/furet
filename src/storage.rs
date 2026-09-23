@@ -167,12 +167,12 @@ pub fn upsert_dir(
     key: &str,
     first_seen: Timestamp,
 ) -> Result<i64, StorageError> {
-    conn.execute(
+    conn.prepare_cached(
         "INSERT INTO dirs (path, key, first_seen) VALUES (?1, ?2, ?3)
-         ON CONFLICT (key) DO UPDATE SET missing_since = NULL",
-        params![path, key, first_seen.unix_seconds()],
-    )?;
-    conn.query_row("SELECT id FROM dirs WHERE key = ?1", params![key], |row| {
+         ON CONFLICT (key) DO UPDATE SET missing_since = NULL
+         RETURNING id",
+    )?
+    .query_row(params![path, key, first_seen.unix_seconds()], |row| {
         row.get(0)
     })
     .map_err(StorageError::from)
