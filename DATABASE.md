@@ -7,9 +7,9 @@ whenever that schema changes.
 
 Resolved by `storage::db_path()` on every open:
 
-- `FURET_DATA_DIR` set: `<FURET_DATA_DIR>/furet.db` (joined literally, no
+- `FURET_DATA_DIR` set and non-empty: `<FURET_DATA_DIR>/furet.db` (joined literally, no
   canonicalization — tests rely on this override).
-- Otherwise: the platform local data directory joined with `furet/furet.db`
+- Otherwise (unset or empty): the platform local data directory joined with `furet/furet.db`
   (on Windows: `%LOCALAPPDATA%\furet\furet.db`).
 
 Opening the database creates the file and its parent directory when missing.

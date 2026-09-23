@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::env;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
@@ -67,7 +68,12 @@ const MIGRATIONS: &[&str] = &[
 /// Resolves the directory holding the database and the log files:
 /// `FURET_DATA_DIR` when set, else the platform local data dir plus `furet`.
 pub fn data_dir() -> Result<PathBuf, StorageError> {
-    if let Some(dir) = env::var_os("FURET_DATA_DIR") {
+    resolve_data_dir(env::var_os("FURET_DATA_DIR"))
+}
+
+// WHY: an empty override would otherwise put furet.db in whatever directory the hook runs from.
+fn resolve_data_dir(overridden: Option<OsString>) -> Result<PathBuf, StorageError> {
+    if let Some(dir) = overridden.filter(|dir| !dir.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
     dirs::data_local_dir()
@@ -390,7 +396,7 @@ mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
         insert_query, insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at,
-        query_log, set_missing_since, upsert_dir, visit_log,
+        query_log, resolve_data_dir, set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -698,6 +704,16 @@ mod tests {
         let conn = connection.expect("open works under FURET_DATA_DIR");
         assert_eq!(user_version(&conn), 2);
         assert!(nested.join("furet.db").exists());
+    }
+
+    #[test]
+    fn an_empty_furet_data_dir_is_treated_as_unset() {
+        let unset = resolve_data_dir(None).expect("the platform data dir resolves");
+        let empty = resolve_data_dir(Some("".into())).expect("an empty override resolves");
+        assert_eq!(empty, unset);
+        assert!(empty.is_absolute());
+        let set = resolve_data_dir(Some("elsewhere".into())).expect("an override resolves");
+        assert_eq!(set, PathBuf::from("elsewhere"));
     }
 
     #[test]

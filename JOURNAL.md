@@ -1,4 +1,11 @@
 ## 2026-09-23 — branch main — v0.1.1
+Done: lot 29 — an empty `FURET_DATA_DIR` counts as unset (security audit
+F3): it used to resolve to a database relative to the current directory.
+Pure `resolve_data_dir` helper + 1 unit test without env mutation;
+DATABASE.md and README.md wording updated.
+Decisions: none. Next: lot 30 (single ranking pass, upsert RETURNING).
+
+## 2026-09-23 — branch main — v0.1.1
 Done: lot 28 — `furet query`'s `<QUERY>` is optional (default empty), fixing
 `fi`'s fzf branch whose initial `furet query --list --color` was rejected by
 clap (exit 2), so fzf always started empty. 1 new cli test, query help

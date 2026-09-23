@@ -89,7 +89,7 @@ defaults, it never adds to them.
 
 Every invocation writes plain-text logs to `<data dir>/logs/` — a daily
 rotated `furet.<date>.log`, 7 files kept — and never to stdout or stderr.
-The data dir is `%LOCALAPPDATA%\furet` unless `FURET_DATA_DIR` is set.
+The data dir is `%LOCALAPPDATA%\furet` unless `FURET_DATA_DIR` is set (an empty value counts as unset).
 The default level is `info`; `FURET_LOG` overrides it with `EnvFilter`
 syntax (e.g. `FURET_LOG=debug`). A failure to open the log file never
 breaks a command.
