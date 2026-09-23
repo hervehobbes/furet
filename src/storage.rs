@@ -251,6 +251,20 @@ pub fn set_missing_since(
     Ok(())
 }
 
+/// Deletes the `visits` and `queries` rows older than `cutoff`, keeping every
+/// `dirs` row; returns how many visits and queries were deleted.
+pub fn purge_before(conn: &Connection, cutoff: Timestamp) -> Result<(usize, usize), StorageError> {
+    let visits = conn.execute(
+        "DELETE FROM visits WHERE ts < ?1",
+        params![cutoff.unix_seconds()],
+    )?;
+    let queries = conn.execute(
+        "DELETE FROM queries WHERE ts < ?1",
+        params![cutoff.unix_seconds()],
+    )?;
+    Ok((visits, queries))
+}
+
 /// One `dirs` row flattened for `furet list`, its timestamps already
 /// formatted in local time by SQLite itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -399,7 +413,7 @@ mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
         insert_query, insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at,
-        query_log, resolve_data_dir, set_missing_since, upsert_dir, visit_log,
+        purge_before, query_log, resolve_data_dir, set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -1042,6 +1056,38 @@ mod tests {
         assert_eq!(records[0].session, "session-1");
         assert_eq!(records[1].ts, at(120));
         assert_eq!(records[1].source, "hook");
+    }
+
+    #[test]
+    fn purge_before_deletes_only_older_visits_and_queries_and_keeps_dirs() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let tokio = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        for ts in [110, 150, 200] {
+            insert_visit(&conn, tokio, at(ts), "hook", "session-1", None)
+                .expect("the visit inserts");
+            insert_query(&conn, at(ts), "c:\\", "tok", Some(tokio), "1", "jump")
+                .expect("the query inserts");
+        }
+        let purged = purge_before(&conn, at(150)).expect("the purge runs");
+        assert_eq!(purged, (1, 1));
+        let visits: Vec<_> = visit_log(&conn)
+            .expect("the visit log reads")
+            .into_iter()
+            .map(|record| record.ts)
+            .collect();
+        assert_eq!(visits, vec![at(150), at(200)]);
+        let queries: Vec<_> = query_log(&conn)
+            .expect("the query log reads")
+            .into_iter()
+            .map(|record| record.ts)
+            .collect();
+        assert_eq!(queries, vec![at(150), at(200)]);
+        assert_eq!(
+            dir_path_by_id(&conn, tokio).expect("the dir lookup runs"),
+            Some("c:\\dev\\tokio".to_owned())
+        );
     }
 
     #[test]

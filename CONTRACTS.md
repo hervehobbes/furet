@@ -92,9 +92,9 @@ distance, else opens a `Menu` of the leading run of tied stage-2 candidates
 ## Configuration contract (SPEC §16)
 
 `<data dir>/config.toml` (`storage::data_dir()`, same as the database and the
-logs) overrides `config::Settings::default()`; loaded by `furet query` and
-`furet home` (`add` stays cheap). `config::parse(text) -> (Settings, Vec<String>)`
-is pure — no filesystem, no `tracing` — and never fails the caller.
+logs) overrides `config::Settings::default()`; loaded by `furet query`,
+`furet home`, and `furet add` (for `retention_days` only).
+`config::parse(text) -> (Settings, Vec<String>)` is pure — no filesystem, no `tracing` — and never fails the caller.
 
 Fallback is per key, not per file, except malformed TOML:
 
@@ -129,9 +129,16 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
   number of known directories).
 - `visits(id, dir_id, ts, source, session, from_dir_id)` — `source` is one
   of `hook | jump | back | up | fallback | import`; one row per recorded
-  visit, never updated or deleted.
+  visit, never updated; deleted only by the retention purge below.
 - `queries(id, ts, cwd, query, result_dir_id, stage, outcome)` — the SPEC §15
   journal; `stage` is one of `'1' | '2' | 'fallback' | 'menu'`.
+- Retention: every `furet add` runs `storage::purge_before(now -
+  retention_days)`, deleting older `visits` and `queries` rows (indexed by
+  `idx_visits_ts` / `idx_queries_ts`); `dirs` rows are never deleted, and a
+  directory with no visit left ranks on `first_seen`. `retention_days = 0`
+  disables it. **Discrepancy** with SPEC §5 (append-only event journal) and
+  §8 (frequency recorded for later use): history is bounded to one year by
+  default (Hervé's decision, lot 33).
 
 ## CLI contract
 

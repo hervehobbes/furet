@@ -5,6 +5,8 @@ use crate::stage2;
 pub const FALLBACK_MAX_DEPTH: usize = 5;
 /// Largest accepted `fallback.up`; above it the parse warns and keeps the default.
 pub const FALLBACK_MAX_UP: usize = 5;
+/// Days of `visits` and `queries` history `furet add` keeps by default.
+pub const RETENTION_DAYS: u32 = 365;
 
 /// Overridable settings loaded from `<data dir>/config.toml` (SPEC section 16).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +17,8 @@ pub struct Settings {
     pub fallback: FallbackSettings,
     /// Absolute path `f` with no argument jumps to; `None` keeps the shell default.
     pub home: Option<String>,
+    /// Days of `visits` and `queries` history kept; 0 keeps everything.
+    pub retention_days: u32,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -36,6 +40,7 @@ impl Default for Settings {
             typo_min_length: stage2::TYPO_MIN_QUERY_LEN,
             fallback: FallbackSettings::default(),
             home: None,
+            retention_days: RETENTION_DAYS,
         }
     }
 }
@@ -79,6 +84,11 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
                 None => {
                     warnings.push("home must be a non-empty string; using no override".to_owned())
                 }
+            },
+            "retention_days" => match value.as_integer().and_then(|n| u32::try_from(n).ok()) {
+                Some(days) => settings.retention_days = days,
+                None => warnings
+                    .push("retention_days must be an integer >= 0; using the default".to_owned()),
             },
             "ambiguity" | "keyboard_layout" | "engine" => {
                 warnings.push(format!("{key} is not supported yet; ignored"));
@@ -186,6 +196,35 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("typo_min_length"));
+    }
+
+    #[test]
+    fn retention_days_defaults_to_one_year() {
+        assert_eq!(Settings::default().retention_days, 365);
+    }
+
+    #[test]
+    fn a_valid_retention_days_overrides_the_default() {
+        let (settings, warnings) = parse("retention_days = 30");
+        assert_eq!(settings.retention_days, 30);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_zero_retention_days_is_accepted_and_disables_the_purge() {
+        let (settings, warnings) = parse("retention_days = 0");
+        assert_eq!(settings.retention_days, 0);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_negative_or_wrong_type_retention_days_warns_and_keeps_the_default() {
+        for text in ["retention_days = -1", "retention_days = \"year\""] {
+            let (settings, warnings) = parse(text);
+            assert_eq!(settings.retention_days, 365, "{text}");
+            assert_eq!(warnings.len(), 1, "{text}");
+            assert!(warnings[0].contains("retention_days"), "{text}");
+        }
     }
 
     #[test]

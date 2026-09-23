@@ -40,6 +40,10 @@ Applied by `storage::open()` on every connection:
 
 ### `visits` — one row per recorded directory visit
 
+Rows older than `retention_days` (config, default 365, `0` = never) are
+deleted by `storage::purge_before` on every `furet add`, as are `queries`
+rows; `dirs` rows are never deleted.
+
 | Column | Type | Constraints | Holds |
 |---|---|---|---|
 | `id` | INTEGER | `PRIMARY KEY AUTOINCREMENT` | Surrogate row id. |

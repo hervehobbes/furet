@@ -22,6 +22,9 @@ fn sandbox(children: &[&str]) -> Sandbox {
             .expect("a child directory exists");
     }
     let data = TempDir::new().expect("a fresh data directory");
+    // WHY: fixtures date visits in 2023, which the default one-year retention would purge on the next add.
+    std::fs::write(data.path().join("config.toml"), "retention_days = 0")
+        .expect("the config file is written");
     Sandbox { tree, data }
 }
 

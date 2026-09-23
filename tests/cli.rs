@@ -674,6 +674,65 @@ fn a_vanished_best_match_is_soft_deleted_and_the_next_match_wins() {
 }
 
 #[test]
+fn add_purges_visits_and_queries_older_than_the_retention() {
+    let world = sandbox(&["tokio", "cwd"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        query(&world, "tokio", &world.child("cwd"), false)
+            .status
+            .success()
+    );
+    let conn = db(&world);
+    conn.execute_batch("UPDATE visits SET ts = 1000; UPDATE queries SET ts = 1000;")
+        .expect("the journal is aged past the retention");
+    write_config(&world, "retention_days = 30");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(
+        scalar(&conn, "SELECT COUNT(*) FROM visits WHERE ts = 1000"),
+        0
+    );
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn a_zero_retention_keeps_every_visit_and_query() {
+    let world = sandbox(&["tokio", "cwd"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        query(&world, "tokio", &world.child("cwd"), false)
+            .status
+            .success()
+    );
+    let conn = db(&world);
+    conn.execute_batch("UPDATE visits SET ts = 1000; UPDATE queries SET ts = 1000;")
+        .expect("the journal is aged past any retention");
+    write_config(&world, "retention_days = 0");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+}
+
+#[test]
 fn up_prints_the_canonical_ancestor_n_levels_above() {
     let world = sandbox(&["a/b/c"]);
     let deep = world.child("a").join("b").join("c");

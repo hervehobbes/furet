@@ -1,4 +1,13 @@
 ## 2026-09-23 — branch main — v0.1.1
+Done: lot 33 — `retention_days` config key (default 365, 0 = keep all);
+every `furet add` deletes `visits`/`queries` rows older than that via
+`storage::purge_before` (indexed by lot 32); `dirs` never deleted. `add`
+now reads config.toml. 4 config + 1 storage + 2 cli tests; explain.rs
+fixtures opt out (2023-dated visits). README/CONTRACTS/DATABASE updated.
+Decisions: Hervé's — purge both tables, in `add`, 0 disables; CONTRACTS
+records the SPEC §5/§8 discrepancy. Next: reviewer pass over lots 28–33.
+
+## 2026-09-23 — branch main — v0.1.1
 Done: lot 32 — migration 3 adds `idx_visits_ts` and `idx_queries_ts`, so
 lot 33's age-based purge on every `furet add` never scans either journal.
 1 new + 5 updated storage tests; DATABASE.md pragma/index tables updated.

@@ -7,7 +7,7 @@ use std::process;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use furet::calibration::{self, FailureReason};
-use furet::clock::{Clock, SystemClock};
+use furet::clock::{Clock, SystemClock, Timestamp};
 use furet::config::{self, Settings};
 use furet::decision::{self, Decision};
 use furet::explain::{self, Origin};
@@ -257,8 +257,19 @@ fn add(
         from_dir_id,
     )?;
     info!(path = %dir.path, source = source.as_str(), "visit recorded");
+    let retention_days = load_settings().retention_days;
+    if retention_days > 0 {
+        let cutoff = clock
+            .now()
+            .unix_seconds()
+            .saturating_sub(i64::from(retention_days) * SECONDS_PER_DAY);
+        let (visits, queries) = storage::purge_before(&conn, Timestamp::from_unix_seconds(cutoff))?;
+        debug!(retention_days, visits, queries, "retention purge");
+    }
     Ok(())
 }
+
+const SECONDS_PER_DAY: i64 = 86_400;
 
 // WHY: distinct from any real shell GUID, so `back` never sees this visit.
 const FALLBACK_SESSION: &str = "fallback";

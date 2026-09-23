@@ -71,7 +71,7 @@ reads its binary database directly.
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
 is normal, and any invalid key falls back to its default with a `WARN` log
-line naming the key. `furet query` and `furet home` read it.
+line naming the key. `furet query`, `furet home`, and `furet add` read it.
 
 | Key | Type | Default | Valid |
 |---|---|---|---|
@@ -81,6 +81,7 @@ line naming the key. `furet query` and `furet home` read it.
 | `fallback.no_ignore` | bool | false | — |
 | `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
 | `home` | string | unset | absolute path, `/` accepted as separator, no `~`/env-var expansion |
+| `retention_days` | integer | 365 | `>= 0`; `furet add` deletes `visits` and `queries` rows older than this many days, `0` keeps everything |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the
 defaults, it never adds to them.
