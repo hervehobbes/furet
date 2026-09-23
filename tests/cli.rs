@@ -619,6 +619,61 @@ fn a_reappeared_directory_is_reactivated_by_the_next_query_alone() {
 }
 
 #[test]
+fn a_query_only_checks_the_directories_it_matches_on_disk() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
+    for child in [&tokio, &gone] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    std::fs::remove_dir_all(&gone).expect("the unmatched directory vanishes");
+    let out = query(&world, "tokio", &cwd, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let missing: i64 = scalar(
+        &db(&world),
+        "SELECT COUNT(*) FROM dirs WHERE missing_since IS NOT NULL",
+    );
+    assert_eq!(
+        missing, 0,
+        "a directory the query never matched stays unchecked"
+    );
+}
+
+#[test]
+fn a_vanished_best_match_is_soft_deleted_and_the_next_match_wins() {
+    let world = sandbox(&["tokio", "tokio-old"]);
+    let tokio = world.child("tokio");
+    let tokio_old = world.child("tokio-old");
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
+    for child in [&tokio, &tokio_old] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    let before = query(&world, "tokio", &cwd, true);
+    let tokio_path = paths::canonical(&tokio)
+        .expect("the best match canonicalizes")
+        .path;
+    let old_path = paths::canonical(&tokio_old)
+        .expect("the runner-up canonicalizes")
+        .path;
+    assert_eq!(text(&before.stdout), format!("{tokio_path}\n{old_path}\n"));
+    std::fs::remove_dir_all(&tokio).expect("the best match vanishes");
+    let out = query(&world, "tokio", &cwd, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{old_path}\n"));
+    let flagged: i64 = scalar(
+        &db(&world),
+        "SELECT COUNT(*) FROM dirs WHERE missing_since IS NOT NULL",
+    );
+    assert_eq!(
+        flagged, 1,
+        "the vanished match is soft-deleted by the query"
+    );
+}
+
+#[test]
 fn up_prints_the_canonical_ancestor_n_levels_above() {
     let world = sandbox(&["a/b/c"]);
     let deep = world.child("a").join("b").join("c");

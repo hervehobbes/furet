@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::io::{self, Read};
@@ -276,25 +277,22 @@ fn query_directories(
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
     let conn = storage::open()?;
-    let reconciled = soft_delete::reconcile(
-        storage::dir_entries(&conn)?,
-        &soft_delete::RealFilesystem,
-        clock.now(),
-    );
-    for (dir_id, missing_since) in &reconciled.updates {
-        storage::set_missing_since(&conn, *dir_id, *missing_since)?;
+    // WHY: a non-empty query only stats the directories it matches, so its cost no longer grows with every known directory.
+    let check_all = explain || query.trim().is_empty();
+    let mut entries = storage::dir_entries(&conn)?;
+    if check_all {
+        entries = reconcile_on_disk(&conn, entries, &clock)?;
     }
-    let candidates: Vec<Candidate> = reconciled
-        .entries
-        .into_iter()
+    let candidates: Vec<Candidate> = entries
+        .iter()
         .map(|entry| {
             let split = paths::split(&entry.path);
             Candidate {
                 name: split.name,
                 folder: split.folder,
                 last_visit: entry.last_visit,
-                missing: entry.missing,
-                path: entry.path,
+                missing: check_all && entry.missing,
+                path: entry.path.clone(),
             }
         })
         .collect();
@@ -302,7 +300,23 @@ fn query_directories(
         print_lines(&list_by_recency(&candidates, &current.path, color));
         return Ok(());
     }
-    let db_ranked = rank::rank(query, &current.path, &candidates, settings.typo_min_length);
+    let mut db_ranked = rank::rank(query, &current.path, &candidates, settings.typo_min_length);
+    if !check_all {
+        let matched: HashSet<&str> = db_ranked
+            .iter()
+            .map(|scored| scored.candidate.path.as_str())
+            .collect();
+        let to_check: Vec<storage::DirEntry> = entries
+            .into_iter()
+            .filter(|entry| matched.contains(entry.path.as_str()))
+            .collect();
+        let missing: HashSet<String> = reconcile_on_disk(&conn, to_check, &clock)?
+            .into_iter()
+            .filter(|entry| entry.missing)
+            .map(|entry| entry.path)
+            .collect();
+        db_ranked.retain(|scored| !missing.contains(&scored.candidate.path));
+    }
     let is_fallback = !query.trim().is_empty() && db_ranked.is_empty();
     let fallback_pool = if is_fallback {
         fallback_candidates(&current.path, no_ignore, &settings)
@@ -436,6 +450,18 @@ fn query_directories(
             Ok(())
         }
     }
+}
+
+fn reconcile_on_disk(
+    conn: &Connection,
+    entries: Vec<storage::DirEntry>,
+    clock: &SystemClock,
+) -> Result<Vec<storage::DirEntry>, Box<dyn Error>> {
+    let reconciled = soft_delete::reconcile(entries, &soft_delete::RealFilesystem, clock.now());
+    for (dir_id, missing_since) in &reconciled.updates {
+        storage::set_missing_since(conn, *dir_id, *missing_since)?;
+    }
+    Ok(reconciled.entries)
 }
 
 fn fallback_candidates(current_path: &str, no_ignore: bool, settings: &Settings) -> Vec<Candidate> {

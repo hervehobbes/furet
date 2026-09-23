@@ -120,7 +120,13 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 
 - `dirs(id, path, key, first_seen, missing_since)` — `key` is the
   lowercased on-disk-cased path, unique; `missing_since` is set/cleared by
-  soft delete (SPEC §10) and never deletes the row.
+  soft delete (SPEC §10) and never deletes the row. A non-empty `furet
+  query` checks on disk only the rows its query matches (flagging or
+  reactivating them before the decision); an empty query and `--explain`
+  check every row. **Discrepancy** with SPEC §10's "absent at query time":
+  an unmatched vanished directory keeps its flag until a query matches it
+  (Hervé's decision, lot 31 — the per-query cost no longer grows with the
+  number of known directories).
 - `visits(id, dir_id, ts, source, session, from_dir_id)` — `source` is one
   of `hook | jump | back | up | fallback | import`; one row per recorded
   visit, never updated or deleted.

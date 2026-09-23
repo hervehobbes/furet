@@ -1,4 +1,12 @@
 ## 2026-09-23 — branch main — v0.1.1
+Done: lot 31 — a non-empty `furet query` stats only the directories its
+query matches (rank with stored flags ignored, reconcile the matches, drop
+the missing ones); empty query and `--explain` still check every row.
+2 new cli tests; CONTRACTS.md notes the SPEC §10 discrepancy.
+Decisions: strategy "only the matching directories" chosen by Hervé over
+top-K and a grace-period column. Next: lot 32 (visits/queries ts indexes).
+
+## 2026-09-23 — branch main — v0.1.1
 Done: lot 30 — `furet query` ranks the database pool once (the old
 `resolve_pool` ranked it fully just to test emptiness, then it was ranked
 again); the fallback pool is built only when that ranking is empty.
