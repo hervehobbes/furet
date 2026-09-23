@@ -1,4 +1,10 @@
 ## 2026-09-23 — branch main — v0.1.1
+Done: lot 32 — migration 3 adds `idx_visits_ts` and `idx_queries_ts`, so
+lot 33's age-based purge on every `furet add` never scans either journal.
+1 new + 5 updated storage tests; DATABASE.md pragma/index tables updated.
+Decisions: none. Next: lot 33 (retention purge, `retention_days`).
+
+## 2026-09-23 — branch main — v0.1.1
 Done: lot 31 — a non-empty `furet query` stats only the directories its
 query matches (rank with stored flags ignored, reconcile the matches, drop
 the missing ones); empty query and `--explain` still check every row.

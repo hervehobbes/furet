@@ -24,7 +24,7 @@ Applied by `storage::open()` on every connection:
 | `foreign_keys` | `ON` | Per-connection in SQLite, never persisted, so re-applied on every open; the foreign keys below are enforced only because of this. |
 | `synchronous` | `NORMAL` | Per-connection. WAL's pairing value: durable across crashes, skips the per-commit `fsync` that `FULL` makes every `furet add` write pay. |
 | `busy_timeout` | `5000` ms | Per-connection, set via rusqlite's `busy_timeout`. Concurrent prompt-hook writers wait instead of failing instantly with `SQLITE_BUSY`. |
-| `user_version` | `2` | Counts how many `MIGRATIONS` scripts have been applied. `migrate()` reads it, then runs each script whose 1-based version exceeds it inside one transaction that also bumps the pragma. Current value is 2: script 1 creates the whole schema, script 2 adds the `visits` indexes. |
+| `user_version` | `3` | Counts how many `MIGRATIONS` scripts have been applied. `migrate()` reads it, then runs each script whose 1-based version exceeds it inside one transaction that also bumps the pragma. Current value is 3: script 1 creates the whole schema, script 2 adds the `visits` ranking indexes, script 3 the `ts` indexes of the retention purge. |
 
 ## Tables
 
@@ -91,6 +91,8 @@ two fixed values, both chosen distinct from any real session id so
 | `idx_dirs_key` | `dirs (key)` | yes | One `dirs` row per comparison key; also the conflict target of `storage::upsert_dir`'s `ON CONFLICT (key)`. |
 | `idx_visits_dir_ts` | `visits (dir_id, ts)` | no | Migration 2. Covers `dir_entries`'s `GROUP BY dir_id` / `MAX(ts)` join and `dir_listing`'s visit join, so neither scans all of `visits` as it grows. |
 | `idx_visits_session_ts` | `visits (session, ts)` | no | Migration 2. Serves `last_visited_dir`'s `WHERE session = ?` with `ORDER BY ts DESC` instead of a full scan plus sort. |
+| `idx_visits_ts` | `visits (ts)` | no | Migration 3. Lets the retention purge delete `visits` rows older than the cutoff without scanning the table. |
+| `idx_queries_ts` | `queries (ts)` | no | Migration 3. Same, for `queries` rows. |
 
 ## Foreign keys
 

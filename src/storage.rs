@@ -63,6 +63,9 @@ const MIGRATIONS: &[&str] = &[
     // WHY: these indexes keep the ranking reads from scanning all of visits as it grows.
     "CREATE INDEX idx_visits_dir_ts ON visits (dir_id, ts);
     CREATE INDEX idx_visits_session_ts ON visits (session, ts);",
+    // WHY: the retention purge deletes by age on every add, which must not scan either journal.
+    "CREATE INDEX idx_visits_ts ON visits (ts);
+    CREATE INDEX idx_queries_ts ON queries (ts);",
 ];
 
 /// Resolves the directory holding the database and the log files:
@@ -441,7 +444,7 @@ mod tests {
 
     fn managed_index_count(conn: &Connection) -> i64 {
         conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_dirs_key', 'idx_visits_dir_ts', 'idx_visits_session_ts')",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_dirs_key', 'idx_visits_dir_ts', 'idx_visits_session_ts', 'idx_visits_ts', 'idx_queries_ts')",
             [],
             |row| row.get(0),
         )
@@ -449,12 +452,12 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_creates_all_tables_and_reaches_user_version_2() {
+    fn fresh_database_creates_all_tables_and_reaches_user_version_3() {
         let (_dir, path) = temp_db();
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 2);
+        assert_eq!(user_version(&conn), 3);
         assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 5);
     }
 
     #[test]
@@ -462,9 +465,9 @@ mod tests {
         let (_dir, path) = temp_db();
         drop(opened(&path));
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 2);
+        assert_eq!(user_version(&conn), 3);
         assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 5);
         let dirs_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
@@ -476,7 +479,25 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_database_migrates_to_version_2_adding_the_visits_indexes() {
+    fn a_version_2_database_migrates_to_version_3_adding_the_ts_indexes() {
+        let (_dir, path) = temp_db();
+        {
+            let old = Connection::open(&path).expect("the legacy database opens");
+            old.execute_batch(super::MIGRATIONS[0])
+                .expect("the version 1 schema applies");
+            old.execute_batch(super::MIGRATIONS[1])
+                .expect("the version 2 indexes apply");
+            old.execute_batch("PRAGMA user_version = 2;")
+                .expect("the legacy version is stamped");
+        }
+        let conn = opened(&path);
+        assert_eq!(user_version(&conn), 3);
+        assert_eq!(managed_table_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 5);
+    }
+
+    #[test]
+    fn a_version_1_database_migrates_to_version_3_adding_every_index() {
         let (_dir, path) = temp_db();
         {
             let old = Connection::open(&path).expect("the legacy database opens");
@@ -486,9 +507,9 @@ mod tests {
                 .expect("the legacy version is stamped");
         }
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 2);
+        assert_eq!(user_version(&conn), 3);
         assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 3);
+        assert_eq!(managed_index_count(&conn), 5);
         let dirs_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
@@ -702,7 +723,7 @@ mod tests {
             nested.join("logs")
         );
         let conn = connection.expect("open works under FURET_DATA_DIR");
-        assert_eq!(user_version(&conn), 2);
+        assert_eq!(user_version(&conn), 3);
         assert!(nested.join("furet.db").exists());
     }
 
