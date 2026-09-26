@@ -2,9 +2,6 @@
 
 - Idées de "marques/marqueurs", comme dans vim, pour naviguer d'un répertoire à un autre.
 
-**2. `furet remove <path>`**
-C'est l'équivalent de `zoxide remove` : oublier un répertoire indésirable. Point de conception à trancher : soit tu réutilises `missing_since`, mais ça mélange la sémantique avec le soft delete, soit tu ajoutes une colonne `removed_at`. Dans ce second cas, c'est un lot schéma à part, avec la mise à jour de `DATABASE.md`.
-
 **3. Clé `exclude_dirs` dans `config.toml`**
 Des globs de répertoires jamais enregistrés par `add`, comme `_ZO_EXCLUDE_DIRS` dans zoxide. C'est de la config pure, sans schéma. Petit piège : `add` ne lit pas la config aujourd'hui (« add stays cheap »), donc il faudra décider si ce coût est acceptable.
 
