@@ -7,6 +7,7 @@ use std::process::Output;
 use assert_cmd::Command;
 use assert_fs::TempDir;
 use furet::paths;
+use furet::project;
 use rusqlite::{Connection, params};
 
 struct Sandbox {
@@ -98,6 +99,16 @@ fn query(sandbox: &Sandbox, query: &str, cwd: &Path, list: bool) -> Output {
     if list {
         cmd.arg("--list");
     }
+    run(&mut cmd)
+}
+
+fn query_with(sandbox: &Sandbox, args: &[&str], cwd: &Path) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("query");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.current_dir(cwd);
     run(&mut cmd)
 }
 
@@ -2686,5 +2697,161 @@ fn a_removed_directory_comes_back_on_the_next_add() {
     assert_eq!(
         text(&remaining.stdout),
         format!("{}\n", canonical_child(&world, "tokio"))
+    );
+}
+
+#[test]
+fn query_local_ignores_a_better_match_outside_the_project() {
+    let world = sandbox(&["proj/.git", "proj/tokio", "elsewhere/tokio"]);
+    assert!(
+        add(&world, &world.child("proj/tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(
+            &world,
+            &world.child("elsewhere/tokio"),
+            "session-1",
+            None,
+            None
+        )
+        .status
+        .success()
+    );
+    visited_at(&world, &world.child("proj/tokio"), 1_700_000_001);
+    visited_at(&world, &world.child("elsewhere/tokio"), 1_700_000_002);
+    let cwd = world.child("proj");
+    let global = query_with(&world, &["tokio"], &cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    let outside = paths::canonical(&world.child("elsewhere/tokio"))
+        .expect("the outside candidate canonicalizes")
+        .path;
+    assert_eq!(text(&global.stdout), format!("{outside}\n"));
+    let local = query_with(&world, &["--local", "tokio"], &cwd);
+    assert!(local.status.success(), "stderr: {}", text(&local.stderr));
+    let inside = paths::canonical(&world.child("proj/tokio"))
+        .expect("the in-project candidate canonicalizes")
+        .path;
+    assert_eq!(text(&local.stdout), format!("{inside}\n"));
+}
+
+#[test]
+fn query_local_outside_a_repository_fails_and_records_nothing() {
+    let world = sandbox(&["cwd"]);
+    let cwd = world.child("cwd");
+    assert!(
+        project::root(
+            world.tree.path().to_string_lossy().as_ref(),
+            &project::RealGitMarker
+        )
+        .is_none(),
+        "the sandbox tree must not sit inside a git repository"
+    );
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["--local", "zigzag"],
+        vec!["--list", "--local", "zigzag"],
+        vec!["--explain", "--local", "zigzag"],
+    ];
+    for args in &cases {
+        let out = query_with(&world, args, &cwd);
+        assert!(!out.status.success(), "args: {args:?}");
+        assert!(out.stdout.is_empty(), "args: {args:?}");
+        assert_eq!(
+            text(&out.stderr),
+            "furet: not inside a git repository\n",
+            "args: {args:?}"
+        );
+        assert!(
+            !world.data.path().join("furet.db").exists()
+                || scalar(&db(&world), "SELECT COUNT(*) FROM queries") == 0,
+            "args: {args:?}"
+        );
+    }
+}
+
+#[test]
+fn query_local_with_an_empty_query_prints_the_project_root() {
+    let world = sandbox(&["proj/.git", "proj/sub"]);
+    let cwd = world.child("proj/sub");
+    let root = paths::canonical(&world.child("proj"))
+        .expect("the project root canonicalizes")
+        .path;
+    for args in [vec!["--local"], vec!["--local", "   "]] {
+        let out = query_with(&world, &args, &cwd);
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), format!("{root}\n"));
+        assert!(
+            !world.data.path().join("furet.db").exists()
+                || scalar(&db(&world), "SELECT COUNT(*) FROM queries") == 0
+        );
+    }
+}
+
+#[test]
+fn query_local_fallback_never_climbs_above_the_root() {
+    let world = sandbox(&["proj/.git", "outproject"]);
+    let cwd = world.child("proj");
+    let global = query_with(&world, &["outproject"], &cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    let expected = paths::canonical(&world.child("outproject"))
+        .expect("the sibling of the root canonicalizes")
+        .path;
+    assert_eq!(text(&global.stdout), format!("{expected}\n"));
+    let local = query_with(&world, &["--local", "outproject"], &cwd);
+    assert!(!local.status.success());
+    assert!(local.stdout.is_empty());
+}
+
+#[test]
+fn query_list_local_with_an_empty_query_lists_the_project_by_recency() {
+    let world = sandbox(&["proj/.git", "proj/alpha", "proj/beta", "outside/gamma"]);
+    for child in ["proj/alpha", "proj/beta", "outside/gamma"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    visited_at(&world, &world.child("proj/alpha"), 1_700_000_001);
+    visited_at(&world, &world.child("proj/beta"), 1_700_000_002);
+    let cwd = world.child("proj");
+    let out = query_with(&world, &["--list", "--local"], &cwd);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let beta = paths::canonical(&world.child("proj/beta"))
+        .expect("beta canonicalizes")
+        .path;
+    let alpha = paths::canonical(&world.child("proj/alpha"))
+        .expect("alpha canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{beta}\n{alpha}\n"));
+}
+
+#[test]
+fn query_explain_local_prints_the_project_root_line() {
+    let world = sandbox(&["proj/.git", "proj/tokio"]);
+    assert!(
+        add(&world, &world.child("proj/tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let cwd = world.child("proj");
+    let root = paths::canonical(&world.child("proj"))
+        .expect("the project root canonicalizes")
+        .path;
+    let out = query_with(&world, &["--explain", "--local", "tokio"], &cwd);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let stderr = text(&out.stderr);
+    assert!(
+        stderr.starts_with(&format!("normalized query: tokio\nproject root: {root}\n")),
+        "{stderr}"
+    );
+    let global = query_with(&world, &["--explain", "tokio"], &cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    assert!(
+        !text(&global.stderr).contains("project root:"),
+        "{}",
+        text(&global.stderr)
     );
 }

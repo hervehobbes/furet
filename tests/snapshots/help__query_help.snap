@@ -14,4 +14,5 @@ Options:
       --explain    Print the scoring report on stderr and jump nowhere
       --color      Wrap every `--list` path in its `LS_COLORS` directory color
       --no-ignore  Disable gitignore rules in the disk fallback walk (SPEC section 11)
+  -l, --local      Restrict candidates to the current git project (nearest ancestor with a .git entry)
   -h, --help       Print help

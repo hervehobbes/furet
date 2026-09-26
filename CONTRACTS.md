@@ -189,11 +189,35 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   one visit; `source` defaults to `hook`. A path matching `exclude_dirs` is
   not recorded (exit 0, nothing on stdout or stderr, the database is not
   opened; `--from` is unaffected).
-- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore]` — ranks
+- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
   on a stage-2 tie, reading the answer from stdin. An omitted `<text>` is
   the empty query (`fi` relies on it for its initial fzf list).
+  `--local` (`-l`, SPEC §19, Hervé 2026-09-26) restricts the candidate pool
+  to the current **git project**: the project root is the nearest of the
+  canonical current directory and its ancestors that holds a `.git` entry —
+  a directory or a file, so worktrees and submodules count
+  (`src/project.rs`: the pure `root` over the injectable `GitMarker` trait,
+  `RealGitMarker` checking `Path::join(".git").exists()`). The root is
+  computed before `storage::open`; when it does not exist the command fails
+  with `furet: not inside a git repository`, exit 1, in every mode (plain,
+  `--list`, `--explain`) and nothing is written. Entries outside the root
+  (`project::within` on the lowercased keys: the root itself, everything
+  below it, never a sibling sharing a text prefix) are dropped right after
+  `storage::dir_entries`, before any reconcile, so reconcile, `--list`,
+  ranking, decision, and journal all see only the scoped pool; the usual
+  current-directory and `missing` exclusions are unchanged. The disk
+  fallback is capped at the root (`fallback::Options::stop_at`: the climb
+  breaks before moving to a parent once it reaches `stop_at`, so with the
+  current directory equal to the root no ancestor is walked; `fallback.up`
+  still applies below it). An empty query with `--local` and without
+  `--list`/`--explain` prints the project root on stdout and exits 0 before
+  the database is even opened — no reconcile, no `queries` row (`f -l`
+  records the jump itself as `--source jump`). `--explain` gains a
+  `project root: <path>` line right after `normalized query:` (absent
+  without `--local`); the `queries` row is written exactly as for a global
+  query, the scope is not stored.
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited
@@ -215,7 +239,25 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   the ranked `furet query --list` lines in order (an empty word completes the
   recency list; `-`/`--explain` and `.`/`..`/`...` words get nothing; paths
   with PowerShell metacharacters are emitted single-quoted, `'` doubled).
-  The generated script is covered by
+  With `-l`/`--local` as the first argument (SPEC §19), the jump function
+  strips it before every dispatch and jumps only inside the project: with a
+  query it calls `furet query --local -- $query`, without one it calls
+  `furet query --local` and jumps to the project root, recording the landing
+  as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, direct-path,
+  and home branches are never reached. `f -l <query> --explain` forwards the
+  scope (`furet query --explain --local -- $query`, decision 2, Hervé
+  2026-09-26). `fi -l` scopes the whole interactive flow: the fzf initial
+  list and every reload (`furet query --list --color --local [ {q}]`) and
+  the console menu (`furet query --list --local $query`). For Tab completion
+  after `-l`, a second, `-Native` registration handles the lines where
+  pwsh's parameter binding never reaches the regular completer (a first
+  `-l` token is treated as an unknown named parameter, so `f -l <Tab>` and
+  `f -l cl<Tab>` arrive through the native fallback with the raw line and
+  the cursor column instead of the word): it reconstructs the word and runs
+  `furet query --list --local -- $word` under the same quoting, `-`/dots,
+  stderr, and LASTEXITCODE rules; `--local` lines and a third argument stay
+  on the regular completer, which returns nothing for them. The generated
+  script is covered by
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.
 - `furet queries --failures` — prints tab-separated probable-mistake rows
@@ -300,8 +342,9 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 |---|---|---|
 | `add` | path canonicalizes to a directory and the visit is recorded | path does not exist (`add_rejects_a_path_that_does_not_exist`), path is a file, not a directory (`add_rejects_a_file_path`, `paths::PathError::NotADirectory`), or a DB error |
 | `query` (plain) | a candidate resolves (stage 1, stage 2, or fallback) and prints it | nothing matches at all (`query_with_no_recorded_directory_and_no_fallback_hit_fails_on_stderr`), or a menu is cancelled (`query_menu_cancels_on_an_out_of_range_number`, `..._on_an_empty_answer_and_on_no_answer_at_all`) |
-| `query --list` | always, even with zero candidates (`query_list_with_no_candidate_prints_nothing_and_exits_zero`) | — |
-| `query --explain` | always, even with zero candidates (`explain_exits_zero_when_nothing_matches`) | — |
+| `query --list` | always, even with zero candidates (`query_list_with_no_candidate_prints_nothing_and_exits_zero`) | with `--local`, outside a git repository (`query_local_outside_a_repository_fails_and_records_nothing`) |
+| `query --explain` | always, even with zero candidates (`explain_exits_zero_when_nothing_matches`) | with `--local`, outside a git repository (`query_local_outside_a_repository_fails_and_records_nothing`) |
+| `query --local` | exit 0 with the project root on stdout for an empty query without `--list`/`--explain` (`query_local_with_an_empty_query_prints_the_project_root`) | outside a git repository, in every mode (`query_local_outside_a_repository_fails_and_records_nothing`) |
 | `up <n>` | `n >= 1` and that many ancestors exist | `n == 0` (`up_rejects_zero_levels`) or too few ancestors (`up_fails_when_there_are_fewer_ancestors_than_requested`) |
 | `back --session` | the session has at least 2 visits | fewer than 2 visits for that session (`back_fails_when_the_session_has_fewer_than_two_visits`) |
 | `init pwsh` | always — pure string rendering, no fallible step | — |

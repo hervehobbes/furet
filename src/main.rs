@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
@@ -16,6 +16,7 @@ use furet::explain::{self, Origin};
 use furet::fallback;
 use furet::import;
 use furet::paths;
+use furet::project;
 use furet::rank::{self, Candidate, Stage};
 use furet::remove;
 use furet::soft_delete;
@@ -72,6 +73,9 @@ enum Command {
         /// Disable gitignore rules in the disk fallback walk (SPEC section 11).
         #[arg(long)]
         no_ignore: bool,
+        /// Restrict candidates to the current git project (nearest ancestor with a .git entry).
+        #[arg(short, long)]
+        local: bool,
     },
     /// Print the ancestor `n` levels above the current directory.
     Up {
@@ -178,7 +182,10 @@ fn main() {
             explain,
             color,
             no_ignore,
-        } => report(query_directories(&query, list, explain, color, no_ignore)),
+            local,
+        } => report(query_directories(
+            &query, list, explain, color, no_ignore, local,
+        )),
         Command::Up { n } => report(up(n)),
         Command::Back { session } => report(back(&session)),
         Command::Init { shell } => match shell {
@@ -299,17 +306,39 @@ fn query_directories(
     explain: bool,
     color: bool,
     no_ignore: bool,
+    local: bool,
 ) -> Result<(), Box<dyn Error>> {
-    debug!(query, list, explain, color, no_ignore, "query");
+    debug!(query, list, explain, color, no_ignore, local, "query");
     let settings = load_settings();
     debug!(?settings, "effective settings");
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
+    let project_root = if local {
+        Some(
+            project::root(&current.path, &project::RealGitMarker)
+                .ok_or("not inside a git repository")?,
+        )
+    } else {
+        None
+    };
+    // WHY: the root itself is the answer Hervé wants from `f -l`, so no database is even opened.
+    if let Some(root) = &project_root
+        && query.trim().is_empty()
+        && !list
+        && !explain
+    {
+        print_result(root);
+        return Ok(());
+    }
     let conn = storage::open()?;
     // WHY: a non-empty query only stats the directories it matches, so its cost no longer grows with every known directory.
     let check_all = explain || query.trim().is_empty();
     let mut entries = storage::dir_entries(&conn)?;
+    if let Some(root) = &project_root {
+        let root_key = root.to_lowercase();
+        entries.retain(|entry| project::within(&entry.path.to_lowercase(), &root_key));
+    }
     if check_all {
         entries = reconcile_on_disk(&conn, entries, &clock)?;
     }
@@ -349,7 +378,7 @@ fn query_directories(
     }
     let is_fallback = !query.trim().is_empty() && db_ranked.is_empty();
     let fallback_pool = if is_fallback {
-        fallback_candidates(&current.path, no_ignore, &settings)
+        fallback_candidates(&current.path, no_ignore, &settings, project_root.as_deref())
     } else {
         Vec::new()
     };
@@ -371,7 +400,9 @@ fn query_directories(
         } else {
             Origin::Database
         };
-        let report = explain::explain(query, &current.path, pool, origin, settings.typo_min_length);
+        let mut report =
+            explain::explain(query, &current.path, pool, origin, settings.typo_min_length);
+        report.project_root = project_root.clone();
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
@@ -494,12 +525,18 @@ fn reconcile_on_disk(
     Ok(reconciled.entries)
 }
 
-fn fallback_candidates(current_path: &str, no_ignore: bool, settings: &Settings) -> Vec<Candidate> {
+fn fallback_candidates(
+    current_path: &str,
+    no_ignore: bool,
+    settings: &Settings,
+    stop_at: Option<&str>,
+) -> Vec<Candidate> {
     let options = fallback::Options {
         child_depth: settings.fallback.depth,
         ancestor_levels: settings.fallback.up,
         respect_gitignore: !(no_ignore || settings.fallback.no_ignore),
         exclude: settings.fallback.exclude.clone(),
+        stop_at: stop_at.map(PathBuf::from),
     };
     fallback::discover(Path::new(current_path), options)
 }

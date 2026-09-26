@@ -1,4 +1,22 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 40 — `furet query --local` (`-l`): the pool is scoped to the git
+project (nearest ancestor with a `.git` directory **or** file) via pure
+`src/project.rs` (`GitMarker` trait); entries outside are dropped before
+any reconcile, the disk fallback stops at the root (`Options::stop_at`),
+`--explain` gains a `project root:` line, an empty query prints the root
+before the DB opens, exit 1 outside a repo. pwsh: `f -l` (root jump with
+`--source jump`), `f -l --explain` forwards `--local`, `fi -l` scopes fzf
++ menu, `f -l <Tab>` completes in-project. 6 unit + 6 cli + 6 executed
+pwsh tests; query help snapshot; README/CONTRACTS/ARCHITECTURE/example.md.
+Decisions: one beyond the prompt — a first `-l` token defeats pwsh's
+parameter binding, so the regular FuretArgs completer never fires for
+those lines; a second `-Native` registration reconstructs the word from
+the raw line + cursor column (no overlap verified on pwsh 7.6.6). zoxide
+check: no project/base-directory scoping exists — closest is
+`_ZO_EXCLUDE_DIRS`, a global default-`$HOME` filter; `--local` is a furet
+extension. Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 39 — `furet init pwsh` output now leads with a clap_complete
 4.6.11 (MIT OR Apache-2.0) PowerShell block (native completer for
 `furet`'s subcommands and options), then the integration script; `--cmd`

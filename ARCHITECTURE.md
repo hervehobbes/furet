@@ -15,9 +15,12 @@ per invalid key (reading the file is `main::load_settings`'s job);
 `import` parses `<score> <path>` lines, deduplicates them by key, and
 plans synthetic timestamps as pure functions; `calibration::probable_failures`
 flags probably-mistaken jumps from the journaled `queries` and `visits`
-rows alone; and `soft_delete::reconcile` is deterministic given an injected
+rows alone; `soft_delete::reconcile` is deterministic given an injected
 `Filesystem` trait — `RealFilesystem`, the disk check, is the outer
-implementation. On the outer side: `fallback::discover` walks the real
+implementation; and `project::root` finds the nearest ancestor holding a
+`.git` entry through the injected `GitMarker` trait (`RealGitMarker`, the
+`.git` existence check, is the outer implementation). On the outer side:
+`fallback::discover` walks the real
 disk with the `ignore` crate when the database has no candidate, and
 `logging::init` — a binary-only module under `main`, not part of the
 library — installs the daily-rotated tracing file logger under

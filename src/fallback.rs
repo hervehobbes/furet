@@ -27,6 +27,8 @@ pub struct Options {
     pub respect_gitignore: bool,
     /// Directory names skipped everywhere in the walk, replacing the default list.
     pub exclude: Vec<String>,
+    /// Ancestor the climb never goes above; its own children are still walked.
+    pub stop_at: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -39,6 +41,7 @@ impl Default for Options {
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect(),
+            stop_at: None,
         }
     }
 }
@@ -61,6 +64,9 @@ pub fn discover(current_dir: &Path, options: Options) -> Vec<Candidate> {
     );
     let mut ancestor = current_dir.to_path_buf();
     for _ in 0..options.ancestor_levels {
+        if options.stop_at.as_deref() == Some(ancestor.as_path()) {
+            break;
+        }
         let Some(parent) = ancestor.parent().map(Path::to_path_buf) else {
             break;
         };
@@ -277,6 +283,31 @@ mod tests {
                 .iter()
                 .all(|candidate| candidate.name != current_key.to_string_lossy()),
             "{found:?}"
+        );
+    }
+
+    #[test]
+    fn stop_at_keeps_the_climb_at_the_project_root() {
+        let root = TempDir::new().expect("a fresh scratch root");
+        let current = make_dir(root.path(), "proj");
+        make_dir(&current, "inproject");
+        make_dir(root.path(), "outsider");
+        let options = Options {
+            stop_at: Some(current.clone()),
+            ..options(true)
+        };
+        let found = discover(&current, options);
+        let found_names: Vec<String> = found
+            .iter()
+            .map(|candidate| candidate.name.clone())
+            .collect();
+        assert!(
+            found_names.contains(&"inproject".to_owned()),
+            "{found_names:?}"
+        );
+        assert!(
+            !found_names.contains(&"outsider".to_owned()),
+            "{found_names:?}"
         );
     }
 }

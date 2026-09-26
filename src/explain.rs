@@ -40,6 +40,8 @@ pub enum Origin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report<'a> {
     pub normalized_query: String,
+    /// Set by `query --local`: the git project root the pool was scoped to.
+    pub project_root: Option<String>,
     pub evaluations: Vec<Evaluation<'a>>,
     pub decision: Decision<'a>,
     pub deciding_criterion: Option<TieBreak>,
@@ -91,6 +93,7 @@ pub fn explain<'a>(
     }
     Report {
         normalized_query: Normalized::new(query).text(),
+        project_root: None,
         decision: decision::decide(&ranked),
         deciding_criterion: rank::deciding_criterion(&ranked),
         evaluations,
@@ -121,6 +124,9 @@ fn eliminate(
 /// stable, so it can be snapshot tested.
 pub fn render(report: &Report) -> String {
     let mut rendered = format!("normalized query: {}\n", report.normalized_query);
+    if let Some(root) = &report.project_root {
+        rendered.push_str(&format!("project root: {root}\n"));
+    }
     if report.origin == Origin::Fallback {
         rendered.push_str("origin: fallback\n");
     }

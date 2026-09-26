@@ -97,6 +97,36 @@ par la branche chemin direct de `f`. Sans fragment (`f <Tab>`), la liste
 complète est proposée. La complétion ne s'applique qu'au premier argument :
 ni `-`/`--explain`, ni `.`/`..`/`...`, ni un deuxième fragment.
 
+### Rester dans le projet courant
+
+`f -l` restreint la recherche au **projet git courant** : la racine du
+projet est le plus proche ancêtre du répertoire courant qui contient une
+entrée `.git` — un répertoire **ou un fichier** (un worktree ou un
+submodule compte donc aussi). Les répertoires connus situés hors de cette
+racine sont ignorés, même mieux classés, et le fallback disque ne remonte
+jamais au-dessus d'elle :
+
+```powershell
+PS C:\dev\furet\src> f -l mcp
+PS C:\dev\furet\...>        # jamais en dehors de C:\dev\furet
+```
+
+Appelé sans argument, `f -l` saute directement à la racine du projet :
+
+```powershell
+PS C:\dev\furet\src> f -l
+PS C:\dev\furet>
+```
+
+Hors d'un dépôt git, `f -l` échoue (`furet: not inside a git repository`)
+et ne déplace rien. `f -l <Tab>` ne propose que des répertoires du projet.
+`fi -l` applique la même restriction au choix interactif (liste initiale et
+rechargements de `fzf` compris), et `f -l mcp --explain` affiche le rapport
+de score de la requête restreinte, avec une ligne `project root:` nommant
+la racine. Côté binaire, le drapeau s'appelle `--local` et se combine avec
+les autres : `furet query --local --list`, `furet query --list --color
+--local`, etc.
+
 ### Chemin direct
 
 Si l'argument est un chemin qui existe tel quel, `f` y saute directement

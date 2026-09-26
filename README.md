@@ -32,8 +32,17 @@ extra profile line.
 ## Usage
 
 - `f <query>` — jump to the best-ranked directory matching `<query>`.
+- `f -l <query>` — same, restricted to the current git project: the
+  **project root** is the nearest ancestor of the current directory that
+  holds a `.git` entry (directory or file, so worktrees and submodules
+  count); known directories outside it are ignored, and the disk fallback
+  never climbs above it.
+- `f -l` (no argument) — jump to the project root itself.
 - `f <partial><Tab>` — cycle through the directories furet ranks for
   `<partial>` (first argument only); accepting one inserts the full path.
+  After `f -l <Tab>`, only in-project directories are proposed.
+- `f -l <query> --explain` — print the scoring report of the project-scoped
+  jump on stderr without jumping or recording.
 - `f <path>` — jump straight to `<path>` if it exists on disk.
 - `f ..`, `f ...` — go up 1, 2, ... levels.
 - `f -` — jump back to the previous directory in this session.
@@ -42,7 +51,13 @@ extra profile line.
 - `f <query> --explain` — print the scoring report for `<query>` on stderr
   without jumping or recording.
 - `fi [<query>]` — interactively pick from ranked matches (uses `fzf` if
-  installed, else a numbered console menu).
+  installed, else a numbered console menu). `fi -l [<query>]` restricts the
+  candidates to the current git project, before and after every fzf reload.
+- `furet query --local <query>` — the flag behind `f -l`: restrict the
+  candidate pool to the current git project; combines with `--list`,
+  `--explain`, `--color`, and `--no-ignore`. Outside a git repository it
+  fails with `furet: not inside a git repository` (exit 1); an empty query
+  without `--list`/`--explain` prints the project root.
 - `furet query <query> --explain` — print the scoring report for `<query>`
   on stderr without jumping.
 - `furet queries --failures` — list jumps that were probably mistakes

@@ -8,6 +8,7 @@ use std::process::Command;
 use assert_cmd::cargo::cargo_bin;
 use assert_fs::TempDir;
 use furet::paths;
+use furet::project;
 use rusqlite::Connection;
 
 struct Sandbox {
@@ -179,7 +180,7 @@ const HIDE_FZF: &str = "$env:PATH = ((($env:PATH -split ';') | Where-Object { \
 const COMPLETION_MARKER: &str = "FURET_TEST_COMPLETION=";
 
 // WHY: TabExpansion2 is the function a real Tab press runs, so this exercises the completer interactively.
-fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
+fn completions_in(sandbox: &Sandbox, init_args: &str, start: &Path, line: &str) -> Vec<String> {
     let body = format!(
         "$completed = TabExpansion2 -inputScript {line} -cursorColumn {column}\n\
          foreach ($match in $completed.CompletionMatches) {{\n\
@@ -189,7 +190,7 @@ fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
         column = line.chars().count(),
         marker = COMPLETION_MARKER,
     );
-    let run = run_pwsh(sandbox, "", init_args, sandbox.tree.path(), &body);
+    let run = run_pwsh(sandbox, "", init_args, start, &body);
     run.stdout
         .lines()
         .filter_map(|l| l.strip_prefix(COMPLETION_MARKER))
@@ -197,11 +198,15 @@ fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
         .collect()
 }
 
+fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
+    completions_in(sandbox, init_args, sandbox.tree.path(), line)
+}
+
 // WHY: the expectation calls furet itself, so the ordering claim rests on the real ranking.
-fn query_list(sandbox: &Sandbox, args: &[&str]) -> Vec<String> {
+fn query_list_in(sandbox: &Sandbox, cwd: &Path, args: &[&str]) -> Vec<String> {
     let out = sandbox
         .furet()
-        .current_dir(sandbox.tree.path())
+        .current_dir(cwd)
         .args(args)
         .output()
         .expect("furet query --list runs");
@@ -214,6 +219,10 @@ fn query_list(sandbox: &Sandbox, args: &[&str]) -> Vec<String> {
         .lines()
         .map(str::to_owned)
         .collect()
+}
+
+fn query_list(sandbox: &Sandbox, args: &[&str]) -> Vec<String> {
+    query_list_in(sandbox, sandbox.tree.path(), args)
 }
 
 #[test]
@@ -662,5 +671,145 @@ fn tab_completion_leaves_lastexitcode_untouched() {
         "42",
         "stderr: {}",
         run.stderr
+    );
+}
+
+#[test]
+fn f_local_jumps_to_the_in_project_match_and_records_a_jump() {
+    let world = sandbox(&["proj/.git", "proj/tokio", "elsewhere/tokio"]);
+    seed(&world, &world.child("proj/tokio"), "seed");
+    seed(&world, &world.child("elsewhere/tokio"), "seed");
+    let start = world.child("proj");
+    let run = run_pwsh(&world, "", "", &start, "f -l tokio");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("proj/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 3);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn f_local_without_a_query_jumps_to_the_project_root() {
+    let world = sandbox(&["proj/.git", "proj/sub"]);
+    let start = world.child("proj/sub");
+    let run = run_pwsh(&world, "", "", &start, "f -l");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("proj")),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn f_local_outside_a_repository_stays_put_and_records_nothing() {
+    let world = sandbox(&["start"]);
+    let start = world.child("start");
+    assert!(
+        project::root(
+            world.tree.path().to_string_lossy().as_ref(),
+            &project::RealGitMarker
+        )
+        .is_none(),
+        "the sandbox tree must not sit inside a git repository"
+    );
+    let run = run_pwsh(&world, "", "", &start, "f -l tokio");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM visits") == 0
+    );
+}
+
+#[test]
+fn f_local_explain_reports_the_project_root_without_moving() {
+    let world = sandbox(&["proj/.git", "proj/tokio", "proj/sub"]);
+    seed(&world, &world.child("proj/tokio"), "seed");
+    let start = world.child("proj/sub");
+    let run = run_pwsh(&world, "", "", &start, "f -l tokio --explain");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("normalized query: tokio"),
+        "stderr: {}",
+        run.stderr
+    );
+    let root = canonical(&world.child("proj"));
+    assert!(
+        run.stderr.contains(&format!("project root: {root}\n")),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
+fn fi_local_menu_branch_lists_only_the_project() {
+    let world = sandbox(&["proj/.git", "proj/alpha", "proj/beta", "outside/gamma"]);
+    for child in ["proj/alpha", "proj/beta", "outside/gamma"] {
+        seed(&world, &world.child(child), "seed");
+    }
+    let start = world.child("proj");
+    let body = format!("{HIDE_FZF}function global:Read-Host {{ '' }}\nfi -l");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout.contains(&canonical(&world.child("proj/alpha"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.contains(&canonical(&world.child("proj/beta"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        !run.stdout
+            .contains(&canonical(&world.child("outside/gamma"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 3);
+}
+
+#[test]
+fn tab_completing_after_local_proposes_project_candidates() {
+    let world = sandbox(&["proj/.git", "proj/clio", "outside/clio"]);
+    seed(&world, &world.child("proj/clio"), "seed");
+    seed(&world, &world.child("outside/clio"), "seed");
+    let proj = world.child("proj");
+    let expected_empty = query_list_in(&world, &proj, &["query", "--list", "--local", "--", ""]);
+    assert_eq!(
+        expected_empty,
+        vec![canonical(&world.child("proj/clio"))],
+        "the project's empty-query list holds exactly the in-project candidate"
+    );
+    assert_eq!(
+        completions_in(&world, "", &proj, "f -l "),
+        expected_empty,
+        "`f -l <Tab>` must complete the project's recency list"
+    );
+    let expected_cl = query_list_in(&world, &proj, &["query", "--list", "--local", "--", "cl"]);
+    assert_eq!(
+        expected_cl,
+        vec![canonical(&world.child("proj/clio"))],
+        "the project's ranked list holds exactly the in-project candidate"
+    );
+    assert_eq!(
+        completions_in(&world, "", &proj, "f -l cl"),
+        expected_cl,
+        "`f -l cl<Tab>` must complete the project's ranked candidates"
+    );
+    let candidate = canonical(&world.child("proj/clio"));
+    let too_long = completions_in(&world, "", &proj, "f -l cl ");
+    assert!(
+        !too_long.iter().any(|text| text.contains(&candidate)),
+        "`f -l cl <Tab>` must propose no furet candidate {candidate}: {too_long:?}"
     );
 }
