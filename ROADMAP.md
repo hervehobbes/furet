@@ -24,3 +24,34 @@
 | 19 | `home` config key and the `furet home` subcommand |
 | 20 | `furet import zoxide` seeds the database from `zoxide query -ls` |
 | 21 | Stage 2 capped at distance 1 for queries shorter than 6 characters |
+| 22 | SPEC §13 ranking scenario suite extended to 42 cases |
+| 23 | Docs realigned with the code (ROADMAP, README, ARCHITECTURE, DATABASE, CONTRACTS) |
+| 24 | `--help` trailer adds config file and log directory; help pages pinned by insta snapshots |
+| 25 | pwsh tab completer on the jump function's first argument |
+| 26 | `furet list [--all]` |
+| 27 | Migration 2: `visits` ranking indexes; `synchronous = NORMAL`, 5 s `busy_timeout` |
+| 28 | `furet query`'s `<QUERY>` optional (fixes `fi`'s initial fzf list) |
+| 29 | An empty `FURET_DATA_DIR` counts as unset |
+| 30 | Single ranking pass in `furet query`; `upsert_dir` via `INSERT ... RETURNING` |
+| 31 | A non-empty query reconciles only the directories it matches |
+| 32 | Migration 3: `ts` indexes on `visits` and `queries` |
+| 33 | `retention_days` config key and the retention purge in `furet add` |
+| 34 | `furet list --paths` (`-p`) |
+| 35 | `furet list` ordered by path, ignoring case |
+| 36 | `furet remove <pattern> [--confirm]` |
+| 37 | `furet remove`: name patterns match any path segment; `*`-prefixed path patterns are not anchored |
+| 38 | `exclude_dirs` config key honored by `add`, the disk fallback, and `import zoxide` |
+
+## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
+
+| Lot | Content | SPEC-v2 |
+|-----|---------|---------|
+| 39 | `furet` subcommand completions (`clap_complete`) embedded in `furet init pwsh` | §18 |
+| 40 | Project-scoped query: `furet query --local`, `f -l`, `fi -l`, Tab on the second token | §19 |
+| 41 | Opt-in `nucleo` stage-1 engine (`engine` config key, `--engine`) | §20 |
+| 42 | `furet remove`: per-directory `[y/N/a/q]` confirmation, `--yes`, `--dry-run` | §21 |
+| 43 | `furet remove --missing` (full reconcile first, confirmation by default) | §21 |
+| 44 | `furet stats [--top <n>]` | §22 |
+| 45 | fzf preview in `fi` and the `furet preview` subcommand | §23 |
+| 46 | Query memory, part A: journal menu and `fi` picks (`outcome = 'pick'`, `furet add --query`) | §24 |
+| 47 | Query memory, part B: the remembered directory ranks first (`query_memory` config key); version 0.2.0 | §24 |
