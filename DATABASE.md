@@ -42,7 +42,7 @@ Applied by `storage::open()` on every connection:
 
 Rows older than `retention_days` (config, default 365, `0` = never) are
 deleted by `storage::purge_before` on every `furet add`, as are `queries`
-rows; `dirs` rows are never deleted.
+rows; `dirs` rows are deleted only by `furet remove`.
 
 | Column | Type | Constraints | Holds |
 |---|---|---|---|
@@ -105,4 +105,7 @@ two fixed values, both chosen distinct from any real session id so
 - `queries.result_dir_id` → `dirs.id` (optional)
 
 No `ON DELETE` action is declared on any of them; enforcement relies on the
-`foreign_keys = ON` pragma above.
+`foreign_keys = ON` pragma above. `storage::remove_dirs` (`furet remove`)
+clears the three references itself before deleting a `dirs` row — other
+visits' `from_dir_id` is set to `NULL`, and the removed directory's own
+`visits` and `queries` rows are deleted — so no cascade is needed.

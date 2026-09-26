@@ -71,6 +71,24 @@ pub fn canonical(path: &Path) -> Result<CanonicalDir, PathError> {
     })
 }
 
+/// Resolves `input` against `base` lexically, never touching the disk, and
+/// returns its lowercased comparison key; a missing directory is no error.
+pub fn absolute_key(input: &str, base: &Path) -> String {
+    let unified = unify_separators(input);
+    let path = Path::new(&unified);
+    let joined = if path.is_absolute() {
+        PathBuf::from(path)
+    } else {
+        base.join(path)
+    };
+    let absolute = match std::path::absolute(&joined) {
+        Ok(absolute) => absolute,
+        Err(_) => joined,
+    };
+    let text = strip_trailing_separator(absolute.to_string_lossy().into_owned());
+    text.to_lowercase()
+}
+
 /// Splits a path string into its last segment and its parent through
 /// `std::path` parsing, never manual slicing.
 pub fn split(path: &str) -> SplitPath {
@@ -102,7 +120,10 @@ fn strip_trailing_separator(text: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SplitPath, canonical, resolve, split, strip_trailing_separator, unify_separators};
+    use super::{
+        SplitPath, absolute_key, canonical, resolve, split, strip_trailing_separator,
+        unify_separators,
+    };
     use assert_fs::TempDir;
     use std::path::PathBuf;
 
@@ -243,5 +264,13 @@ mod tests {
     fn canonicalizing_a_directory_path_succeeds() {
         let (_root, child) = scratch("tokio");
         assert!(canonical(&child).is_ok());
+    }
+
+    #[test]
+    fn absolute_key_resolves_dots_and_lowercases_without_disk_access() {
+        let root = TempDir::new().expect("a fresh scratch root");
+        let key = absolute_key("Sub\\..\\Gone\\", root.path());
+        let expected = root.path().join("gone").to_string_lossy().to_lowercase();
+        assert_eq!(key, expected);
     }
 }

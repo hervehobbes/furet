@@ -184,6 +184,22 @@ fn list_with(sandbox: &Sandbox, extra: &[&str]) -> Output {
     run(&mut cmd)
 }
 
+fn remove(sandbox: &Sandbox, pattern: &str, cwd: &Path) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("remove").arg(pattern).current_dir(cwd);
+    run(&mut cmd)
+}
+
+fn remove_answering(sandbox: &Sandbox, pattern: &str, cwd: &Path, answer: &str) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("remove")
+        .arg(pattern)
+        .arg("--confirm")
+        .current_dir(cwd)
+        .write_stdin(answer);
+    run(&mut cmd)
+}
+
 fn local_time(conn: &Connection, seconds: i64) -> String {
     conn.query_row(
         "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
@@ -2163,5 +2179,264 @@ fn no_config_file_writes_no_warning() {
         !log_contents(&world).contains("WARN"),
         "{}",
         log_contents(&world)
+    );
+}
+
+fn canonical_child(world: &Sandbox, name: &str) -> String {
+    paths::canonical(&world.child(name))
+        .expect("the recorded directory canonicalizes")
+        .path
+}
+
+#[test]
+fn remove_by_name_glob_removes_every_match_and_reports_on_stderr_only() {
+    let world = sandbox(&["ombi", "ombi-v4", "other"]);
+    for name in ["ombi", "ombi-v4", "other"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove(&world, "ombi*", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    let expected = [
+        canonical_child(&world, "ombi"),
+        canonical_child(&world, "ombi-v4"),
+    ]
+    .map(|path| format!("removed {path}"));
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "other"))
+    );
+}
+
+#[test]
+fn remove_by_name_ignores_case() {
+    let world = sandbox(&["Ombi"]);
+    assert!(
+        add(&world, &world.child("Ombi"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove(&world, "ombi", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = [format!("removed {}", canonical_child(&world, "Ombi"))];
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_by_relative_path_removes_only_that_directory() {
+    let world = sandbox(&["a/src", "b/src"]);
+    for child in ["a/src", "b/src"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove(&world, "a\\src", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = [format!("removed {}", canonical_child(&world, "a/src"))];
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "b/src"))
+    );
+}
+
+#[test]
+fn remove_dot_removes_the_current_directory() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove(&world, ".", &tokio);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_by_path_forgets_a_directory_already_deleted_from_disk() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let canonical = canonical_child(&world, "tokio");
+    std::fs::remove_dir_all(&tokio).expect("the recorded directory vanishes from disk");
+    let out = remove(&world, tokio.to_string_lossy().as_ref(), world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), format!("removed {canonical}\n"));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_by_path_glob_removes_the_descendants_not_the_parent() {
+    let world = sandbox(&["apps", "apps/x", "apps/x/y"]);
+    for child in ["apps", "apps/x", "apps/x/y"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove(&world, "apps\\*", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "apps"))
+    );
+}
+
+#[test]
+fn remove_includes_directories_marked_missing() {
+    let world = sandbox(&["tokio", "gone"]);
+    for name in ["tokio", "gone"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let gone_path = canonical_child(&world, "gone");
+    std::fs::remove_dir_all(world.child("gone")).expect("gone vanishes from disk");
+    let out = remove(&world, "gone", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), format!("removed {gone_path}\n"));
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "tokio"))
+    );
+}
+
+#[test]
+fn remove_with_no_match_fails_with_exit_one_and_removes_nothing() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove(&world, "nope*", world.tree.path());
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "furet: no known directory matches 'nope*'\n"
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_empty_pattern_fails_with_exit_one() {
+    let world = sandbox(&[]);
+    for pattern in ["", "   "] {
+        let out = remove(&world, pattern, world.tree.path());
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert_eq!(text(&out.stderr), "furet: empty pattern\n");
+    }
+}
+
+#[test]
+fn remove_drops_the_visits_and_queries_of_the_removed_directory() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let jumped = query(&world, "tokio", world.tree.path(), false);
+    assert!(jumped.status.success(), "stderr: {}", text(&jumped.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let out = remove(&world, "tokio", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn remove_confirm_yes_removes_after_listing_on_stderr() {
+    let world = sandbox(&["ombi", "ombi-v4"]);
+    for name in ["ombi", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let first = canonical_child(&world, "ombi");
+    let second = canonical_child(&world, "ombi-v4");
+    let out = remove_answering(&world, "ombi*", world.tree.path(), "y\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    assert_eq!(
+        text(&out.stderr),
+        format!(
+            "  {first}\n  {second}\nRemove 2 directories? [y/N] removed {first}\nremoved {second}\n"
+        )
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_confirm_declined_or_eof_removes_nothing_and_exits_one() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let expected = canonical_child(&world, "tokio");
+    for answer in ["n\n", "\n", ""] {
+        let out = remove_answering(&world, "tokio", world.tree.path(), answer);
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert_eq!(
+            text(&out.stderr),
+            format!("  {expected}\nRemove 1 directory? [y/N] furet: nothing removed\n")
+        );
+        assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+    }
+}
+
+#[test]
+fn a_removed_directory_comes_back_on_the_next_add() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove(&world, "tokio", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "tokio"))
     );
 }

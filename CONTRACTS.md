@@ -129,14 +129,16 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
   number of known directories).
 - `visits(id, dir_id, ts, source, session, from_dir_id)` — `source` is one
   of `hook | jump | back | up | fallback | import`; one row per recorded
-  visit, never updated; deleted only by the retention purge below.
+  visit, never updated; deleted only by the retention purge below and by
+  `furet remove` (`storage::remove_dirs` unlinks surviving visits'
+  `from_dir_id` instead of cascading).
 - `queries(id, ts, cwd, query, result_dir_id, stage, outcome)` — the SPEC §15
   journal; `stage` is one of `'1' | '2' | 'fallback' | 'menu'`.
 - Retention: every `furet add` runs `storage::purge_before(now -
   retention_days)`, deleting older `visits` and `queries` rows (indexed by
-  `idx_visits_ts` / `idx_queries_ts`); `dirs` rows are never deleted, and a
-  directory with no visit left ranks on `first_seen`. `retention_days = 0`
-  disables it. **Discrepancy** with SPEC §5 (append-only event journal) and
+  `idx_visits_ts` / `idx_queries_ts`); `dirs` rows are deleted only by
+  `furet remove`, and a directory with no visit left ranks on `first_seen`.
+  `retention_days = 0` disables it. **Discrepancy** with SPEC §5 (append-only event journal) and
   §8 (frequency recorded for later use): history is bounded to one year by
   default (Hervé's decision, lot 33).
 
@@ -194,6 +196,34 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   stored `missing_since` is shown as is, with no soft-delete
   reconciliation. An empty database prints nothing, exit 0
   (`src/storage.rs`, `dir_listing`; `main::list_command`).
+- `furet remove <pattern> [--confirm]` — forgets known directories matching
+  `<pattern>`, **hard-deleting** their `dirs` row (no `missing_since` reuse,
+  no `removed_at` column, no schema change; not in SPEC — scope extension
+  decided by Hervé 2026-09-26). zoxide's `remove` takes exact paths only;
+  the wildcard is a furet extension. Without `\`, `/` or `:`, and not equal
+  to `.`/`..`, the pattern is a **name** pattern matched against the last
+  segment of each known path; otherwise it is a **path** pattern. Matching
+  is case-insensitive (`str::to_lowercase` both sides); `*` matches any run
+  of characters including `\`, `?` exactly one, every other character is
+  literal. A path pattern without a wildcard resolves against the disk first
+  (`paths::resolve`), falling back to the lexical `paths::absolute_key` when
+  the directory no longer exists — the main use case; with a wildcard it is
+  matched lexically against every lowercased path, so `apps\*` removes the
+  descendants of `apps`, never `apps` itself. Candidates come straight from
+  `storage::dir_entries` (missing rows included, no reconciliation), sorted
+  by lowercased path like `furet list`; nothing matches → `furet: no known
+  directory matches '<pattern>'`, exit 1; an empty/whitespace pattern →
+  `furet: empty pattern`, exit 1. Without `--confirm` every candidate is
+  removed at once; with `--confirm` the candidates are listed on stderr and
+  one stdin line is read — `y`/`yes` (trimmed, case-insensitive) removes,
+  anything else, an empty line, or EOF leaves the database untouched
+  (`furet: nothing removed`, exit 1, the SPEC §9 menu-cancel convention).
+  Each removal is reported on stderr as `removed <path>`; nothing is ever
+  written to stdout. `storage::remove_dirs` deletes, in one transaction per
+  call, the `dirs` row, its `visits` and `queries` rows, and unlinks other
+  visits' `from_dir_id` (set to `NULL`) so foreign keys stay enforced without
+  `ON DELETE`. A removed directory comes back on the next `furet add` of it,
+  exactly like zoxide (BACKLOG item 3: not prevented).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -233,6 +263,7 @@ stderr as `furet: {error}`. A malformed invocation (unknown flag, invalid
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
+| `remove <pattern> [--confirm]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_removes_after_listing_on_stderr`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`), a declined/empty/EOF confirmation (`remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 

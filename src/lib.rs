@@ -8,6 +8,7 @@ pub mod import;
 pub mod normalize;
 pub mod paths;
 pub mod rank;
+pub mod remove;
 pub mod soft_delete;
 pub mod stage1;
 pub mod stage2;

@@ -1,0 +1,14 @@
+---
+source: tests/help.rs
+expression: text
+---
+Forget known directories matching a name or path pattern
+
+Usage: furet remove [OPTIONS] <PATTERN>
+
+Arguments:
+  <PATTERN>  
+
+Options:
+      --confirm  List the matches and ask before removing them
+  -h, --help     Print help

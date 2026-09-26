@@ -50,6 +50,16 @@ wires a prompt hook that records every directory change.
   also lists directories missing from disk, with a `present`/`missing`
   column. Rows are ordered alphabetically by path, ignoring case.
   `--paths` (`-p`) prints the path alone, also with `--all`.
+- `furet remove <pattern> [--confirm]` — forget known directories matching
+  `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
+  **names** (`ombi*` matches every directory named with a prefix `ombi`);
+  otherwise it is a **path** pattern, relative to the current directory.
+  `*` matches any run of characters, crossing `\`; `?` is exactly one
+  character; matching ignores case. Every match is removed at once (missing
+  ones included) and reported on stderr — stdout stays empty; a removed
+  directory comes back on the next `furet add` of it. `--confirm` lists the
+  matches and asks before removing. Quote the pattern under bash
+  (`'ombi*'`); PowerShell passes it as is.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by

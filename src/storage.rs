@@ -265,6 +265,26 @@ pub fn purge_before(conn: &Connection, cutoff: Timestamp) -> Result<(usize, usiz
     Ok((visits, queries))
 }
 
+/// Deletes the `dirs` rows with these ids and their `visits`/`queries` rows
+/// in one transaction, setting other visits' `from_dir_id` back to `NULL`.
+pub fn remove_dirs(conn: &Connection, ids: &[i64]) -> Result<usize, StorageError> {
+    let tx = conn.unchecked_transaction()?;
+    let mut removed = 0usize;
+    for id in ids {
+        tx.prepare_cached("UPDATE visits SET from_dir_id = NULL WHERE from_dir_id = ?1")?
+            .execute(params![*id])?;
+        tx.prepare_cached("DELETE FROM visits WHERE dir_id = ?1")?
+            .execute(params![*id])?;
+        tx.prepare_cached("DELETE FROM queries WHERE result_dir_id = ?1")?
+            .execute(params![*id])?;
+        removed += tx
+            .prepare_cached("DELETE FROM dirs WHERE id = ?1")?
+            .execute(params![*id])?;
+    }
+    tx.commit()?;
+    Ok(removed)
+}
+
 /// One `dirs` row flattened for `furet list`, its timestamps already
 /// formatted in local time by SQLite itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,7 +432,8 @@ mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
         insert_query, insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at,
-        purge_before, query_log, resolve_data_dir, set_missing_since, upsert_dir, visit_log,
+        purge_before, query_log, remove_dirs, resolve_data_dir, set_missing_since, upsert_dir,
+        visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -1086,6 +1107,53 @@ mod tests {
         assert_eq!(
             dir_path_by_id(&conn, tokio).expect("the dir lookup runs"),
             Some("c:\\dev\\tokio".to_owned())
+        );
+    }
+
+    #[test]
+    fn remove_dirs_deletes_the_dir_its_visits_and_its_queries_and_unlinks_other_visits() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\dev\\a", "c:\\dev\\a", at(100))
+            .expect("the fixture dir a upserts");
+        let b = upsert_dir(&conn, "c:\\dev\\b", "c:\\dev\\b", at(100))
+            .expect("the fixture dir b upserts");
+        insert_visit(&conn, a, at(110), "hook", "s", None).expect("a's first visit inserts");
+        insert_visit(&conn, a, at(120), "jump", "s", None).expect("a's second visit inserts");
+        insert_visit(&conn, b, at(130), "jump", "s", Some(a)).expect("b's visit from a inserts");
+        insert_query(&conn, at(140), "c:\\dev", "a", Some(a), "1", "jump")
+            .expect("a's query inserts");
+        insert_query(&conn, at(150), "c:\\dev", "b", Some(b), "1", "jump")
+            .expect("b's query inserts");
+        let removed = remove_dirs(&conn, &[a]).expect("remove_dirs runs");
+        assert_eq!(removed, 1);
+        assert_eq!(
+            dir_path_by_id(&conn, a).expect("the a lookup runs"),
+            None,
+            "a's dirs row must be gone"
+        );
+        assert_eq!(row_count(&conn, "visits"), 1);
+        let (dir_id, from_dir_id): (i64, Option<i64>) = conn
+            .query_row("SELECT dir_id, from_dir_id FROM visits", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("the surviving visit reads back");
+        assert_eq!(dir_id, b);
+        assert_eq!(from_dir_id, None, "b's visit must be unlinked from a");
+        let result_dir_id: Option<i64> = conn
+            .query_row("SELECT result_dir_id FROM queries", [], |row| row.get(0))
+            .expect("the surviving query reads back");
+        assert_eq!(result_dir_id, Some(b), "only b's query must survive");
+        let violations = conn
+            .prepare("PRAGMA foreign_key_check")
+            .expect("the check prepares")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("the check runs")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("the check collects");
+        assert!(
+            violations.is_empty(),
+            "no foreign key violation: {violations:?}"
         );
     }
 

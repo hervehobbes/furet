@@ -1,4 +1,16 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 36 — `furet remove <pattern> [--confirm]`: hard-deletes known dirs
+matching a name pattern (no separator) or a path pattern (`\`/`/`/`:`,
+`.`/`..`), `*` crossing `\`, `?` one char, case-insensitive;
+`storage::remove_dirs` drops the dir's visits/queries and unlinks other
+visits' `from_dir_id` in one transaction; report on stderr only, stdout
+untouched. Pure `src/remove.rs` (8 unit tests), `paths::absolute_key`, 13
+cli tests, 2 help snapshots; README/CONTRACTS/DATABASE/example.md.
+Decisions: none beyond the prompt (Hervé 2026-09-26: hard delete, name vs
+path mode, no per-match confirmation; not in SPEC — zoxide takes exact
+paths only). Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 35 — `furet list` (plain, `--all`, `--paths`) is now ordered by
 `dirs.key ASC` (lowercased path, binary collation), not by last visit;
 zero-visit rows are no longer pushed last. `dir_listing` only; one

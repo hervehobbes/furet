@@ -254,6 +254,37 @@ C:\dev\CodeGroups\CodeGroups.Mcp
 C:\dev\RedditForKarakeep\mcp
 ```
 
+### Oublier un répertoire
+
+`furet remove` efface de la base les répertoires connus qui correspondent
+au motif. Sans séparateur (`\`, `/` ou `:`), le motif porte sur le **nom**
+du répertoire ; sinon, c'est un **chemin**, relatif au répertoire courant.
+`*` matche toute suite de caractères (séparateurs compris), `?` exactement
+un caractère, et la casse est ignorée. Tout match est supprimé d'un coup,
+sans confirmation, chaque suppression étant signalée sur `stderr` :
+
+```powershell
+PS C:\dev\furet> furet remove ombi*
+removed C:\apps\ombi
+removed D:\x\Ombi-v4
+```
+
+Avec `--confirm`, les correspondances sont listées et une confirmation est
+demandée avant de supprimer (toute autre réponse que `y` ou `yes`, ligne
+vide ou Ctrl-D compris, ne supprime rien) :
+
+```powershell
+PS C:\dev\furet> furet remove ombi* --confirm
+  C:\apps\ombi
+  D:\x\Ombi-v4
+Remove 2 directories? [y/N] y
+removed C:\apps\ombi
+removed D:\x\Ombi-v4
+```
+
+Un répertoire oublié revient dans la base au prochain `furet add`, comme
+avec zoxide.
+
 ### Importer la base zoxide
 
 Pour démarrer avec une base déjà remplie plutôt que vide :

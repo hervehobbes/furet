@@ -15,6 +15,7 @@ use furet::fallback;
 use furet::import;
 use furet::paths;
 use furet::rank::{self, Candidate, Stage};
+use furet::remove;
 use furet::soft_delete;
 use furet::storage;
 use rusqlite::Connection;
@@ -101,6 +102,13 @@ enum Command {
         #[arg(short, long)]
         paths: bool,
     },
+    /// Forget known directories matching a name or path pattern.
+    Remove {
+        pattern: String,
+        /// List the matches and ask before removing them.
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
     /// Import directories recorded by another tool, read from stdin.
@@ -176,6 +184,7 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
         Command::List { all, paths } => report(list_command(all, paths)),
+        Command::Remove { pattern, confirm } => report(remove_command(&pattern, confirm)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -773,6 +782,64 @@ fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
         .collect();
     print_lines(&lines);
     Ok(())
+}
+
+fn remove_command(pattern: &str, confirm: bool) -> Result<(), Box<dyn Error>> {
+    debug!(pattern, confirm, "remove");
+    if pattern.trim().is_empty() {
+        return Err("empty pattern".into());
+    }
+    let base = env::current_dir()?;
+    let target = remove_target(pattern, &base);
+    let conn = storage::open()?;
+    let mut entries = storage::dir_entries(&conn)?;
+    entries.sort_by_key(|entry| entry.path.to_lowercase());
+    let candidates: Vec<storage::DirEntry> = entries
+        .into_iter()
+        .filter(|entry| remove::matches(&target, &entry.path))
+        .collect();
+    if candidates.is_empty() {
+        return Err(format!("no known directory matches '{pattern}'").into());
+    }
+    if confirm && !remove_confirmed(&candidates)? {
+        return Err("nothing removed".into());
+    }
+    let ids: Vec<i64> = candidates.iter().map(|entry| entry.id).collect();
+    let count = storage::remove_dirs(&conn, &ids)?;
+    info!(count, "removed directories");
+    for candidate in &candidates {
+        eprintln!("removed {}", candidate.path);
+    }
+    Ok(())
+}
+
+fn remove_target(pattern: &str, base: &Path) -> remove::Target {
+    if !remove::is_path_pattern(pattern) {
+        return remove::Target::Name(pattern.to_owned());
+    }
+    if pattern.contains('*') || pattern.contains('?') {
+        return remove::Target::KeyPattern(paths::absolute_key(pattern, base));
+    }
+    match paths::resolve(pattern, base) {
+        Ok(dir) => remove::Target::Key(dir.key),
+        Err(_) => remove::Target::Key(paths::absolute_key(pattern, base)),
+    }
+}
+
+fn remove_confirmed(candidates: &[storage::DirEntry]) -> Result<bool, Box<dyn Error>> {
+    for candidate in candidates {
+        eprintln!("  {}", candidate.path);
+    }
+    let count = candidates.len();
+    if count == 1 {
+        eprint!("Remove 1 directory? [y/N] ");
+    } else {
+        eprint!("Remove {count} directories? [y/N] ");
+    }
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    let answer = answer.trim().to_lowercase();
+    Ok(answer == "y" || answer == "yes")
 }
 
 #[allow(clippy::print_stdout)]
