@@ -813,3 +813,47 @@ fn tab_completing_after_local_proposes_project_candidates() {
         "`f -l cl <Tab>` must propose no furet candidate {candidate}: {too_long:?}"
     );
 }
+
+#[test]
+fn f_local_flag_after_the_query_still_scopes() {
+    let world = sandbox(&["proj/.git", "proj/tokio", "elsewhere/tokio"]);
+    seed(&world, &world.child("proj/tokio"), "seed");
+    seed(&world, &world.child("elsewhere/tokio"), "seed");
+    let start = world.child("proj");
+    let run = run_pwsh(&world, "", "", &start, "f tokio -l");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("proj/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn f_long_local_flag_still_scopes() {
+    let world = sandbox(&["proj/.git", "proj/tokio", "elsewhere/tokio"]);
+    seed(&world, &world.child("proj/tokio"), "seed");
+    seed(&world, &world.child("elsewhere/tokio"), "seed");
+    let start = world.child("proj");
+    let run = run_pwsh(&world, "", "", &start, "f --local tokio");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("proj/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn tab_completing_after_long_local_proposes_project_candidates() {
+    let world = sandbox(&["proj/.git", "proj/clio", "outside/clio"]);
+    seed(&world, &world.child("proj/clio"), "seed");
+    seed(&world, &world.child("outside/clio"), "seed");
+    let proj = world.child("proj");
+    let got = completions_in(&world, "", &proj, "f --local cl");
+    assert_eq!(
+        got,
+        vec![canonical(&world.child("proj/clio"))],
+        "`f --local cl<Tab>` must propose only the in-project candidate: {got:?}"
+    );
+}

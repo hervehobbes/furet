@@ -239,25 +239,30 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   the ranked `furet query --list` lines in order (an empty word completes the
   recency list; `-`/`--explain` and `.`/`..`/`...` words get nothing; paths
   with PowerShell metacharacters are emitted single-quoted, `'` doubled).
-  With `-l`/`--local` as the first argument (SPEC §19), the jump function
-  strips it before every dispatch and jumps only inside the project: with a
-  query it calls `furet query --local -- $query`, without one it calls
-  `furet query --local` and jumps to the project root, recording the landing
+  With `-l`/`--local` (SPEC §19), the jump function and `fi` jump only
+  inside the project. `-l` is a declared switch — `param([Alias('l')]
+  [switch] $Local, [Parameter(ValueFromRemainingArguments…)] $FuretArgs)` —
+  so pwsh's own binder takes it wherever it appears (`f -l cl` and
+  `f cl -l` alike); `--local` does not bind that parameter and is still
+  stripped by hand from `$FuretArgs` (`$scoped = $Local.IsPresent -or
+  ($FuretArgs -contains '--local')`); a literal `-l` can only reach
+  `$FuretArgs` through `f -- -l`, where it is query text and is not
+  stripped. With a query the scoped branch calls `furet query --local --
+  $query`, without one it calls `furet query --local` and jumps to the
+  project root, recording the landing
   as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, direct-path,
   and home branches are never reached. `f -l <query> --explain` forwards the
   scope (`furet query --explain --local -- $query`, decision 2, Hervé
   2026-09-26). `fi -l` scopes the whole interactive flow: the fzf initial
   list and every reload (`furet query --list --color --local [ {q}]`) and
-  the console menu (`furet query --list --local $query`). For Tab completion
-  after `-l`, a second, `-Native` registration handles the lines where
-  pwsh's parameter binding never reaches the regular completer (a first
-  `-l` token is treated as an unknown named parameter, so `f -l <Tab>` and
-  `f -l cl<Tab>` arrive through the native fallback with the raw line and
-  the cursor column instead of the word): it reconstructs the word and runs
-  `furet query --list --local -- $word` under the same quoting, `-`/dots,
-  stderr, and LASTEXITCODE rules; `--local` lines and a third argument stay
-  on the regular completer, which returns nothing for them. The generated
-  script is covered by
+  the console menu (`furet query --list --local $query`). One completer —
+  the `FuretArgs` registration above — handles every line, `-l` included:
+  the declared switch keeps pwsh's completion binder on the normal path
+  (lot 40b, Hervé 2026-09-26, replacing a `-Native` fallback that relied on
+  undocumented pwsh behavior), so after `-l`/`--local` as the first
+  argument it completes the second argument token — `f -l <Tab>` and
+  `f -l cl<Tab>` run `furet query --list --local -- $word` — while
+  `f -l cl <Tab>` returns nothing. The generated script is covered by
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.
 - `furet queries --failures` — prints tab-separated probable-mistake rows

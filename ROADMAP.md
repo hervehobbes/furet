@@ -43,6 +43,7 @@
 | 38 | `exclude_dirs` config key honored by `add`, the disk fallback, and `import zoxide` |
 | 39 | `furet` subcommand completions (`clap_complete`) embedded in `furet init pwsh` |
 | 40 | Project-scoped query: `furet query --local`, `f -l`, `fi -l`, Tab on the second token |
+| 40b | pwsh: `-l` as a declared switch on `f`/`fi`; the `-Native` completer fallback removed |
 
 ## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
 

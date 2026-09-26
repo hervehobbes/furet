@@ -35,16 +35,16 @@ function global:prompt {
 }
 
 function global:__FURET_CMD__ {
-    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
+    param([Alias('l')] [switch] $Local, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
 
-    $local = ($FuretArgs -contains '-l') -or ($FuretArgs -contains '--local')
-    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '-l' -and $_ -ne '--local' })
+    $scoped = $Local.IsPresent -or ($FuretArgs -contains '--local')
+    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' })
 
     # WHY: --explain is answered before every other dispatch, so even a bare
     # `f --explain` reports on the pool instead of jumping home.
     if ($FuretArgs -contains '--explain') {
         $query = (($FuretArgs | Where-Object { $_ -ne '--explain' }) -join ' ') -replace '/', '\'
-        if ($local) {
+        if ($scoped) {
             furet query --explain --local -- $query
             return
         }
@@ -54,7 +54,7 @@ function global:__FURET_CMD__ {
 
     # WHY: with -l every special form is skipped, so the jump always goes
     # through the project-scoped query — including its empty-query root.
-    if ($local) {
+    if ($scoped) {
         $query = ($FuretArgs -join ' ') -replace '/', '\'
         $from = (Get-Location).Path
         if ([string]::IsNullOrEmpty($query)) {
@@ -123,16 +123,16 @@ function global:__FURET_CMD__ {
 }
 
 function global:fi {
-    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
+    param([Alias('l')] [switch] $Local, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
 
-    $local = ($FuretArgs -contains '-l') -or ($FuretArgs -contains '--local')
-    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '-l' -and $_ -ne '--local' })
+    $scoped = $Local.IsPresent -or ($FuretArgs -contains '--local')
+    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' })
 
     $query = ($FuretArgs -join ' ') -replace '/', '\'
     $from = (Get-Location).Path
 
     if (Get-Command fzf -ErrorAction SilentlyContinue) {
-        if ($local) {
+        if ($scoped) {
             $initial = furet query --list --color --local
             $selection = $initial | fzf --disabled --ansi --bind "change:reload:furet query --list --color --local {q}"
         } else {
@@ -148,7 +148,7 @@ function global:fi {
         return
     }
 
-    if ($local) {
+    if ($scoped) {
         $candidates = @(furet query --list --local $query | Select-Object -First 9)
     } else {
         $candidates = @(furet query --list $query | Select-Object -First 9)
@@ -225,55 +225,6 @@ Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -
         }
     }
 }
-
-# WHY: a first argument of `-l` defeats pwsh's parameter binding, so the
-# regular completer above is never invoked for those lines; pwsh then calls
-# this native fallback with the raw line as the "parameter name" and the
-# cursor column as the "word", from which the real word is reconstructed.
-Register-ArgumentCompleter -CommandName __FURET_CMD__ -Native -ScriptBlock {
-    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
-
-    $text = ('' + $parameterName).Trim()
-    $column = 0
-    if (-not [int]::TryParse('' + $wordToComplete, [ref]$column)) {
-        return
-    }
-    $tokens = @($text -split '\s+' | Where-Object { $_ -ne '' })
-    if ($tokens.Count -lt 2 -or $tokens[1] -ne '-l') {
-        return
-    }
-    $word = ''
-    if ($column -le $text.Length) {
-        $prefix = $text.Substring(0, $column)
-        $idx = $prefix.LastIndexOf(' ')
-        $word = if ($idx -ge 0) { $prefix.Substring($idx + 1) } else { $prefix }
-    }
-    $arguments = $tokens.Count - 1
-    if ($arguments -gt 2 -or ($arguments -eq 2 -and [string]::IsNullOrEmpty($word))) {
-        return
-    }
-    if ($word.StartsWith('-') -or $word -match '^\.+$') {
-        return
-    }
-    $lastExit = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
-    if ($null -ne $lastExit) {
-        $lastExit = $lastExit.Value
-    }
-    try {
-        $word = $word.Replace('/', '\')
-        foreach ($line in @(furet query --list --local -- $word 2>$null)) {
-            $completionText = $line
-            if ($line -notmatch '^[\w\\/:.\-]+$') {
-                $completionText = "'" + $line.Replace("'", "''") + "'"
-            }
-            [System.Management.Automation.CompletionResult]::new($completionText, $line, 'ParameterValue', $line)
-        }
-    } finally {
-        if ($null -ne $lastExit) {
-            $global:LASTEXITCODE = $lastExit
-        }
-    }
-}
 "#;
 
 /// Renders the PowerShell integration script for the jump function `cmd`.
@@ -317,5 +268,11 @@ mod tests {
         let rendered = script("f");
         assert!(rendered.contains("Register-ArgumentCompleter"));
         assert!(rendered.contains("-CommandName f"));
+    }
+
+    #[test]
+    fn script_registers_no_native_completer_for_the_jump_function() {
+        let rendered = script("f");
+        assert!(!rendered.contains("-Native"));
     }
 }

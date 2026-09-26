@@ -1,4 +1,15 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 40b — `-l` is now a declared switch on `f`/`fi`
+(`[Alias('l')] [switch] $Local` before the remaining-arguments parameter;
+`--local` still stripped by hand, `f -- -l` passes `-l` as query text), and
+the lot 40 `-Native` completer fallback is deleted — the regular `FuretArgs`
+completer now handles `-l` lines too. Lot 40's pwsh tests unchanged; 3 new
+integration tests (flag after query, long flag, `f --local cl<Tab>`), 1 new
+unit test.
+Decisions: Hervé's, after the lot 40 review — the native fallback relied on
+undocumented pwsh behavior. Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 40 — `furet query --local` (`-l`): the pool is scoped to the git
 project (nearest ancestor with a `.git` directory **or** file) via pure
 `src/project.rs` (`GitMarker` trait); entries outside are dropped before
