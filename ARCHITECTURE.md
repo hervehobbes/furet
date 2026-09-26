@@ -17,9 +17,13 @@ plans synthetic timestamps as pure functions; `calibration::probable_failures`
 flags probably-mistaken jumps from the journaled `queries` and `visits`
 rows alone; `soft_delete::reconcile` is deterministic given an injected
 `Filesystem` trait — `RealFilesystem`, the disk check, is the outer
-implementation; and `project::root` finds the nearest ancestor holding a
+implementation; `project::root` finds the nearest ancestor holding a
 `.git` entry through the injected `GitMarker` trait (`RealGitMarker`, the
-`.git` existence check, is the outer implementation). On the outer side:
+`.git` existence check, is the outer implementation); and
+`stage1_nucleo::NucleoScorer`, the opt-in nucleo stage-1 scorer (SPEC-v2
+§20), is pure too — it owns one `nucleo_matcher::Matcher`, which
+`rank::rank` builds once per call and reuses for every candidate, while
+`rank::Engine` picks it or the reference `stage1`. On the outer side:
 `fallback::discover` walks the real
 disk with the `ignore` crate when the database has no candidate, and
 `logging::init` — a binary-only module under `main`, not part of the

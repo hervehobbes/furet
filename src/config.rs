@@ -1,4 +1,5 @@
 use crate::fallback;
+use crate::rank::Engine;
 use crate::remove;
 use crate::stage2;
 
@@ -8,6 +9,8 @@ pub const FALLBACK_MAX_DEPTH: usize = 5;
 pub const FALLBACK_MAX_UP: usize = 5;
 /// Days of `visits` and `queries` history `furet add` keeps by default.
 pub const RETENTION_DAYS: u32 = 365;
+
+const ENGINE_WARNING: &str = r#"engine must be "reference" or "nucleo"; using "reference""#;
 
 /// Overridable settings loaded from `<data dir>/config.toml` (SPEC section 16).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +25,8 @@ pub struct Settings {
     pub retention_days: u32,
     /// Patterns of directories never recorded, read as `remove::Target`s.
     pub exclude_dirs: Vec<remove::Target>,
+    /// Stage-1 scorer; `--engine` overrides it.
+    pub engine: Engine,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -45,6 +50,7 @@ impl Default for Settings {
             home: None,
             retention_days: RETENTION_DAYS,
             exclude_dirs: Vec::new(),
+            engine: Engine::Reference,
         }
     }
 }
@@ -101,7 +107,12 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
                         .to_owned(),
                 ),
             },
-            "ambiguity" | "keyboard_layout" | "engine" => {
+            "engine" => match value.as_str() {
+                Some("reference") => settings.engine = Engine::Reference,
+                Some("nucleo") => settings.engine = Engine::Nucleo,
+                _ => warnings.push(ENGINE_WARNING.to_owned()),
+            },
+            "ambiguity" | "keyboard_layout" => {
                 warnings.push(format!("{key} is not supported yet; ignored"));
             }
             other => warnings.push(format!("unknown config key '{other}'; ignored")),
@@ -185,6 +196,7 @@ fn exclusion_targets(entries: &[String], warnings: &mut Vec<String>) -> Vec<remo
 #[cfg(test)]
 mod tests {
     use super::{Settings, parse};
+    use crate::rank::Engine;
     use crate::remove::Target;
 
     #[test]
@@ -440,14 +452,50 @@ mod tests {
     }
 
     #[test]
-    fn the_three_unsupported_keys_each_warn_not_supported_yet() {
-        for key in ["ambiguity", "keyboard_layout", "engine"] {
+    fn the_unsupported_keys_each_warn_not_supported_yet() {
+        for key in ["ambiguity", "keyboard_layout"] {
             let (settings, warnings) = parse(&format!("{key} = 1"));
             assert_eq!(settings, Settings::default());
             assert_eq!(warnings.len(), 1);
             assert!(warnings[0].contains(key));
             assert!(warnings[0].contains("not supported yet"));
         }
+    }
+
+    #[test]
+    fn engine_defaults_to_the_reference_engine() {
+        assert_eq!(Settings::default().engine, Engine::Reference);
+        assert_eq!(parse("").0.engine, Engine::Reference);
+    }
+
+    #[test]
+    fn engine_nucleo_is_accepted() {
+        let (settings, warnings) = parse("engine = \"nucleo\"");
+        assert_eq!(settings.engine, Engine::Nucleo);
+        assert!(warnings.is_empty());
+        let (settings, warnings) = parse("engine = \"reference\"");
+        assert_eq!(settings.engine, Engine::Reference);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_engine_name_warns_and_keeps_the_reference_engine() {
+        let (settings, warnings) = parse("engine = \"fast\"");
+        assert_eq!(settings.engine, Engine::Reference);
+        assert_eq!(
+            warnings,
+            ["engine must be \"reference\" or \"nucleo\"; using \"reference\""]
+        );
+    }
+
+    #[test]
+    fn a_wrong_type_engine_warns_and_keeps_the_reference_engine() {
+        let (settings, warnings) = parse("engine = 3");
+        assert_eq!(settings.engine, Engine::Reference);
+        assert_eq!(
+            warnings,
+            ["engine must be \"reference\" or \"nucleo\"; using \"reference\""]
+        );
     }
 
     #[test]

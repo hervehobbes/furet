@@ -3,6 +3,7 @@ source: tests/explain.rs
 expression: "world.explain(\"tokoi\", &cwd)"
 ---
 normalized query: tokoi
+engine: reference
 evaluated candidates:
   stage 2 score 2 <tmp>\tokio-lab\aaa\tokio
     distance 1 (max 1)

@@ -2,10 +2,10 @@
 
 ## Fuzzy engine contract
 
-Pure, no filesystem or clock access. `rank::rank(query, current_dir, candidates, typo_min_length)`
+Pure, no filesystem or clock access. `rank::rank(query, current_dir, candidates, typo_min_length, engine)`
 drops the current directory and any `missing` candidate, scores every
-survivor with `rank::dispatch` (stage 1 first, stage 2 only when stage 1
-returns `None`), and returns a `Vec<Scored>` sorted per SPEC §8: score, then
+survivor like `rank::dispatch` (the `engine`'s stage 1 first, stage 2 only
+when stage 1 returns `None`), and returns a `Vec<Scored>` sorted per SPEC §8: score, then
 recency (D1 — never the other way around), then name length, then path, as a
 strict deterministic total order.
 
@@ -43,6 +43,57 @@ folder bonus added on top of the floor
 `the_score_is_floored_at_four`). The floor is the structural guarantee that
 stage 1 always outscores stage 2 (`stage2::SCORE_CAP = 3`); every table
 value above matches SPEC §7.2 as written.
+
+### Stage 1 — opt-in nucleo engine (SPEC-v2 §20)
+
+`rank::Engine { Reference, Nucleo }` picks the stage-1 scorer;
+`Reference` (the table above) is the default. `Engine::Nucleo` swaps in
+`stage1_nucleo::NucleoScorer` (`src/stage1_nucleo.rs`, crate
+`nucleo-matcher` 0.3.1, MPL-2.0, Helix's matcher) and changes nothing
+else: stage 2, the SPEC §8 order, D1, and the §9 decision are shared.
+`rank` builds one `NucleoScorer` (one `nucleo_matcher::Matcher`) per call
+and scores every candidate through it; only the standalone
+`rank::dispatch` builds its own per call
+(`nucleo_rank_scores_every_candidate_like_a_standalone_dispatch`).
+
+- The query is split on whitespace, as in §7.2. Each token is normalized
+  with §7.1 (`normalize::Normalized`) and matched against the **original**
+  name (last segment) by a fuzzy `Atom` built directly — never parsed, so
+  `^ $ ! '` are ordinary characters
+  (`pattern_syntax_characters_are_matched_literally`) — with
+  `CaseMatching::Ignore`, `Normalization::Smart`, and `Config::DEFAULT`
+  (not the path config). The name keeps nucleo's word-boundary and
+  camelCase bonuses.
+- Every token must match (logical AND), else `None`
+  (`a_token_missing_from_the_name_fails_the_whole_query`); an empty token
+  after §7.1 is `None`, as in §7.2.
+- Total = sum of the token scores, floored at `SCORE_FLOOR = 4`, then the
+  reference `+2` folder bonus (`stage1::folder_bonus`, the exact code and
+  §7.1 normalization `stage1::score` uses) on top of the floor
+  (`the_folder_bonus_is_added_after_the_floor`). **No order bonus.** A
+  matched nucleo token scored at least 16 in every probe, so the floor is
+  a guarantee rather than a frequent case. The invariants are unchanged:
+  every nucleo stage-1 score is `>= SCORE_FLOOR > SCORE_CAP`
+  (`a_nucleo_score_never_falls_below_the_floor_nor_into_stage_two_range`,
+  `nucleo_every_stage_one_match_ranks_before_every_stage_two_match`), the
+  order is total and input-independent
+  (`nucleo_ranked_keys_are_strictly_ordered_whatever_the_input_order`), and
+  D1 holds (`nucleo_d1_making_every_weaker_match_more_recent_never_lifts_it`).
+
+nucleo matches with **its own normalization, not §7.1**: only the query
+tokens go through §7.1 first (Hervé, 2026-09-26: `Normalization::Smart`
+folds one way only, so an accented query such as `réunions` would
+otherwise miss `Reunions`). Gaps observed against the reference engine,
+documented and not patched (`src/stage1_nucleo.rs` tests):
+
+| Input | Reference | nucleo | Pinned by |
+|---|---|---|---|
+| Non-Latin letter with a diacritic in the name: `Αθήνα` | matches `αθηνα` and `Αθήνα` | stage 1 misses both, even the name's own spelling; a query of 4+ characters still lands in stage 2 at score 3 | `a_greek_name_with_a_tonos_is_not_matched_even_by_its_own_spelling` |
+| Cyrillic `й` in the name | matches `и` and `й` | misses both (a 1-character query never reaches stage 2); `й` → `и` in the query, so the query `й` does match a name `и` | `a_cyrillic_short_i_name_is_not_matched_even_by_its_own_spelling` |
+| Name already NFD-decomposed: `Re\u{301}unions` | same score as `Réunions` | matches, lower score (202 vs 218 for `reunions`) | `an_nfd_decomposed_name_matches_with_a_lower_score_than_its_composed_form` |
+| `ø` in the name | `o` does not match | `o` matches `ø` | `a_plain_o_query_matches_o_with_stroke_unlike_the_reference` |
+| `ß` / `ẞ` | fold to each other, never to `ss` | same | `sharp_s_folds_to_its_capital_but_never_to_ss` |
+| `İ` | matches `i` | same | `a_dotted_capital_i_name_matches_a_plain_i_query` |
 
 ### Stage 2 — typo tolerance (SPEC §7.3)
 
@@ -109,10 +160,15 @@ a missing file logs one `debug!` and changes nothing. `fallback.exclude = []`
 disables every exclusion — the list replaces the defaults, it never adds to
 them.
 
-`ambiguity`, `keyboard_layout`, and `engine` are recognized and ignored, each
-warning "not supported yet" — SPEC §9 does not define what `ambiguity`
-measures, and the other two name features not built yet (Hervé's decision,
-lot 15).
+`ambiguity` and `keyboard_layout` are recognized and ignored, each warning
+"not supported yet" — SPEC §9 does not define what `ambiguity` measures, and
+`keyboard_layout` names a feature not built yet (Hervé's decision, lot 15).
+
+`engine` (SPEC-v2 §20) is `"reference"` (default) or `"nucleo"`; any other
+string or a non-string warns `engine must be "reference" or "nucleo"; using
+"reference"` and keeps `Reference` (`an_unknown_engine_name_warns_and_keeps_the_reference_engine`,
+`a_wrong_type_engine_warns_and_keeps_the_reference_engine`). `furet query
+--engine` overrides it.
 
 `exclude_dirs` (not in SPEC — scope extension decided by Hervé 2026-09-26,
 modelled on zoxide's `_ZO_EXCLUDE_DIRS`) is an array of non-empty strings,
@@ -189,7 +245,7 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   one visit; `source` defaults to `hook`. A path matching `exclude_dirs` is
   not recorded (exit 0, nothing on stdout or stderr, the database is not
   opened; `--from` is unaffected).
-- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local]` — ranks
+- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local] [--engine <reference|nucleo>]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
   on a stage-2 tie, reading the answer from stdin. An omitted `<text>` is
@@ -215,9 +271,20 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   `--list`/`--explain` prints the project root on stdout and exits 0 before
   the database is even opened — no reconcile, no `queries` row (`f -l`
   records the jump itself as `--source jump`). `--explain` gains a
-  `project root: <path>` line right after `normalized query:` (absent
+  `project root: <path>` line right after the `engine:` line (absent
   without `--local`); the `queries` row is written exactly as for a global
   query, the scope is not stored.
+  `--engine <reference|nucleo>` (SPEC-v2 §20, clap value enum, no clap
+  default) picks the stage-1 engine for this call; precedence is
+  `--engine`, then the `engine` config key, then `reference`
+  (`query_engine_flag_overrides_the_config`). It applies to every mode
+  (plain, `--list`, `--explain`, `--local`) and to the disk-fallback
+  ranking. The pwsh script never passes it. `--explain` always prints an
+  `engine: <reference|nucleo>` line right after `normalized query:`. Under
+  nucleo, a stage-1 match's detail is one `token '<token>': nucleo <score>`
+  line per token (the §7.1-normalized token), then `sum <s>, floored
+  <max(s, 4)>`, then `folder bonus +2` only when awarded; nucleo's internal
+  bonuses are not shown (`explain__nucleo_tokens` snapshot).
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited

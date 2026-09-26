@@ -1,0 +1,19 @@
+---
+source: tests/explain.rs
+expression: "world.explain_with(\"tok io\", &cwd, &[\"--engine\", \"nucleo\"])"
+---
+normalized query: tok io
+engine: nucleo
+evaluated candidates:
+  stage 1 score 126 <tmp>\tokio-lab\tokio
+    token 'tok': nucleo 88
+    token 'io': nucleo 36
+    sum 124, floored 124
+    folder bonus +2
+eliminated candidates:
+  <tmp>\tokio-lab\gone: disappeared
+  <tmp>\tokio-lab\helix: no subsequence
+  <tmp>\tokio-lab\tokei: no subsequence
+  <tmp>\tokio-lab\zellij: no subsequence
+deciding criterion: none (no runner-up)
+decision: jump <tmp>\tokio-lab\tokio

@@ -3,6 +3,7 @@ source: tests/explain.rs
 expression: "world.explain(\"tokio\", &cwd)"
 ---
 normalized query: tokio
+engine: reference
 evaluated candidates:
   stage 1 score 92 <tmp>\tokio-lab\tokio
     token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85

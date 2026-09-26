@@ -44,12 +44,12 @@
 | 39 | `furet` subcommand completions (`clap_complete`) embedded in `furet init pwsh` |
 | 40 | Project-scoped query: `furet query --local`, `f -l`, `fi -l`, Tab on the second token |
 | 40b | pwsh: `-l` as a declared switch on `f`/`fi`; the `-Native` completer fallback removed |
+| 41 | Opt-in `nucleo` stage-1 engine: `engine` config key, `furet query --engine`, `engine:` explain line (SPEC-v2 §20) |
 
 ## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
 
 | Lot | Content | SPEC-v2 |
 |-----|---------|---------|
-| 41 | Opt-in `nucleo` stage-1 engine (`engine` config key, `--engine`) | §20 |
 | 42 | `furet remove`: per-directory `[y/N/a/q]` confirmation, `--yes`, `--dry-run` | §21 |
 | 43 | `furet remove --missing` (full reconcile first, confirmation by default) | §21 |
 | 44 | `furet stats [--top <n>]` | §22 |

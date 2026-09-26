@@ -1,0 +1,74 @@
+engine = "nucleo"
+
+[[case]]
+name = "an accented name answers a plain query under nucleo"
+query = "reunions"
+dirs = [
+    { path = "/docs/Réunions", visited = "-2h" },
+    { path = "/docs/tokei", visited = "-1h" },
+]
+jump = "/docs/Réunions"
+
+[[case]]
+name = "an accented query answers a plain name once its tokens are normalized"
+query = "Réunions"
+dirs = [
+    { path = "/docs/Reunions", visited = "-2h" },
+    { path = "/docs/tokei", visited = "-1h" },
+]
+jump = "/docs/Reunions"
+
+[[case]]
+name = "every token must match the name under nucleo"
+query = "neo zig"
+dirs = [
+    { path = "/dev/neovim", visited = "-1h" },
+    { path = "/dev/zig", visited = "-2h" },
+]
+none = true
+
+[[case]]
+name = "a typo nucleo cannot match falls back to stage 2"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-2h" },
+    { path = "/dev/helix", visited = "-1h" },
+]
+jump = "/dev/tokio"
+
+[[case]]
+name = "recency breaks a nucleo score tie"
+query = "helix"
+dirs = [
+    { path = "/archive/helix", visited = "-30d" },
+    { path = "/dev/helix", visited = "-1h" },
+]
+jump = "/dev/helix"
+
+[[case]]
+name = "nucleo prefers the word-boundary match the reference engine ranks second"
+query = "dev"
+dirs = [
+    { path = "/x/d-e-v", visited = "-1h" },
+    { path = "/x/my-dev", visited = "-1h" },
+]
+jump = "/x/my-dev"
+
+[[case]]
+name = "an older better nucleo match beats a very recent weaker one"
+query = "dev"
+dirs = [
+    { path = "/x/d-e-v", visited = "-1h" },
+    { path = "/x/my-dev", visited = "-30d" },
+]
+jump = "/x/my-dev"
+
+[[case]]
+name = "a case-level engine overrides the file-level nucleo engine"
+query = "dev"
+engine = "reference"
+dirs = [
+    { path = "/x/d-e-v", visited = "-1h" },
+    { path = "/x/my-dev", visited = "-1h" },
+]
+jump = "/x/d-e-v"

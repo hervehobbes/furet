@@ -60,6 +60,11 @@ extra profile line.
   without `--list`/`--explain` prints the project root.
 - `furet query <query> --explain` — print the scoring report for `<query>`
   on stderr without jumping.
+- `furet query <query> --engine <reference|nucleo>` — pick the stage-1
+  matcher for this call, overriding the `engine` config key; works with
+  `--list`, `--explain`, `--local`, and the disk fallback. `nucleo` is
+  Helix's fuzzy matcher, opt-in; the reference engine stays the default.
+  The pwsh `f`/`fi` never pass it: set `engine` in `config.toml` instead.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
 - `furet list [--all] [--paths]` — print every known directory as one tab-separated
@@ -114,6 +119,7 @@ line naming the key. `furet query`, `furet home`, `furet add`, and
 | `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
 | `home` | string | unset | absolute path, `/` accepted as separator, no `~`/env-var expansion |
 | `retention_days` | integer | 365 | `>= 0`; `furet add` deletes `visits` and `queries` rows older than this many days, `0` keeps everything |
+| `engine` | string | `"reference"` | `"reference"` or `"nucleo"`; `furet query --engine` overrides it |
 | `exclude_dirs` | array of strings | empty | patterns in the `furet remove` syntax, e.g. `['node_modules', 'C:\Windows\*', '*\target\*']` |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the

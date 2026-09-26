@@ -12,5 +12,6 @@ pub mod rank;
 pub mod remove;
 pub mod soft_delete;
 pub mod stage1;
+pub mod stage1_nucleo;
 pub mod stage2;
 pub mod storage;

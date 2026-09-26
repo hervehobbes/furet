@@ -2844,7 +2844,9 @@ fn query_explain_local_prints_the_project_root_line() {
     assert!(out.stdout.is_empty());
     let stderr = text(&out.stderr);
     assert!(
-        stderr.starts_with(&format!("normalized query: tokio\nproject root: {root}\n")),
+        stderr.starts_with(&format!(
+            "normalized query: tokio\nengine: reference\nproject root: {root}\n"
+        )),
         "{stderr}"
     );
     let global = query_with(&world, &["--explain", "tokio"], &cwd);
@@ -2854,4 +2856,34 @@ fn query_explain_local_prints_the_project_root_line() {
         "{}",
         text(&global.stderr)
     );
+}
+
+#[test]
+fn query_engine_flag_overrides_the_config() {
+    let world = sandbox(&["my-dev", "d-e-v"]);
+    for child in ["my-dev", "d-e-v"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let winner = |args: &[&str]| {
+        let out = query_with(&world, args, world.tree.path());
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let reference = winner(&["dev"]);
+    let expected = paths::canonical(&world.child("d-e-v"))
+        .expect("the reference winner canonicalizes")
+        .path;
+    assert_eq!(reference, format!("{expected}\n"));
+    write_config(&world, "engine = \"nucleo\"");
+    let nucleo = winner(&["dev"]);
+    let nucleo_winner = paths::canonical(&world.child("my-dev"))
+        .expect("the nucleo winner canonicalizes")
+        .path;
+    assert_eq!(nucleo, format!("{nucleo_winner}\n"));
+    assert_eq!(winner(&["dev", "--engine", "reference"]), reference);
+    assert_eq!(winner(&["--engine", "nucleo", "dev"]), nucleo);
 }

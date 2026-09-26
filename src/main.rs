@@ -76,6 +76,9 @@ enum Command {
         /// Restrict candidates to the current git project (nearest ancestor with a .git entry).
         #[arg(short, long)]
         local: bool,
+        /// Stage-1 matching engine; overrides the `engine` key of config.toml.
+        #[arg(long, value_enum)]
+        engine: Option<EngineArg>,
     },
     /// Print the ancestor `n` levels above the current directory.
     Up {
@@ -135,6 +138,21 @@ enum InitShell {
 }
 
 #[derive(Clone, Copy, ValueEnum)]
+enum EngineArg {
+    Reference,
+    Nucleo,
+}
+
+impl EngineArg {
+    fn engine(self) -> rank::Engine {
+        match self {
+            EngineArg::Reference => rank::Engine::Reference,
+            EngineArg::Nucleo => rank::Engine::Nucleo,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
 enum ImportSource {
     /// Import from `zoxide query -ls` on stdin.
     Zoxide,
@@ -183,8 +201,15 @@ fn main() {
             color,
             no_ignore,
             local,
+            engine,
         } => report(query_directories(
-            &query, list, explain, color, no_ignore, local,
+            &query,
+            list,
+            explain,
+            color,
+            no_ignore,
+            local,
+            engine.map(EngineArg::engine),
         )),
         Command::Up { n } => report(up(n)),
         Command::Back { session } => report(back(&session)),
@@ -307,8 +332,18 @@ fn query_directories(
     color: bool,
     no_ignore: bool,
     local: bool,
+    engine: Option<rank::Engine>,
 ) -> Result<(), Box<dyn Error>> {
-    debug!(query, list, explain, color, no_ignore, local, "query");
+    debug!(
+        query,
+        list,
+        explain,
+        color,
+        no_ignore,
+        local,
+        ?engine,
+        "query"
+    );
     let settings = load_settings();
     debug!(?settings, "effective settings");
     let cwd = env::current_dir()?;
@@ -359,7 +394,15 @@ fn query_directories(
         print_lines(&list_by_recency(&candidates, &current.path, color));
         return Ok(());
     }
-    let mut db_ranked = rank::rank(query, &current.path, &candidates, settings.typo_min_length);
+    let engine = engine.unwrap_or(settings.engine);
+    debug!(engine = engine.name(), "stage-1 engine");
+    let mut db_ranked = rank::rank(
+        query,
+        &current.path,
+        &candidates,
+        settings.typo_min_length,
+        engine,
+    );
     if !check_all {
         let matched: HashSet<&str> = db_ranked
             .iter()
@@ -388,6 +431,7 @@ fn query_directories(
             &current.path,
             &fallback_pool,
             settings.typo_min_length,
+            engine,
         );
         (&fallback_pool, ranked)
     } else {
@@ -400,8 +444,14 @@ fn query_directories(
         } else {
             Origin::Database
         };
-        let mut report =
-            explain::explain(query, &current.path, pool, origin, settings.typo_min_length);
+        let mut report = explain::explain(
+            query,
+            &current.path,
+            pool,
+            origin,
+            settings.typo_min_length,
+            engine,
+        );
         report.project_root = project_root.clone();
         eprint!("{}", explain::render(&report));
         return Ok(());

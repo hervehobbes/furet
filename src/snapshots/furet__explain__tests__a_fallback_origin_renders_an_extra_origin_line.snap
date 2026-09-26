@@ -3,6 +3,7 @@ source: src/explain.rs
 expression: fallback
 ---
 normalized query: tokio
+engine: reference
 origin: fallback
 evaluated candidates:
   stage 1 score 90 /dev/tokio

@@ -1,6 +1,7 @@
 use crate::decision::{self, Decision};
 use crate::normalize::Normalized;
-use crate::rank::{self, Candidate, Stage, TieBreak};
+use crate::rank::{self, Candidate, Engine, Stage, TieBreak};
+use crate::stage1_nucleo::{self, NucleoScorer};
 use crate::{stage1, stage2};
 
 /// Why a stored directory never reached the ranking.
@@ -12,6 +13,13 @@ pub enum Elimination {
     DistanceTooFar { distance: usize },
 }
 
+/// The stage-1 score detail, in the shape of the engine that produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stage1Detail {
+    Reference(stage1::Breakdown),
+    Nucleo(stage1_nucleo::Breakdown),
+}
+
 /// What this query did with one stored directory: match it with its score
 /// detail, or drop it with a reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +28,7 @@ pub enum Evaluation<'a> {
         candidate: &'a Candidate,
         stage: Stage,
         score: u32,
-        stage1: Option<stage1::Breakdown>,
+        stage1: Option<Stage1Detail>,
         stage2_distance: Option<usize>,
     },
     Eliminated {
@@ -40,6 +48,7 @@ pub enum Origin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report<'a> {
     pub normalized_query: String,
+    pub engine: Engine,
     /// Set by `query --local`: the git project root the pool was scoped to.
     pub project_root: Option<String>,
     pub evaluations: Vec<Evaluation<'a>>,
@@ -57,18 +66,26 @@ pub fn explain<'a>(
     candidates: &'a [Candidate],
     origin: Origin,
     typo_min_length: usize,
+    engine: Engine,
 ) -> Report<'a> {
-    let ranked = rank::rank(query, current_dir, candidates, typo_min_length);
+    let ranked = rank::rank(query, current_dir, candidates, typo_min_length, engine);
+    let mut nucleo = (engine == Engine::Nucleo).then(NucleoScorer::new);
     let mut evaluations: Vec<Evaluation<'a>> = Vec::with_capacity(candidates.len());
     for scored in &ranked {
         let name = &scored.candidate.name;
+        let folder = scored.candidate.folder.as_deref();
         evaluations.push(Evaluation::Matched {
             candidate: scored.candidate,
             stage: scored.stage,
             score: scored.score,
-            stage1: match scored.stage {
-                Stage::One => stage1::explain(query, name, scored.candidate.folder.as_deref()),
-                Stage::Two => None,
+            stage1: match (scored.stage, nucleo.as_mut()) {
+                (Stage::One, None) => {
+                    stage1::explain(query, name, folder).map(Stage1Detail::Reference)
+                }
+                (Stage::One, Some(scorer)) => scorer
+                    .explain(query, name, folder)
+                    .map(Stage1Detail::Nucleo),
+                (Stage::Two, _) => None,
             },
             stage2_distance: match scored.stage {
                 Stage::One => None,
@@ -93,6 +110,7 @@ pub fn explain<'a>(
     }
     Report {
         normalized_query: Normalized::new(query).text(),
+        engine,
         project_root: None,
         decision: decision::decide(&ranked),
         deciding_criterion: rank::deciding_criterion(&ranked),
@@ -124,6 +142,7 @@ fn eliminate(
 /// stable, so it can be snapshot tested.
 pub fn render(report: &Report) -> String {
     let mut rendered = format!("normalized query: {}\n", report.normalized_query);
+    rendered.push_str(&format!("engine: {}\n", report.engine.name()));
     if let Some(root) = &report.project_root {
         rendered.push_str(&format!("project root: {root}\n"));
     }
@@ -148,8 +167,14 @@ pub fn render(report: &Report) -> String {
                 score,
                 candidate.path
             ));
-            if let Some(breakdown) = stage1 {
-                rendered.push_str(&render_breakdown(breakdown));
+            match stage1 {
+                Some(Stage1Detail::Reference(breakdown)) => {
+                    rendered.push_str(&render_breakdown(breakdown));
+                }
+                Some(Stage1Detail::Nucleo(breakdown)) => {
+                    rendered.push_str(&render_nucleo_breakdown(breakdown));
+                }
+                None => {}
             }
             if let Some(distance) = stage2_distance {
                 rendered.push_str(&format!(
@@ -214,6 +239,24 @@ fn render_breakdown(breakdown: &stage1::Breakdown) -> String {
     rendered
 }
 
+fn render_nucleo_breakdown(breakdown: &stage1_nucleo::Breakdown) -> String {
+    let mut rendered = String::new();
+    for token in &breakdown.tokens {
+        rendered.push_str(&format!(
+            "    token '{}': nucleo {}\n",
+            token.token, token.score
+        ));
+    }
+    rendered.push_str(&format!(
+        "    sum {}, floored {}\n",
+        breakdown.sum, breakdown.floored
+    ));
+    if breakdown.folder_bonus > 0 {
+        rendered.push_str(&format!("    folder bonus +{}\n", breakdown.folder_bonus));
+    }
+    rendered
+}
+
 fn stage_label(stage: Stage) -> &'static str {
     match stage {
         Stage::One => "stage 1",
@@ -258,11 +301,15 @@ fn decision_label(decision: &Decision) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Elimination, Evaluation, Origin, Report, explain, render};
+    use super::{Elimination, Evaluation, Origin, Report, Stage1Detail, explain, render};
     use crate::clock::Timestamp;
     use crate::decision::Decision;
-    use crate::rank::{Candidate, Stage, TieBreak};
+    use crate::rank::{Candidate, Engine, Stage, TieBreak};
+    use crate::stage1_nucleo::NucleoScorer;
     use crate::stage2::TYPO_MIN_QUERY_LEN;
+    use crate::{rank, stage1};
+    use proptest::prelude::*;
+    use std::collections::HashSet;
 
     fn at(hours: i64) -> Timestamp {
         Timestamp::from_unix_seconds(1_700_000_000 - hours * 3_600)
@@ -326,6 +373,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(report.evaluations.len(), candidates.len());
         assert_eq!(report.normalized_query, "tokio");
@@ -340,6 +388,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(
             reason(&report, "/dev/helix"),
@@ -357,6 +406,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(
             reason(&report, "/dev/tokio"),
@@ -375,6 +425,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(
             reason(&report, "/dev/tokio"),
@@ -385,7 +436,14 @@ mod tests {
     #[test]
     fn a_query_too_short_for_stage_two_eliminates_on_no_subsequence() {
         let candidates = world();
-        let report = explain("tok", "", &candidates, Origin::Database, TYPO_MIN_QUERY_LEN);
+        let report = explain(
+            "tok",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+        );
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 68)));
         assert_eq!(
             reason(&report, "/dev/helix"),
@@ -406,6 +464,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(
             reason(&report, "/dev/zellij"),
@@ -420,7 +479,14 @@ mod tests {
     #[test]
     fn an_elimination_names_the_threshold_the_query_length_applies() {
         let short = [dir("/dev/tokei", "tokei", "/dev", 1)];
-        let report = explain("tokio", "", &short, Origin::Database, TYPO_MIN_QUERY_LEN);
+        let report = explain(
+            "tokio",
+            "",
+            &short,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+        );
         assert_eq!(report.stage2_max_distance, 1);
         assert_eq!(
             reason(&report, "/dev/tokei"),
@@ -432,7 +498,14 @@ mod tests {
             "{rendered}"
         );
         let long = [dir("/dev/neovim", "neovim", "/dev", 1)];
-        let accepted = explain("meovin", "", &long, Origin::Database, TYPO_MIN_QUERY_LEN);
+        let accepted = explain(
+            "meovin",
+            "",
+            &long,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+        );
         assert_eq!(accepted.stage2_max_distance, 2);
         let rendered = render(&accepted);
         assert!(rendered.contains("distance 2 (max 2)"), "{rendered}");
@@ -447,6 +520,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(matched(&report, "/dev/tokio"), Some((Stage::One, 90)));
         assert_eq!(matched(&report, "/dev/tokyo"), Some((Stage::Two, 2)));
@@ -474,6 +548,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(report.decision, Decision::Jump(&candidates[0]));
         assert_eq!(report.deciding_criterion, Some(TieBreak::Score));
@@ -483,6 +558,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(empty.decision, Decision::None);
         assert_eq!(empty.deciding_criterion, None);
@@ -500,6 +576,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         );
         assert_eq!(
             report.decision,
@@ -517,8 +594,10 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         ));
         let expected = "normalized query: tokio\n\
+            engine: reference\n\
             evaluated candidates:\n\
             \x20 stage 1 score 90 /dev/tokio\n\
             \x20   token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85\n\
@@ -545,6 +624,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         ));
         assert!(rendered.contains("floor raises"), "{rendered}");
         assert!(rendered.contains("stage 1 score 4 /dev/long"), "{rendered}");
@@ -555,9 +635,10 @@ mod tests {
                 "",
                 &nothing,
                 Origin::Database,
-                TYPO_MIN_QUERY_LEN
+                TYPO_MIN_QUERY_LEN,
+                Engine::Reference
             )),
-            "normalized query: tokio\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
+            "normalized query: tokio\nengine: reference\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
         );
     }
 
@@ -570,6 +651,7 @@ mod tests {
             &candidates,
             Origin::Database,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         ));
         assert!(!database.contains("origin:"), "{database}");
         let fallback = render(&explain(
@@ -578,7 +660,152 @@ mod tests {
             &candidates,
             Origin::Fallback,
             TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
         ));
         insta::assert_snapshot!(fallback);
+    }
+
+    #[test]
+    fn a_nucleo_report_names_its_engine_and_each_token_score() {
+        let candidates = [
+            dir("/src/neovim/neovim", "neovim", "/src/neovim", 1),
+            dir("/dev/helix", "helix", "/dev", 2),
+        ];
+        let report = explain(
+            "Neo VIM",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Nucleo,
+        );
+        assert_eq!(report.engine, Engine::Nucleo);
+        let detail = NucleoScorer::new()
+            .explain("Neo VIM", "neovim", Some("/src/neovim"))
+            .expect("both tokens match");
+        assert_eq!(detail.folder_bonus, 2);
+        let rendered = render(&report);
+        let expected = format!(
+            "normalized query: neo vim\n\
+            engine: nucleo\n\
+            evaluated candidates:\n\
+            \x20 stage 1 score {} /src/neovim/neovim\n\
+            \x20   token 'neo': nucleo {}\n\
+            \x20   token 'vim': nucleo {}\n\
+            \x20   sum {}, floored {}\n\
+            \x20   folder bonus +2\n\
+            eliminated candidates:\n\
+            \x20 /dev/helix: no subsequence\n\
+            deciding criterion: none (no runner-up)\n\
+            decision: jump /src/neovim/neovim\n",
+            detail.total,
+            detail.tokens[0].score,
+            detail.tokens[1].score,
+            detail.sum,
+            detail.floored
+        );
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn a_nucleo_report_omits_the_folder_bonus_line_when_it_is_not_awarded() {
+        let candidates = [dir("/dev/tokio", "tokio", "/dev", 1)];
+        let rendered = render(&explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Nucleo,
+        ));
+        assert!(rendered.contains("engine: nucleo\n"), "{rendered}");
+        assert!(
+            rendered.contains("    token 'tokio': nucleo "),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("folder bonus"), "{rendered}");
+        assert!(!rendered.contains("order bonus"), "{rendered}");
+    }
+
+    static NAMES: &[&str] = &[
+        "tokio",
+        "tokei",
+        "helix",
+        "Réunions",
+        "my-dev",
+        "d-e-v",
+        "neovim",
+    ];
+    static FOLDERS: &[&str] = &["/dev", "/archive", "/src/neovim"];
+    static QUERIES: &[&str] = &[
+        "tok",
+        "tokio",
+        "tokoi",
+        "réunions",
+        "dev",
+        "neo vim",
+        "zigzag",
+    ];
+
+    fn a_candidate_set() -> impl Strategy<Value = Vec<Candidate>> {
+        proptest::collection::vec(
+            (
+                proptest::sample::select(FOLDERS),
+                proptest::sample::select(NAMES),
+                0i64..96,
+                any::<bool>(),
+            ),
+            0..8,
+        )
+        .prop_map(|drawn| {
+            let mut seen: HashSet<String> = HashSet::new();
+            drawn
+                .into_iter()
+                .map(|(folder, name, hours, missing)| {
+                    let mut candidate = dir(&format!("{folder}/{name}"), name, folder, hours);
+                    candidate.missing = missing;
+                    candidate
+                })
+                .filter(|candidate| seen.insert(candidate.path.clone()))
+                .collect()
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn nucleo_explain_agrees_with_rank_on_stage_score_and_order(
+            candidates in a_candidate_set(),
+            query in proptest::sample::select(QUERIES),
+        ) {
+            let ranked = rank::rank(query, "", &candidates, TYPO_MIN_QUERY_LEN, Engine::Nucleo);
+            let report = explain(query, "", &candidates, Origin::Database, TYPO_MIN_QUERY_LEN, Engine::Nucleo);
+            let mut matched: Vec<(&str, Stage, u32)> = Vec::new();
+            for evaluation in &report.evaluations {
+                if let Evaluation::Matched { candidate, stage, score, stage1, .. } = evaluation {
+                    match (stage, stage1) {
+                        (Stage::One, Some(Stage1Detail::Nucleo(detail))) => {
+                            prop_assert_eq!(detail.total, *score);
+                        }
+                        (Stage::Two, None) => {}
+                        (stage, detail) => prop_assert!(false, "{:?} carried {:?}", stage, detail),
+                    }
+                    matched.push((candidate.path.as_str(), *stage, *score));
+                }
+            }
+            let expected: Vec<(&str, Stage, u32)> = ranked
+                .iter()
+                .map(|scored| (scored.candidate.path.as_str(), scored.stage, scored.score))
+                .collect();
+            prop_assert_eq!(matched, expected);
+            prop_assert_eq!(report.deciding_criterion, rank::deciding_criterion(&ranked));
+            prop_assert_eq!(report.evaluations.len(), candidates.len());
+            let reference = explain(query, "", &candidates, Origin::Database, TYPO_MIN_QUERY_LEN, Engine::Reference);
+            for evaluation in &reference.evaluations {
+                if let Evaluation::Matched { stage: Stage::One, stage1, .. } = evaluation {
+                    prop_assert!(matches!(stage1, Some(Stage1Detail::Reference(_))));
+                }
+            }
+            prop_assert!(stage1::SCORE_FLOOR > crate::stage2::SCORE_CAP);
+        }
     }
 }

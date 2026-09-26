@@ -72,11 +72,16 @@ impl Sandbox {
     }
 
     fn explain(&self, query: &str, cwd: &Path) -> String {
+        self.explain_with(query, cwd, &[])
+    }
+
+    fn explain_with(&self, query: &str, cwd: &Path, extra: &[&str]) -> String {
         let out = self
             .furet()
             .arg("query")
             .arg(query)
             .arg("--explain")
+            .args(extra)
             .current_dir(cwd)
             .assert()
             .get_output()
@@ -129,6 +134,16 @@ fn explain_reports_the_menu_a_stage_two_tie_would_open() {
     }
     let cwd = world.tree.path().to_path_buf();
     insta::assert_snapshot!("stage_two_menu", world.explain("tokoi", &cwd));
+}
+
+#[test]
+fn explain_reports_each_nucleo_token_score_under_engine_nucleo() {
+    let world = scored_world();
+    let cwd = world.tree.path().to_path_buf();
+    insta::assert_snapshot!(
+        "nucleo_tokens",
+        world.explain_with("tok io", &cwd, &["--engine", "nucleo"])
+    );
 }
 
 #[test]

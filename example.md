@@ -245,6 +245,35 @@ Affiche le détail du score (étape 1 vs étape 2, bonus, récence) sur
 `stderr`, sans effectuer le saut ni enregistrer de visite. La forme
 directe `furet query mcp --explain` fonctionne aussi, sans le hook pwsh.
 
+### Essayer le moteur nucleo
+
+Le moteur de référence reste celui par défaut. Pour comparer avec le
+matcher de Helix (`nucleo`) sur une seule requête :
+
+```powershell
+PS C:\dev\furet> furet query dev --explain --engine nucleo
+PS C:\dev\furet> furet query dev --explain --engine reference
+```
+
+Le rapport commence par `engine: nucleo` (ou `engine: reference`). Avec
+nucleo, chaque fragment affiche son score (`token 'dev': nucleo 80`), puis
+`sum …, floored …` et, s'il est accordé, `folder bonus +2`. Les deux
+moteurs peuvent choisir des gagnants différents : pour `dev`, nucleo
+préfère `my-dev` (début de mot) alors que le moteur de référence préfère
+`d-e-v`.
+
+Pour l'adopter durablement (y compris pour `f` et `fi`, qui ne passent
+jamais `--engine`), ajouter dans `config.toml` :
+
+```toml
+engine = "nucleo"
+```
+
+`--engine` l'emporte toujours sur `config.toml`. Les accents de la requête
+sont retirés avant l'appel à nucleo (`réunions` trouve `Reunions`), mais
+nucleo a sa propre normalisation des noms : un nom grec ou cyrillique
+accentué (`Αθήνα`, `й`) peut lui échapper, alors que `o` trouve `ø`.
+
 ### Colorer la liste et ignorer les règles `.gitignore` du fallback disque
 
 ```powershell

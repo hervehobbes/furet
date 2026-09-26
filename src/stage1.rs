@@ -32,10 +32,17 @@ pub fn score(query: &str, name: &str, folder: Option<&str>) -> Option<u32> {
         total += ORDER_BONUS;
     }
     let floored = u32::try_from(total.max(i64::from(SCORE_FLOOR))).unwrap_or(u32::MAX);
-    if folder.is_some_and(|part| matches_folder(&tokens, part)) {
-        return Some(floored.saturating_add(FOLDER_BONUS));
+    Some(floored.saturating_add(folder_bonus(&tokens, folder)))
+}
+
+/// The `+2` folder bonus when every normalized token is a subsequence of the
+/// folder part, else 0.
+pub fn folder_bonus(tokens: &[Normalized], folder: Option<&str>) -> u32 {
+    if folder.is_some_and(|part| matches_folder(tokens, part)) {
+        FOLDER_BONUS
+    } else {
+        0
     }
-    Some(floored)
 }
 
 /// One query token's stage-1 contribution, split into base and bonuses.
@@ -83,15 +90,10 @@ pub fn explain(query: &str, name: &str, folder: Option<&str>) -> Option<Breakdow
     } else {
         0
     };
-    let folder_bonus = if folder.is_some_and(|part| matches_folder(&tokens, part)) {
-        i64::from(FOLDER_BONUS)
-    } else {
-        0
-    };
     Some(Breakdown {
         tokens: reported,
         order_bonus,
-        folder_bonus,
+        folder_bonus: i64::from(folder_bonus(&tokens, folder)),
         total,
     })
 }

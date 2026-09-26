@@ -3,6 +3,7 @@ source: tests/explain.rs
 expression: "world.explain(\"tok\", &cwd)"
 ---
 normalized query: tok
+engine: reference
 evaluated candidates:
   stage 1 score 70 <tmp>\tokio-lab\tokio
     token 'tok': base 10 + length 3 + placement 34 + prefix 10 + density 6 = 63

@@ -1,4 +1,13 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 41 — opt-in nucleo stage 1 (`nucleo-matcher` 0.3.1, MPL-2.0): `engine` key, `query --engine`,
+`engine:` explain line; `rank` builds one matcher per call (private `Scorer`), tokens §7.1-normalized first.
+Decisions: Hervé's 1–7; `nucleo.toml` (8 cases) verified by rendering `explain::explain` + `render` per case
+in a deleted scratch test, plus the CLI `--engine nucleo --explain` snapshot. Gaps vs §7.1, not patched:
+`Αθήνα`/`й` names miss even their own spelling (4+ chars → stage 2 score 3), NFD name 202 vs 218,
+`o` matches `ø`; `ß`/`İ` agree. Extra: lot-40 cli assertion gains the `engine:` line; `decision.rs` passes
+`Engine::Reference`. Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 40b — `-l` is now a declared switch on `f`/`fi`
 (`[Alias('l')] [switch] $Local` before the remaining-arguments parameter;
 `--local` still stripped by hand, `f -- -l` passes `-l` as query text), and

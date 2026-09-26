@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use furet::clock::{Clock, FixedClock, Timestamp};
 use furet::decision::{Decision, decide};
-use furet::rank::{Candidate, rank};
+use furet::rank::{Candidate, Engine, rank};
 use furet::stage2::TYPO_MIN_QUERY_LEN;
 use serde::Deserialize;
 
@@ -11,7 +11,23 @@ const SIMULATED_NOW: Timestamp = Timestamp::from_unix_seconds(1_700_000_000);
 
 #[derive(Deserialize)]
 struct ScenarioFile {
+    #[serde(default)]
+    engine: Option<EngineName>,
     case: Vec<Case>,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum EngineName {
+    Reference,
+    Nucleo,
+}
+
+fn engine_for(file: Option<EngineName>, case: Option<EngineName>) -> Engine {
+    match case.or(file) {
+        None | Some(EngineName::Reference) => Engine::Reference,
+        Some(EngineName::Nucleo) => Engine::Nucleo,
+    }
 }
 
 #[derive(Deserialize)]
@@ -28,6 +44,8 @@ struct Case {
     menu: Option<Vec<String>>,
     #[serde(default)]
     none: Option<bool>,
+    #[serde(default)]
+    engine: Option<EngineName>,
 }
 
 #[derive(Deserialize)]
@@ -197,7 +215,14 @@ fn scenario_cases_reach_their_expected_outcome() -> Result<(), Box<dyn std::erro
                 .map(|spec| candidate(spec, clock.now()))
                 .collect();
             let current_dir = case.current_dir.as_deref().unwrap_or_default();
-            let ranked = rank(&case.query, current_dir, &candidates, TYPO_MIN_QUERY_LEN);
+            let engine = engine_for(parsed.engine, case.engine);
+            let ranked = rank(
+                &case.query,
+                current_dir,
+                &candidates,
+                TYPO_MIN_QUERY_LEN,
+                engine,
+            );
             let found: Vec<&str> = ranked
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())
@@ -255,6 +280,28 @@ fn scenario_cases_reach_their_expected_outcome() -> Result<(), Box<dyn std::erro
     }
     assert!(cases_run > 0, "no scenario case was executed");
     Ok(())
+}
+
+#[test]
+fn the_case_engine_wins_over_the_file_engine_which_defaults_to_reference() {
+    assert_eq!(engine_for(None, None), Engine::Reference);
+    assert_eq!(engine_for(Some(EngineName::Nucleo), None), Engine::Nucleo);
+    assert_eq!(
+        engine_for(Some(EngineName::Nucleo), Some(EngineName::Reference)),
+        Engine::Reference
+    );
+    assert_eq!(
+        engine_for(Some(EngineName::Reference), Some(EngineName::Nucleo)),
+        Engine::Nucleo
+    );
+    let case = "[[case]]\nname = \"n\"\nquery = \"q\"\nnone = true\n";
+    let parsed: ScenarioFile = toml::from_str(&format!(
+        "engine = \"nucleo\"\n{case}engine = \"reference\"\n"
+    ))
+    .expect("an engine at file and case level parses");
+    assert_eq!(parsed.engine, Some(EngineName::Nucleo));
+    assert_eq!(parsed.case[0].engine, Some(EngineName::Reference));
+    assert!(toml::from_str::<ScenarioFile>(&format!("engine = \"fast\"\n{case}")).is_err());
 }
 
 #[test]
