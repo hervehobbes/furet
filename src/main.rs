@@ -97,6 +97,9 @@ enum Command {
         /// Also list directories missing from disk, with a presence column.
         #[arg(long)]
         all: bool,
+        /// Print only the path of each directory.
+        #[arg(short, long)]
+        paths: bool,
     },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
@@ -172,7 +175,7 @@ fn main() {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
         Command::Queries { failures } => report(queries_command(failures)),
-        Command::List { all } => report(list_command(all)),
+        Command::List { all, paths } => report(list_command(all, paths)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -745,12 +748,15 @@ fn print_result(path: &str) {
 }
 
 // WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
-fn list_command(all: bool) -> Result<(), Box<dyn Error>> {
-    debug!(all, "list");
+fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
+    debug!(all, paths, "list");
     let conn = storage::open()?;
     let lines: Vec<String> = storage::dir_listing(&conn, all)?
         .iter()
         .map(|row| {
+            if paths {
+                return row.path.clone();
+            }
             let mut line = format!(
                 "{}\t{}\t{}\t{}",
                 row.path,

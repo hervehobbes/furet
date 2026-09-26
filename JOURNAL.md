@@ -1,3 +1,12 @@
+## 2026-09-26 — branch main — v0.1.1
+Done: lot 34 — `furet list --paths` (`-p`) prints only the path of each
+directory, one per line, same rows and order as `furet list`;
+`--all --paths` keeps missing rows without the presence column; the default
+output is unchanged. 4 new cli tests, `help__list_help.snap` updated;
+README/CONTRACTS/example.md.
+Decisions: none beyond the prompt (Hervé: opt-in flag, no presence column
+with `--all`). Next: reviewer pass from a Claude Code session.
+
 ## 2026-09-23 — branch main — v0.1.1
 Done: lot 33 — `retention_days` config key (default 365, 0 = keep all);
 every `furet add` deletes `visits`/`queries` rows older than that via

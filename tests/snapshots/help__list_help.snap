@@ -7,5 +7,6 @@ List known directories as tab-separated lines
 Usage: furet list [OPTIONS]
 
 Options:
-      --all   Also list directories missing from disk, with a presence column
-  -h, --help  Print help
+      --all    Also list directories missing from disk, with a presence column
+  -p, --paths  Print only the path of each directory
+  -h, --help   Print help

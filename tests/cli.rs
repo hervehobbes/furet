@@ -175,6 +175,15 @@ fn list(sandbox: &Sandbox, all: bool) -> Output {
     run(&mut cmd)
 }
 
+fn list_with(sandbox: &Sandbox, extra: &[&str]) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("list");
+    for arg in extra {
+        cmd.arg(arg);
+    }
+    run(&mut cmd)
+}
+
 fn local_time(conn: &Connection, seconds: i64) -> String {
     conn.query_row(
         "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
@@ -1563,6 +1572,96 @@ fn list_all_includes_missing_directories_with_a_presence_column() {
             "{gone_path}\t1\t{gone_last}\t{first}\tmissing\n{tokio_path}\t1\t{tokio_last}\t{first}\tpresent\n"
         )
     );
+}
+
+#[test]
+fn list_paths_prints_only_the_path_of_each_directory_in_list_order() {
+    let world = sandbox(&["alpha", "beta", "gamma"]);
+    let alpha = world.child("alpha");
+    let beta = world.child("beta");
+    let gamma = world.child("gamma");
+    for child in [&alpha, &beta, &gamma] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    visited_at(&world, &alpha, 1_700_000_001);
+    visited_at(&world, &beta, 1_700_000_003);
+    visited_at(&world, &gamma, 1_700_000_002);
+    let out = list_with(&world, &["--paths"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected: Vec<String> = [&beta, &gamma, &alpha]
+        .iter()
+        .map(|path| {
+            paths::canonical(path)
+                .expect("the recorded directory canonicalizes")
+                .path
+        })
+        .collect();
+    let stdout = text(&out.stdout);
+    assert_eq!(stdout, format!("{}\n", expected.join("\n")));
+    assert!(
+        !stdout.contains('\t'),
+        "--paths never prints a tab: {stdout:?}"
+    );
+}
+
+#[test]
+fn list_paths_short_flag_matches_the_long_flag() {
+    let world = sandbox(&["tokio", "tokei"]);
+    let tokio = world.child("tokio");
+    let tokei = world.child("tokei");
+    for child in [&tokio, &tokei] {
+        assert!(add(&world, child, "session-1", None, None).status.success());
+    }
+    visited_at(&world, &tokio, 1_700_000_002);
+    visited_at(&world, &tokei, 1_700_000_001);
+    let long = list_with(&world, &["--paths"]);
+    let short = list_with(&world, &["-p"]);
+    assert!(long.status.success(), "stderr: {}", text(&long.stderr));
+    assert!(short.status.success(), "stderr: {}", text(&short.stderr));
+    assert_eq!(text(&long.stdout), text(&short.stdout));
+}
+
+#[test]
+fn list_all_paths_includes_missing_directories_without_a_presence_column() {
+    let world = sandbox(&["tokio", "gone"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    assert!(
+        add(&world, &tokio, "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &gone, "session-1", None, None).status.success());
+    visited_at(&world, &tokio, 1_700_000_002);
+    visited_at(&world, &gone, 1_700_000_003);
+    missing_since_at(&world, &gone, 1_700_000_100);
+    let out = list_with(&world, &["--all", "--paths"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let gone_path = paths::canonical(&gone)
+        .expect("the missing directory canonicalizes")
+        .path;
+    let tokio_path = paths::canonical(&tokio)
+        .expect("the present directory canonicalizes")
+        .path;
+    let stdout = text(&out.stdout);
+    assert_eq!(stdout, format!("{gone_path}\n{tokio_path}\n"));
+    assert!(
+        !stdout.contains('\t'),
+        "--paths never prints a tab: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("present") && !stdout.contains("missing"),
+        "--all --paths never prints a presence column: {stdout:?}"
+    );
+}
+
+#[test]
+fn list_paths_on_an_empty_database_prints_nothing_and_exits_zero() {
+    let world = sandbox(&[]);
+    let out = list_with(&world, &["--paths"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty());
 }
 
 #[test]

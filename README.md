@@ -45,10 +45,10 @@ wires a prompt hook that records every directory change.
   on stderr without jumping.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
-- `furet list [--all]` — print every known directory as one tab-separated
+- `furet list [--all] [--paths]` — print every known directory as one tab-separated
   line: `path`, `visits`, `last_visit`, `first_seen` (local time); `--all`
   also lists directories missing from disk, with a `present`/`missing`
-  column.
+  column. `--paths` (`-p`) prints the path alone, also with `--all`.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by

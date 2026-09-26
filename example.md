@@ -240,6 +240,17 @@ disque apparaissent aussi, avec une cinquième colonne `present` ou
 PS C:\dev\furet> furet list --all
 ```
 
+Avec `--paths` (raccourci `-p`), chaque ligne ne contient que le chemin —
+pratique pour rediriger la sortie vers un autre outil sans découper sur
+les tabulations ; cela vaut aussi avec `--all`, qui omet alors la colonne
+`present`/`missing` :
+
+```powershell
+PS C:\dev\furet> furet list --paths
+C:\dev\CodeGroups\CodeGroups.Mcp
+C:\dev\RedditForKarakeep\mcp
+```
+
 ### Importer la base zoxide
 
 Pour démarrer avec une base déjà remplie plutôt que vide :
