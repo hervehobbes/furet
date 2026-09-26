@@ -6,7 +6,8 @@ file governs every agent session in this repo, including GLM sessions.
 ## Language
 Everything in this repository is English: code, identifiers, comments, docs,
 commit messages, and every lot prompt written to `prompts/`. French exists
-only in `prompts/SPEC.md`, which is gitignored and never committed.
+only in `prompts/SPEC.md` and `prompts/SPEC-v2.md`, which are gitignored and
+never committed.
 `example.md` is written in French at Hervé's request (temporary exception).
 
 ## Reference engine
@@ -14,15 +15,22 @@ Section 7 of the spec reprises a proven fuzzy-matching engine "as is." Look at
 how zoxide (MIT) solves shell integration, hooks, `init`, and path resolution
 before designing any related mechanism — cite it, don't reinvent it. Any
 divergence from the reference engine or from zoxide's approach is Hervé's
-decision, not an agent's.
+decision, not an agent's. The reference engine stays the default; `nucleo`
+is an opt-in alternative for stage 1 only (SPEC-v2 §20).
 
 ## D1 — recency breaks ties, it never ranks
 A more recent directory must never outrank a better-matched one. Changing
 this is Hervé's decision.
+One exception, decided by Hervé on 2026-09-26: query memory (SPEC-v2 §24)
+puts the directory last chosen for the same normalized query first. It is
+not recency and is the only criterion allowed above the score. The order
+is: query memory, score, recency, name length, path.
 
 ## stdout discipline
 The binary writes only the jump target path to `stdout`. Menus, errors, and
 logs go to `stderr`, the console, or the log file — never `stdout`.
+The accepted exceptions are listed in `CONTRACTS.md`; adding one is
+Hervé's decision.
 
 ## Comments — machine-enforced, not prose
 - No `//` line comments except a single-line `// WHY: ...`.
@@ -78,7 +86,7 @@ Enforced by `.claude/settings.json`: no editing `tools/hooks/**` or
 permission denials, not requests — do not ask to bypass them.
 
 ## Ambiguity
-If `prompts/SPEC.md` is ambiguous or a lot prompt conflicts with it: stop and
+If `prompts/SPEC.md` or `prompts/SPEC-v2.md` is ambiguous or a lot prompt conflicts with it: stop and
 ask Hervé. Never interpret, never guess, never invent a feature not in scope.
 
 ## Process
