@@ -247,7 +247,16 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   stripped by hand from `$FuretArgs` (`$scoped = $Local.IsPresent -or
   ($FuretArgs -contains '--local')`); a literal `-l` can only reach
   `$FuretArgs` through `f -- -l`, where it is query text and is not
-  stripped. With a query the scoped branch calls `furet query --local --
+  stripped. pwsh's parameter-name abbreviation applies (accepted by Hervé,
+  2026-09-26, verified on pwsh 7.6.6): any case-insensitive prefix of
+  `-Local` (`-L`, `-lo`, `-local`) turns the switch on instead of being
+  query text, and since both functions are advanced functions, `-F…` binds
+  `-FuretArgs` and prefixes of the common parameters are consumed too
+  (`-v`, `-d`, `-ev`, `-ov`, `-pv` bind silently; `-e`, `-o`, `-w`, `-i`,
+  `-p` fail as ambiguous) — the common-parameter and `-F…` cases already
+  held before lot 40b. `f -- <token>` passes any such token as query text.
+  Tokens matching no parameter (`-x`, `-dev`) stay query text. With a query
+  the scoped branch calls `furet query --local --
   $query`, without one it calls `furet query --local` and jumps to the
   project root, recording the landing
   as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, direct-path,
