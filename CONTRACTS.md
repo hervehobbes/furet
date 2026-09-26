@@ -186,8 +186,8 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   second accepted stdout exception, for the same reason.
 - `furet list [--all] [--paths]` — prints one tab-separated line per known directory —
   `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
-  ordered by last visit descending then path ascending, zero-visit rows
-  last; timestamps are local time formatted by SQLite itself. Without
+  ordered by path, ignoring case (the lowercased `key`);
+  timestamps are local time formatted by SQLite itself. Without
   `--all`, rows with a `missing_since` are excluded; with `--all`, every
   row appears plus a fifth `present`/`missing` column. `--paths` (`-p`)
   prints the path alone, also with `--all`. Read-only: the

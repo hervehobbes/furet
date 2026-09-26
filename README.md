@@ -48,7 +48,8 @@ wires a prompt hook that records every directory change.
 - `furet list [--all] [--paths]` — print every known directory as one tab-separated
   line: `path`, `visits`, `last_visit`, `first_seen` (local time); `--all`
   also lists directories missing from disk, with a `present`/`missing`
-  column. `--paths` (`-p`) prints the path alone, also with `--all`.
+  column. Rows are ordered alphabetically by path, ignoring case.
+  `--paths` (`-p`) prints the path alone, also with `--all`.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by

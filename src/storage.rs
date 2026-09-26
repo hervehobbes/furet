@@ -287,7 +287,6 @@ pub fn dir_listing(
     conn: &Connection,
     include_missing: bool,
 ) -> Result<Vec<DirListing>, StorageError> {
-    // WHY: MAX(ts) is the raw integer the ORDER BY needs, so the strftime text never decides the order.
     let mut stmt = conn.prepare(
         "SELECT dirs.path,
                 COUNT(visits.id),
@@ -298,7 +297,7 @@ pub fn dir_listing(
          LEFT JOIN visits ON visits.dir_id = dirs.id
          WHERE ?1 OR dirs.missing_since IS NULL
          GROUP BY dirs.id
-         ORDER BY (MAX(visits.ts) IS NULL), MAX(visits.ts) DESC, dirs.path ASC",
+         ORDER BY dirs.key ASC",
     )?;
     let rows = stmt
         .query_map(params![include_missing], |row| {
@@ -862,24 +861,24 @@ mod tests {
     }
 
     #[test]
-    fn dir_listing_orders_by_last_visit_then_path_and_lists_zero_visits_last() {
+    fn dir_listing_orders_by_key_whatever_the_case_and_the_visits() {
         let (_dir, path) = temp_db();
         let conn = opened(&path);
-        let beta = upsert_dir(&conn, "c:\\dev\\beta", "c:\\dev\\beta", at(100))
-            .expect("the beta dir upserts");
-        let aaa = upsert_dir(&conn, "c:\\dev\\aaa", "c:\\dev\\aaa", at(100))
-            .expect("the aaa dir upserts");
-        upsert_dir(&conn, "c:\\dev\\orphan", "c:\\dev\\orphan", at(100))
+        let zeta = upsert_dir(&conn, "C:\\dev\\Zeta", "c:\\dev\\zeta", at(100))
+            .expect("the zeta dir upserts");
+        let alpha = upsert_dir(&conn, "c:\\dev\\alpha", "c:\\dev\\alpha", at(100))
+            .expect("the alpha dir upserts");
+        upsert_dir(&conn, "C:\\dev\\Beta", "c:\\dev\\beta", at(100))
             .expect("the visit-less dir upserts");
-        insert_visit(&conn, beta, at(300), "hook", "s", None).expect("the beta visit inserts");
-        insert_visit(&conn, aaa, at(300), "hook", "s", None).expect("the aaa visit inserts");
+        insert_visit(&conn, zeta, at(300), "hook", "s", None).expect("the zeta visit inserts");
+        insert_visit(&conn, alpha, at(150), "hook", "s", None).expect("the alpha visit inserts");
         let rows = dir_listing(&conn, false).expect("the listing reads");
         let paths: Vec<&str> = rows.iter().map(|row| row.path.as_str()).collect();
-        assert_eq!(paths, ["c:\\dev\\aaa", "c:\\dev\\beta", "c:\\dev\\orphan"]);
+        assert_eq!(paths, ["c:\\dev\\alpha", "C:\\dev\\Beta", "C:\\dev\\Zeta"]);
         assert_eq!(rows[0].visits, 1);
-        assert_eq!(rows[1].visits, 1);
-        assert_eq!(rows[2].visits, 0);
-        assert_eq!(rows[2].last_visit, None);
+        assert_eq!(rows[1].visits, 0);
+        assert_eq!(rows[1].last_visit, None);
+        assert_eq!(rows[2].visits, 1);
     }
 
     #[test]
@@ -902,7 +901,7 @@ mod tests {
         assert_eq!(plain[0].path, "c:\\dev\\tokio");
         let all = dir_listing(&conn, true).expect("the full listing reads");
         assert_eq!(all.len(), 2);
-        assert!(all[0].missing, "the newer-visited missing row sorts first");
+        assert!(all[0].missing, "gone sorts before tokio");
         assert_eq!(all[0].path, "c:\\dev\\gone");
         assert!(!all[1].missing);
         assert_eq!(all[1].path, "c:\\dev\\tokio");

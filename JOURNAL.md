@@ -1,4 +1,14 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 35 — `furet list` (plain, `--all`, `--paths`) is now ordered by
+`dirs.key ASC` (lowercased path, binary collation), not by last visit;
+zero-visit rows are no longer pushed last. `dir_listing` only; one
+replaced + one touched storage test, one replaced + one deleted + one
+updated cli test; CONTRACTS/README/example.md.
+Decisions: none beyond the prompt (Hervé: no flag restores the recency
+order, `furet query --list` covers it). Next: reviewer pass from a Claude
+Code session.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 34 — `furet list --paths` (`-p`) prints only the path of each
 directory, one per line, same rows and order as `furet list`;
 `--all --paths` keeps missing rows without the presence column; the default

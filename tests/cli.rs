@@ -1460,20 +1460,20 @@ fn list_prints_path_visit_count_and_both_timestamps_tab_separated() {
 }
 
 #[test]
-fn list_sorts_by_last_visit_descending() {
-    let world = sandbox(&["alpha", "beta", "gamma"]);
+fn list_sorts_by_path_ignoring_case() {
+    let world = sandbox(&["alpha", "Beta", "gamma"]);
     let alpha = world.child("alpha");
-    let beta = world.child("beta");
+    let beta = world.child("Beta");
     let gamma = world.child("gamma");
     for child in [&alpha, &beta, &gamma] {
         assert!(add(&world, child, "session-1", None, None).status.success());
     }
     visited_at(&world, &alpha, 1_700_000_001);
-    visited_at(&world, &beta, 1_700_000_003);
-    visited_at(&world, &gamma, 1_700_000_002);
+    visited_at(&world, &beta, 1_700_000_002);
+    visited_at(&world, &gamma, 1_700_000_003);
     let out = list(&world, false);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
-    let expected: Vec<String> = [&beta, &gamma, &alpha]
+    let expected: Vec<String> = [&alpha, &beta, &gamma]
         .iter()
         .map(|path| {
             paths::canonical(path)
@@ -1486,26 +1486,6 @@ fn list_sorts_by_last_visit_descending() {
         .map(|line| line.split('\t').next().expect("a path field").to_owned())
         .collect();
     assert_eq!(listed, expected);
-}
-
-#[test]
-fn list_breaks_a_last_visit_tie_by_path_ascending() {
-    let world = sandbox(&["zzz", "aaa"]);
-    let zzz = world.child("zzz");
-    let aaa = world.child("aaa");
-    assert!(add(&world, &zzz, "session-1", None, None).status.success());
-    assert!(add(&world, &aaa, "session-1", None, None).status.success());
-    visited_at(&world, &zzz, 1_700_000_042);
-    visited_at(&world, &aaa, 1_700_000_042);
-    let out = list(&world, false);
-    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
-    let first = paths::canonical(&aaa).expect("aaa canonicalizes").path;
-    let second = paths::canonical(&zzz).expect("zzz canonicalizes").path;
-    let stdout = text(&out.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0].split('\t').next(), Some(first.as_str()));
-    assert_eq!(lines[1].split('\t').next(), Some(second.as_str()));
 }
 
 #[test]
@@ -1588,7 +1568,7 @@ fn list_paths_prints_only_the_path_of_each_directory_in_list_order() {
     visited_at(&world, &gamma, 1_700_000_002);
     let out = list_with(&world, &["--paths"]);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
-    let expected: Vec<String> = [&beta, &gamma, &alpha]
+    let expected: Vec<String> = [&alpha, &beta, &gamma]
         .iter()
         .map(|path| {
             paths::canonical(path)
