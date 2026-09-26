@@ -138,6 +138,25 @@ PS C:\Users\thouz>
 La cible peut être personnalisée avec la clé `home` de `config.toml` (chemin
 absolu, `/` accepté) ; sans elle, `f` sans argument va vers `$HOME`.
 
+### Ne jamais enregistrer certains répertoires
+
+Le hook enregistre chaque `cd` — y compris dans des répertoires qu'on ne
+veut pas voir remonter dans les classements. La clé `exclude_dirs` de
+`config.toml` interdit d'enregistrer certains répertoires, avec la même
+syntaxe de motifs que `furet remove` :
+
+```toml
+exclude_dirs = ['node_modules', 'C:\Windows\*', '*\target\*']
+```
+
+Un motif sans `\`, `/` ou `:` porte sur n'importe quel segment du chemin
+(`node_modules`, `*appdata*`) ; un motif de chemin doit être absolu
+(`C:\Windows\*`) ou commencer par `*` (`*\target\*`). Préférez les chaînes
+littérales TOML `'C:\...'` (ou écrivez les séparateurs avec `/`).
+`furet add`, le fallback disque de `furet query` et `furet import zoxide`
+ignorent alors ces répertoires ; un répertoire déjà connu reste en
+revanche dans la base jusqu'à un `furet remove <pattern>`.
+
 ## Choisir interactivement avec `fi`
 
 `fi` affiche les candidats classés et vous laisse choisir (menu `fzf` si

@@ -1,4 +1,15 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 38 — `exclude_dirs` config key (array, default empty): patterns in
+the `furet remove` syntax (name segment, absolute path, `*`-prefixed) of
+directories never recorded — honored by `furet add` (silent exit 0, DB not
+opened), the query's disk fallback (jump stands, `result_dir_id` NULL) and
+`furet import zoxide` (new `excluded` bucket in the summary). Pure
+`remove::exclusion_target`; 6 unit + 8 cli tests (3 import summaries
+extended); README/CONTRACTS/example.md.
+Decisions: none beyond the prompt (Hervé 2026-09-26: empty default, every
+write site honors it, known directories untouched). Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 37 — remove matching: a name pattern matches any normal path
 segment (`*appdata*` selects everything known under `AppData`, `ombi*` its
 known subdirectories; the drive prefix is never a segment), and a path

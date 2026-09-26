@@ -93,7 +93,8 @@ distance, else opens a `Menu` of the leading run of tied stage-2 candidates
 
 `<data dir>/config.toml` (`storage::data_dir()`, same as the database and the
 logs) overrides `config::Settings::default()`; loaded by `furet query`,
-`furet home`, and `furet add` (for `retention_days` only).
+`furet home`, `furet add` (`retention_days`, `exclude_dirs`), and
+`furet import zoxide` (`exclude_dirs`).
 `config::parse(text) -> (Settings, Vec<String>)` is pure — no filesystem, no `tracing` — and never fails the caller.
 
 Fallback is per key, not per file, except malformed TOML:
@@ -112,6 +113,30 @@ them.
 warning "not supported yet" — SPEC §9 does not define what `ambiguity`
 measures, and the other two name features not built yet (Hervé's decision,
 lot 15).
+
+`exclude_dirs` (not in SPEC — scope extension decided by Hervé 2026-09-26,
+modelled on zoxide's `_ZO_EXCLUDE_DIRS`) is an array of non-empty strings,
+each resolved by `remove::exclusion_target` with the same pattern syntax as
+`furet remove`: a pattern without `\`, `/` or `:` matches any normal segment
+of the path (`node_modules`, `*appdata*`); a path pattern must be absolute
+(`C:\Windows\*`) or start with `*` (`*\target\*`); `*` crosses `\`, `?` is
+one character, case is ignored. The default is the empty list — no behavior
+change until the key is set (divergence from zoxide, whose default excludes
+`$HOME`); unlike zoxide, which filters only `add`, every visit write honors
+it: `furet add` (silent exit 0, nothing on stdout or stderr, the database is
+not opened, `--from` unaffected), the query's disk-fallback recording (the
+jump itself stands, nothing is written, and the `queries` row gets
+`result_dir_id = NULL`), and `furet import zoxide` (counted in the new
+`excluded` bucket before dedupe, so never as `known` or `duplicate`).
+An absolute pattern without a wildcard excludes exactly that directory,
+never its descendants. Not an array, or an item that is not a non-empty
+string, warns `exclude_dirs must be an array of non-empty strings; using no
+exclusion` and keeps the empty default (same rule as `fallback.exclude`);
+an entry `exclusion_target` rejects (a relative path pattern like `a\b`)
+warns `exclude_dirs entry '<item>' is a relative path; ignored` and is
+dropped, the other entries kept. A directory already known that matches is
+never deleted nor hidden — it gets no new visit but stays in the database
+and in the results, until `furet remove <pattern>` purges it.
 
 ## Storage contract
 
@@ -161,7 +186,9 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`
 and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
-  one visit; `source` defaults to `hook`.
+  one visit; `source` defaults to `hook`. A path matching `exclude_dirs` is
+  not recorded (exit 0, nothing on stdout or stderr, the database is not
+  opened; `--from` is unaffected).
 - `furet query [<text>] [--list] [--explain] [--color] [--no-ignore]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
@@ -244,9 +271,11 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   it has ordered the import — D1 stays the only recency rule. One
   transaction for the whole import; stdout stays empty; a summary line
   (`imported N, skipped M (known K, not a directory D, malformed X,
-  duplicate Y)`) goes to stderr; `duplicate` counts candidates that share a
-  key with another candidate in the same batch, collapsed onto the one with
-  the highest score before the known-keys filter. No `queries` journal entry.
+  duplicate Y, excluded E)`) goes to stderr; `duplicate` counts candidates
+  that share a key with another candidate in the same batch, collapsed onto
+  the one with the highest score before the known-keys filter; an excluded
+  directory (`exclude_dirs`) is counted in `excluded` before dedupe, so it
+  is never counted as `known` or `duplicate`. No `queries` journal entry.
 
 ### Exit codes
 

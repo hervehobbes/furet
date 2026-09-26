@@ -85,7 +85,8 @@ reads its binary database directly.
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
 is normal, and any invalid key falls back to its default with a `WARN` log
-line naming the key. `furet query`, `furet home`, and `furet add` read it.
+line naming the key. `furet query`, `furet home`, `furet add`, and
+`furet import zoxide` read it.
 
 | Key | Type | Default | Valid |
 |---|---|---|---|
@@ -96,9 +97,18 @@ line naming the key. `furet query`, `furet home`, and `furet add` read it.
 | `fallback.exclude` | array of strings | `node_modules, bin, obj, .git, target` | non-empty strings, replaces the default list |
 | `home` | string | unset | absolute path, `/` accepted as separator, no `~`/env-var expansion |
 | `retention_days` | integer | 365 | `>= 0`; `furet add` deletes `visits` and `queries` rows older than this many days, `0` keeps everything |
+| `exclude_dirs` | array of strings | empty | patterns in the `furet remove` syntax, e.g. `['node_modules', 'C:\Windows\*', '*\target\*']` |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the
 defaults, it never adds to them.
+
+`exclude_dirs` names directories that are never recorded — by `furet add`,
+by the query's disk fallback, and by `furet import zoxide`. Without `\`,
+`/` or `:`, a pattern matches any segment of the path (`node_modules`,
+`*appdata*`); a path pattern must be absolute (`C:\Windows\*`) or start
+with `*` (`*\target\*`). Prefer TOML literal strings `'C:\...'` (or write
+the separators `/`), and a directory already known stays in the database
+until `furet remove <pattern>`.
 
 ## Logs
 

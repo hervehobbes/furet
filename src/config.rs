@@ -1,4 +1,5 @@
 use crate::fallback;
+use crate::remove;
 use crate::stage2;
 
 /// Largest accepted `fallback.depth`; above it the parse warns and keeps the default.
@@ -19,6 +20,8 @@ pub struct Settings {
     pub home: Option<String>,
     /// Days of `visits` and `queries` history kept; 0 keeps everything.
     pub retention_days: u32,
+    /// Patterns of directories never recorded, read as `remove::Target`s.
+    pub exclude_dirs: Vec<remove::Target>,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -41,6 +44,7 @@ impl Default for Settings {
             fallback: FallbackSettings::default(),
             home: None,
             retention_days: RETENTION_DAYS,
+            exclude_dirs: Vec::new(),
         }
     }
 }
@@ -89,6 +93,13 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
                 Some(days) => settings.retention_days = days,
                 None => warnings
                     .push("retention_days must be an integer >= 0; using the default".to_owned()),
+            },
+            "exclude_dirs" => match parse_exclude(value) {
+                Some(entries) => settings.exclude_dirs = exclusion_targets(&entries, &mut warnings),
+                None => warnings.push(
+                    "exclude_dirs must be an array of non-empty strings; using no exclusion"
+                        .to_owned(),
+                ),
             },
             "ambiguity" | "keyboard_layout" | "engine" => {
                 warnings.push(format!("{key} is not supported yet; ignored"));
@@ -158,9 +169,23 @@ fn parse_exclude(value: &toml::Value) -> Option<Vec<String>> {
     Some(names)
 }
 
+fn exclusion_targets(entries: &[String], warnings: &mut Vec<String>) -> Vec<remove::Target> {
+    let mut targets = Vec::with_capacity(entries.len());
+    for entry in entries {
+        match remove::exclusion_target(entry) {
+            Some(target) => targets.push(target),
+            None => warnings.push(format!(
+                "exclude_dirs entry '{entry}' is a relative path; ignored"
+            )),
+        }
+    }
+    targets
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Settings, parse};
+    use crate::remove::Target;
 
     #[test]
     fn empty_text_yields_every_default_and_no_warning() {
@@ -430,5 +455,47 @@ mod tests {
         let (settings, warnings) = parse("this is not [ toml");
         assert_eq!(settings, Settings::default());
         assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn exclude_dirs_defaults_to_empty() {
+        let (settings, warnings) = parse("");
+        assert!(settings.exclude_dirs.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn exclude_dirs_parses_each_entry_through_exclusion_target() {
+        let (settings, warnings) = parse("exclude_dirs = ['node_modules', 'C:\\Windows\\*']");
+        assert_eq!(
+            settings.exclude_dirs,
+            vec![
+                Target::Name("node_modules".to_owned()),
+                Target::KeyPattern("c:\\windows\\*".to_owned()),
+            ]
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_relative_exclude_dirs_entry_is_ignored_with_a_warning() {
+        let (settings, warnings) = parse("exclude_dirs = ['a\\b', 'ok']");
+        assert_eq!(settings.exclude_dirs, vec![Target::Name("ok".to_owned())]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("a\\b"));
+    }
+
+    #[test]
+    fn exclude_dirs_must_be_an_array_of_non_empty_strings() {
+        for text in [
+            "exclude_dirs = \"x\"",
+            "exclude_dirs = [1]",
+            "exclude_dirs = ['']",
+        ] {
+            let (settings, warnings) = parse(text);
+            assert!(settings.exclude_dirs.is_empty(), "{text}");
+            assert_eq!(warnings.len(), 1, "{text}");
+            assert!(warnings[0].contains("exclude_dirs"), "{text}");
+        }
     }
 }

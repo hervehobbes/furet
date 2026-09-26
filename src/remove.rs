@@ -1,5 +1,7 @@
 use std::path::{Component, Path};
 
+use crate::paths;
+
 /// Wildcard match of `pattern` against `text`, case-insensitively: `*` spans
 /// any run of characters including `\`, `?` is exactly one, the rest is literal.
 pub fn wildcard_match(pattern: &str, text: &str) -> bool {
@@ -72,9 +74,31 @@ pub fn is_path_pattern(pattern: &str) -> bool {
         || pattern == ".."
 }
 
+/// The `exclude_dirs` counterpart of a remove pattern: pure (no cwd, no
+/// disk), rejecting a relative path pattern instead of anchoring it.
+pub fn exclusion_target(pattern: &str) -> Option<Target> {
+    if !is_path_pattern(pattern) {
+        return Some(Target::Name(pattern.to_owned()));
+    }
+    let unified = paths::unify_separators(pattern);
+    if unified.starts_with('*') {
+        return Some(Target::KeyPattern(unified.to_lowercase()));
+    }
+    if !Path::new(&unified).is_absolute() {
+        return None;
+    }
+    if pattern.contains('*') || pattern.contains('?') {
+        return Some(Target::KeyPattern(paths::absolute_key(
+            pattern,
+            Path::new(""),
+        )));
+    }
+    Some(Target::Key(paths::absolute_key(pattern, Path::new(""))))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Target, is_path_pattern, matches, wildcard_match};
+    use super::{Target, exclusion_target, is_path_pattern, matches, wildcard_match};
 
     #[test]
     fn a_star_matches_any_suffix_including_none() {
@@ -151,5 +175,36 @@ mod tests {
         let drive = Target::Name("c*".to_owned());
         assert!(!matches(&drive, "C:\\dev\\x"));
         assert!(matches(&drive, "C:\\dev\\cache"));
+    }
+
+    #[test]
+    fn exclusion_target_keeps_names_absolute_paths_and_star_patterns() {
+        assert_eq!(
+            exclusion_target("node_modules"),
+            Some(Target::Name("node_modules".to_owned()))
+        );
+        assert_eq!(
+            exclusion_target("C:\\Windows\\*"),
+            Some(Target::KeyPattern("c:\\windows\\*".to_owned()))
+        );
+        assert_eq!(
+            exclusion_target("C:/Temp/Build/"),
+            Some(Target::Key("c:\\temp\\build".to_owned()))
+        );
+        assert_eq!(
+            exclusion_target("*\\target\\*"),
+            Some(Target::KeyPattern("*\\target\\*".to_owned()))
+        );
+    }
+
+    #[test]
+    fn exclusion_target_rejects_relative_paths() {
+        for pattern in ["a\\b", "a/b", ".", "..", "\\x", "C:x"] {
+            assert_eq!(
+                exclusion_target(pattern),
+                None,
+                "{pattern} must be rejected"
+            );
+        }
     }
 }

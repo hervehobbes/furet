@@ -251,6 +251,11 @@ fn add(
     let clock = SystemClock::new();
     let base = env::current_dir()?;
     let dir = paths::resolve(path, &base)?;
+    let settings = load_settings();
+    if is_excluded(&settings.exclude_dirs, &dir.path) {
+        debug!(path = %dir.path, "excluded; not recorded");
+        return Ok(());
+    }
     let conn = storage::open()?;
     let dir_id = storage::upsert_dir(&conn, &dir.path, &dir.key, clock.now())?;
     let from_dir_id = match from {
@@ -269,7 +274,7 @@ fn add(
         from_dir_id,
     )?;
     info!(path = %dir.path, source = source.as_str(), "visit recorded");
-    let retention_days = load_settings().retention_days;
+    let retention_days = settings.retention_days;
     if retention_days > 0 {
         let cutoff = clock
             .now()
@@ -419,7 +424,7 @@ fn query_directories(
         }
         Decision::Jump(candidate) => {
             let result_dir_id = if is_fallback {
-                Some(record_fallback_visit(&conn, &candidate.path, &clock)?)
+                record_fallback_visit(&conn, &candidate.path, &clock, &settings.exclude_dirs)?
             } else {
                 storage::dir_id_by_key(&conn, &candidate.path.to_lowercase())?
             };
@@ -461,7 +466,7 @@ fn query_directories(
             let index = decision::selection(&answer, shown.len()).ok_or("no directory selected")?;
             let chosen = shown.get(index - 1).ok_or("no directory selected")?;
             if is_fallback {
-                record_fallback_visit(&conn, &chosen.path, &clock)?;
+                let _ = record_fallback_visit(&conn, &chosen.path, &clock, &settings.exclude_dirs)?;
             }
             info!(
                 stage = stage.as_deref().unwrap_or("-"),
@@ -559,11 +564,19 @@ fn ls_colors_directory_code() -> Option<String> {
         .find_map(|entry| entry.strip_prefix("di=").map(str::to_owned))
 }
 
+fn is_excluded(exclude: &[remove::Target], path: &str) -> bool {
+    exclude.iter().any(|target| remove::matches(target, path))
+}
+
 fn record_fallback_visit(
     conn: &Connection,
     path: &str,
     clock: &SystemClock,
-) -> Result<i64, Box<dyn Error>> {
+    exclude: &[remove::Target],
+) -> Result<Option<i64>, Box<dyn Error>> {
+    if is_excluded(exclude, path) {
+        return Ok(None);
+    }
     let key = path.to_lowercase();
     let dir_id = storage::upsert_dir(conn, path, &key, clock.now())?;
     storage::insert_visit(
@@ -574,7 +587,7 @@ fn record_fallback_visit(
         FALLBACK_SESSION,
         None,
     )?;
-    Ok(dir_id)
+    Ok(Some(dir_id))
 }
 
 fn up(n: u32) -> Result<(), Box<dyn Error>> {
@@ -636,6 +649,7 @@ const IMPORT_SOURCE: &str = "import";
 
 fn import_zoxide() -> Result<(), Box<dyn Error>> {
     debug!("import zoxide");
+    let settings = load_settings();
     let mut raw = Vec::new();
     io::stdin().read_to_end(&mut raw)?;
     let clock = SystemClock::new();
@@ -643,6 +657,7 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
 
     let mut malformed = 0usize;
     let mut not_a_directory = 0usize;
+    let mut excluded = 0usize;
     let mut candidates = Vec::new();
     for line in stdin_lines(&raw) {
         let text = match std::str::from_utf8(strip_cr(line)) {
@@ -660,7 +675,13 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
             }
         };
         match paths::canonical(Path::new(&entry.path)) {
-            Ok(dir) => candidates.push((entry.score, dir)),
+            Ok(dir) => {
+                if is_excluded(&settings.exclude_dirs, &dir.path) {
+                    excluded += 1;
+                } else {
+                    candidates.push((entry.score, dir));
+                }
+            }
             Err(error) => {
                 warn!(%error, path = %entry.path, "import zoxide: not a directory");
                 not_a_directory += 1;
@@ -686,13 +707,13 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
     tx.commit()?;
 
     let imported = planned.len();
-    let skipped = malformed + not_a_directory + known + duplicate;
+    let skipped = malformed + not_a_directory + known + duplicate + excluded;
     info!(
         imported,
-        skipped, known, not_a_directory, malformed, duplicate, "import zoxide"
+        skipped, known, not_a_directory, malformed, duplicate, excluded, "import zoxide"
     );
     eprintln!(
-        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate})"
+        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate}, excluded {excluded})"
     );
     Ok(())
 }

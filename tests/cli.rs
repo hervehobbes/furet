@@ -758,6 +758,91 @@ fn a_zero_retention_keeps_every_visit_and_query() {
 }
 
 #[test]
+fn add_skips_a_directory_matching_an_excluded_name() {
+    let world = sandbox(&["zzskip", "zzskip/sub", "keep"]);
+    write_config(&world, "exclude_dirs = ['zzskip']");
+    let skipped = add(&world, &world.child("zzskip"), "session-1", None, None);
+    assert!(skipped.status.success());
+    assert!(skipped.stdout.is_empty());
+    assert!(skipped.stderr.is_empty());
+    let nested = add(&world, &world.child("zzskip/sub"), "session-1", None, None);
+    assert!(nested.status.success());
+    assert!(nested.stdout.is_empty());
+    assert!(nested.stderr.is_empty());
+    let listed = list_with(&world, &["--all", "--paths"]);
+    assert!(listed.status.success(), "stderr: {}", text(&listed.stderr));
+    assert!(text(&listed.stdout).is_empty());
+    assert!(
+        add(&world, &world.child("keep"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(
+        text(&list_with(&world, &["--paths"]).stdout),
+        format!("{}\n", canonical_child(&world, "keep"))
+    );
+}
+
+#[test]
+fn add_skips_a_directory_matching_an_absolute_excluded_pattern() {
+    let world = sandbox(&["zz", "zz/a"]);
+    let root = paths::canonical(world.tree.path())
+        .expect("the sandbox root canonicalizes")
+        .path;
+    write_config(&world, &format!("exclude_dirs = ['{}\\zz\\*']", root));
+    let skipped = add(&world, &world.child("zz/a"), "session-1", None, None);
+    assert!(skipped.status.success());
+    assert!(skipped.stdout.is_empty());
+    assert!(
+        add(&world, &world.child("zz"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(
+        text(&list_with(&world, &["--paths"]).stdout),
+        format!("{}\n", canonical_child(&world, "zz"))
+    );
+}
+
+#[test]
+fn add_skips_a_directory_matching_a_star_prefixed_pattern() {
+    let world = sandbox(&["zz/a", "zz/b"]);
+    write_config(&world, "exclude_dirs = ['*\\zz\\a']");
+    let skipped = add(&world, &world.child("zz/a"), "session-1", None, None);
+    assert!(skipped.status.success());
+    assert!(skipped.stdout.is_empty());
+    assert!(
+        add(&world, &world.child("zz/b"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(
+        text(&list_with(&world, &["--paths"]).stdout),
+        format!("{}\n", canonical_child(&world, "zz/b"))
+    );
+}
+
+#[test]
+fn an_already_known_directory_keeps_its_rows_but_gets_no_new_visit() {
+    let world = sandbox(&["zzskip"]);
+    assert!(
+        add(&world, &world.child("zzskip"), "session-1", None, None)
+            .status
+            .success()
+    );
+    write_config(&world, "exclude_dirs = ['zzskip']");
+    let again = add(&world, &world.child("zzskip"), "session-1", None, None);
+    assert!(again.status.success());
+    assert!(again.stdout.is_empty());
+    assert!(again.stderr.is_empty());
+    assert_eq!(
+        text(&list_with(&world, &["--paths"]).stdout),
+        format!("{}\n", canonical_child(&world, "zzskip"))
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
 fn up_prints_the_canonical_ancestor_n_levels_above() {
     let world = sandbox(&["a/b/c"]);
     let deep = world.child("a").join("b").join("c");
@@ -1108,6 +1193,26 @@ fn a_fallback_jump_then_back_returns_to_the_origin_directory() {
         .expect("the origin directory canonicalizes")
         .path;
     assert_eq!(text(&back_out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn a_fallback_jump_to_an_excluded_directory_jumps_but_records_nothing() {
+    let world = sandbox(&["projects/tokio"]);
+    write_config(&world, "exclude_dirs = ['tokio']");
+    let cwd = world.child("projects");
+    let out = query(&world, "tokio", &cwd, false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&cwd.join("tokio"))
+        .expect("the fallback hit canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    let result_dir_id: Option<i64> = conn
+        .query_row("SELECT result_dir_id FROM queries", [], |row| row.get(0))
+        .expect("the fallback query is journalled");
+    assert_eq!(result_dir_id, None);
 }
 
 #[test]
@@ -2081,7 +2186,7 @@ fn case_variant_lines_for_the_same_directory_collapse_into_one_import() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stderr),
-        "imported 1, skipped 1 (known 0, not a directory 0, malformed 0, duplicate 1)\n"
+        "imported 1, skipped 1 (known 0, not a directory 0, malformed 0, duplicate 1, excluded 0)\n"
     );
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
@@ -2133,7 +2238,7 @@ fn a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stderr),
-        "imported 1, skipped 3 (known 0, not a directory 2, malformed 1, duplicate 0)\n"
+        "imported 1, skipped 3 (known 0, not a directory 2, malformed 1, duplicate 0, excluded 0)\n"
     );
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
 }
@@ -2146,7 +2251,52 @@ fn importing_empty_stdin_exits_zero_and_imports_nothing() {
     assert!(out.stdout.is_empty());
     assert_eq!(
         text(&out.stderr),
-        "imported 0, skipped 0 (known 0, not a directory 0, malformed 0, duplicate 0)\n"
+        "imported 0, skipped 0 (known 0, not a directory 0, malformed 0, duplicate 0, excluded 0)\n"
+    );
+}
+
+#[test]
+fn import_zoxide_skips_excluded_directories_and_counts_them() {
+    let world = sandbox(&["tokio", "tokei"]);
+    write_config(&world, "exclude_dirs = ['tokei']");
+    let tokei = world.child("tokei");
+    let tokio = world.child("tokio");
+    let stdin = format!(
+        "12.5 {}\n3 {}\n",
+        tokei.to_string_lossy(),
+        tokio.to_string_lossy()
+    );
+    let out = import_zoxide(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 1, skipped 1 (known 0, not a directory 0, malformed 0, duplicate 0, excluded 1)\n"
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+}
+
+#[test]
+fn a_relative_exclude_dirs_entry_warns_in_the_log_and_keeps_the_others() {
+    let world = sandbox(&["zzskip", "zz"]);
+    write_config(&world, "exclude_dirs = ['zz\\a', 'zzskip']");
+    let skipped = add(&world, &world.child("zzskip"), "session-1", None, None);
+    assert!(skipped.status.success());
+    assert!(skipped.stdout.is_empty());
+    assert!(
+        add(&world, &world.child("zz"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert_eq!(
+        text(&list_with(&world, &["--paths"]).stdout),
+        format!("{}\n", canonical_child(&world, "zz"))
+    );
+    let log = log_contents(&world);
+    assert!(
+        log.contains("exclude_dirs entry 'zz\\a' is a relative path; ignored"),
+        "{log:?}"
     );
 }
 
