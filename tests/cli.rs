@@ -936,6 +936,43 @@ fn init_pwsh_prints_a_nonempty_script_naming_the_default_command() {
 }
 
 #[test]
+fn init_pwsh_starts_with_the_clap_completion_block() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let script = text(&out.stdout);
+    // WHY: clap's block opens with a blank line, kept byte-identical; pwsh only requires `using` ahead of other statements.
+    let first = script
+        .lines()
+        .find(|line| !line.is_empty())
+        .expect("a non-empty stdout line");
+    assert_eq!(first, "using namespace System.Management.Automation");
+    assert_eq!(
+        script
+            .matches("Register-ArgumentCompleter -Native -CommandName 'furet'")
+            .count(),
+        1,
+        "the clap block registers the furet native completer exactly once"
+    );
+}
+
+#[test]
+fn init_pwsh_with_a_custom_cmd_keeps_completing_furet() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("init").arg("pwsh").arg("--cmd").arg("j"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let script = text(&out.stdout);
+    assert_eq!(
+        script
+            .matches("Register-ArgumentCompleter -Native -CommandName 'furet'")
+            .count(),
+        1,
+        "--cmd must not retarget clap's completer away from furet"
+    );
+    assert!(script.contains("function global:j "));
+}
+
+#[test]
 fn init_pwsh_respects_a_custom_cmd_name() {
     let world = sandbox(&[]);
     let out = run(world

@@ -1,4 +1,15 @@
 ## 2026-09-26 — branch main — v0.1.1
+Done: lot 39 — `furet init pwsh` output now leads with a clap_complete
+4.6.11 (MIT OR Apache-2.0) PowerShell block (native completer for
+`furet`'s subcommands and options), then the integration script; `--cmd`
+doesn't touch it. Unlike zoxide, whose `build.rs` generates
+`contrib/completions/_zoxide.ps1` via `clap_complete::generate_to`,
+completions shipped as separate files. 2 cli + 3 executed pwsh tests.
+Decisions: one beyond the prompt (Hervé 2026-09-26): clap's block opens
+with a blank line; kept byte-identical, the test pins the first non-empty
+stdout line. Next: reviewer pass.
+
+## 2026-09-26 — branch main — v0.1.1
 Done: lot 38 — `exclude_dirs` config key (array, default empty): patterns in
 the `furet remove` syntax (name segment, absolute path, `*`-prefixed) of
 directories never recorded — honored by `furet add` (silent exit 0, DB not

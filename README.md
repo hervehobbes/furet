@@ -25,7 +25,9 @@ Invoke-Expression (& furet init pwsh | Out-String)
 `Invoke-Expression -Command` requires a plain `String` — hence the
 `Out-String`, exactly as in zoxide's own pwsh hook. This defines a `f`
 function (rename it with `furet init pwsh --cmd <name>`) plus `fi`, and
-wires a prompt hook that records every directory change.
+wires a prompt hook that records every directory change. The same script
+also provides Tab completion of `furet`'s subcommands and options, with no
+extra profile line.
 
 ## Usage
 

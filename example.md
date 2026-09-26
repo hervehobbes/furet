@@ -183,6 +183,19 @@ Ces sous-commandes sont utiles pour scripter ou déboguer ; elles écrivent
 le chemin résultat sur `stdout` uniquement (menus, erreurs et logs vont sur
 `stderr`).
 
+### Compléter les sous-commandes de furet
+
+Le script d'installation (`furet init pwsh`) embarque aussi la complétion
+Tab des sous-commandes et options de `furet`, sans ligne de plus dans le
+`$PROFILE` :
+
+```powershell
+PS C:\dev\furet> furet re<Tab>
+PS C:\dev\furet> furet remove
+
+PS C:\dev\furet> furet list --<Tab>   # propose --all et --paths
+```
+
 ### Inspecter le classement sans sauter
 
 ```powershell

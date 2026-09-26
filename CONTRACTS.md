@@ -199,7 +199,17 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 - `furet back --session <s>` — prints the second-to-last directory visited
   in that session.
 - `furet init pwsh [--cmd <name>]` — prints the PowerShell integration
-  script (mirrors zoxide's `init` shape). The script registers a tab
+  script (mirrors zoxide's `init` shape), preceded by the `clap_complete`
+  PowerShell completion block: a native completer registered for `furet`
+  (`Register-ArgumentCompleter -Native -CommandName 'furet'`) that completes
+  furet's subcommands and options. The block comes first because pwsh
+  accepts `using` statements only before every other statement, and clap's
+  block opens with two of them. `--cmd` does not affect the block, which
+  always completes `furet`. This diverges from zoxide, whose `build.rs`
+  generates its completions at build time
+  (`clap_complete::generate_to` → `contrib/completions/_zoxide.ps1`) and
+  ships them as separate files, while furet embeds them in the `init`
+  output. The script itself registers a tab
   completer (`Register-ArgumentCompleter` on the jump function's
   `FuretArgs`): it completes only the first, single argument token, returning
   the ranked `furet query --list` lines in order (an empty word completes the

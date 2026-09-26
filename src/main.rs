@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap_complete::generate;
+use clap_complete::shells::PowerShell;
 use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock, Timestamp};
 use furet::config::{self, Settings};
@@ -738,7 +740,14 @@ fn strip_cr(line: &[u8]) -> &[u8] {
 
 fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {
     debug!(cmd, "init pwsh");
-    print_result(&pwsh::script(cmd));
+    let mut completions = Vec::new();
+    generate(PowerShell, &mut Cli::command(), "furet", &mut completions);
+    // WHY: pwsh only accepts using statements before any other statement, so clap's block leads the script.
+    print_result(&format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&completions),
+        pwsh::script(cmd)
+    ));
     Ok(())
 }
 

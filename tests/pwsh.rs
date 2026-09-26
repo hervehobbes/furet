@@ -616,6 +616,40 @@ fn init_pwsh_cmd_j_completes_j_and_leaves_f_without_a_furet_candidate() {
 }
 
 #[test]
+fn tab_completes_furet_subcommands() {
+    let world = sandbox(&[]);
+    let got = completions(&world, "", "furet re");
+    assert!(
+        got.iter().any(|text| text == "remove"),
+        "`furet re` must complete remove: {got:?}"
+    );
+}
+
+#[test]
+fn tab_completes_furet_list_options() {
+    let world = sandbox(&[]);
+    let got = completions(&world, "", "furet list --");
+    assert!(
+        got.iter().any(|text| text == "--all"),
+        "`furet list --` must complete --all: {got:?}"
+    );
+    assert!(
+        got.iter().any(|text| text == "--paths"),
+        "`furet list --` must complete --paths: {got:?}"
+    );
+}
+
+#[test]
+fn tab_completes_furet_subcommands_with_a_custom_cmd() {
+    let world = sandbox(&[]);
+    let got = completions(&world, "--cmd j", "furet re");
+    assert!(
+        got.iter().any(|text| text == "remove"),
+        "`--cmd j` must leave `furet re` completing remove: {got:?}"
+    );
+}
+
+#[test]
 fn tab_completion_leaves_lastexitcode_untouched() {
     let world = sandbox(&["tokio"]);
     seed(&world, &world.child("tokio"), "seed");

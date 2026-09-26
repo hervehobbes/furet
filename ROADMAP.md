@@ -41,12 +41,12 @@
 | 36 | `furet remove <pattern> [--confirm]` |
 | 37 | `furet remove`: name patterns match any path segment; `*`-prefixed path patterns are not anchored |
 | 38 | `exclude_dirs` config key honored by `add`, the disk fallback, and `import zoxide` |
+| 39 | `furet` subcommand completions (`clap_complete`) embedded in `furet init pwsh` |
 
 ## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
 
 | Lot | Content | SPEC-v2 |
 |-----|---------|---------|
-| 39 | `furet` subcommand completions (`clap_complete`) embedded in `furet init pwsh` | §18 |
 | 40 | Project-scoped query: `furet query --local`, `f -l`, `fi -l`, Tab on the second token | §19 |
 | 41 | Opt-in `nucleo` stage-1 engine (`engine` config key, `--engine`) | §20 |
 | 42 | `furet remove`: per-directory `[y/N/a/q]` confirmation, `--yes`, `--dry-run` | §21 |
