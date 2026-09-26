@@ -201,14 +201,20 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   no `removed_at` column, no schema change; not in SPEC — scope extension
   decided by Hervé 2026-09-26). zoxide's `remove` takes exact paths only;
   the wildcard is a furet extension. Without `\`, `/` or `:`, and not equal
-  to `.`/`..`, the pattern is a **name** pattern matched against the last
-  segment of each known path; otherwise it is a **path** pattern. Matching
+  to `.`/`..`, the pattern is a **name** pattern matched against every normal
+  segment (`std::path::Component`) of each known path — the drive prefix is
+  never a segment, so `c*` does not select everything on `C:` — and `ombi*`
+  selects `ombi` itself and every known directory below it; otherwise it is
+  a **path** pattern. Matching
   is case-insensitive (`str::to_lowercase` both sides); `*` matches any run
   of characters including `\`, `?` exactly one, every other character is
   literal. A path pattern without a wildcard resolves against the disk first
   (`paths::resolve`), falling back to the lexical `paths::absolute_key` when
   the directory no longer exists — the main use case; with a wildcard it is
-  matched lexically against every lowercased path, so `apps\*` removes the
+  matched lexically against every lowercased path — a pattern starting with
+  `*` (after `paths::unify_separators`) is taken as is, never joined to the
+  current directory, so `*\cache\*` works from any cwd, while other relative
+  patterns stay anchored at the cwd — so `apps\*` removes the
   descendants of `apps`, never `apps` itself. Candidates come straight from
   `storage::dir_entries` (missing rows included, no reconciliation), sorted
   by lowercased path like `furet list`; nothing matches → `furet: no known

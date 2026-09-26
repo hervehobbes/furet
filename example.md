@@ -259,6 +259,11 @@ C:\dev\RedditForKarakeep\mcp
 `furet remove` efface de la base les répertoires connus qui correspondent
 au motif. Sans séparateur (`\`, `/` ou `:`), le motif porte sur le **nom**
 du répertoire ; sinon, c'est un **chemin**, relatif au répertoire courant.
+Le motif de nom est comparé à **chaque segment** du chemin : `ombi*`
+sélectionne `ombi` et ses sous-répertoires connus, `*appdata*` tous les
+répertoires connus situés sous un dossier `AppData`. En revanche, un motif
+de chemin commençant par `*` (`*\cache\*`) est comparé au chemin complet
+et n'est jamais ancré au répertoire courant.
 `*` matche toute suite de caractères (séparateurs compris), `?` exactement
 un caractère, et la casse est ignorée. Tout match est supprimé d'un coup,
 sans confirmation, chaque suppression étant signalée sur `stderr` :
@@ -267,6 +272,14 @@ sans confirmation, chaque suppression étant signalée sur `stderr` :
 PS C:\dev\furet> furet remove ombi*
 removed C:\apps\ombi
 removed D:\x\Ombi-v4
+```
+
+Pour oublier d'un coup tous les répertoires connus situés sous un dossier
+`AppData`, où qu'ils soient :
+
+```powershell
+PS C:\dev\furet> furet remove *appdata*
+removed C:\Users\thouz\AppData\Local\sourcier\projects\Clyd-16e1bbba
 ```
 
 Avec `--confirm`, les correspondances sont listées et une confirmation est

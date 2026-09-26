@@ -818,6 +818,10 @@ fn remove_target(pattern: &str, base: &Path) -> remove::Target {
         return remove::Target::Name(pattern.to_owned());
     }
     if pattern.contains('*') || pattern.contains('?') {
+        let unified = paths::unify_separators(pattern);
+        if unified.starts_with('*') {
+            return remove::Target::KeyPattern(unified.to_lowercase());
+        }
         return remove::Target::KeyPattern(paths::absolute_key(pattern, base));
     }
     match paths::resolve(pattern, base) {

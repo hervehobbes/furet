@@ -2230,6 +2230,67 @@ fn remove_by_name_ignores_case() {
 }
 
 #[test]
+fn remove_by_name_selects_the_known_descendants_of_a_matching_folder() {
+    let world = sandbox(&["zz/cache", "zz/cache/x", "zz/cache/x/y", "zz/keep"]);
+    for child in ["zz/cache", "zz/cache/x", "zz/cache/x/y", "zz/keep"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove(&world, "cach*", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = [
+        canonical_child(&world, "zz/cache"),
+        canonical_child(&world, "zz/cache/x"),
+        canonical_child(&world, "zz/cache/x/y"),
+    ]
+    .map(|path| format!("removed {path}"));
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", canonical_child(&world, "zz/keep"))
+    );
+}
+
+#[test]
+fn remove_path_pattern_starting_with_a_star_is_not_anchored_at_the_cwd() {
+    let world = sandbox(&[
+        "zz/cache",
+        "zz/cache/x",
+        "zz/cache/x/y",
+        "zz/keep",
+        "elsewhere",
+    ]);
+    for child in ["zz/cache", "zz/cache/x", "zz/cache/x/y", "zz/keep"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove(&world, "*\\cache\\*", &world.child("elsewhere"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = [
+        canonical_child(&world, "zz/cache/x"),
+        canonical_child(&world, "zz/cache/x/y"),
+    ]
+    .map(|path| format!("removed {path}"));
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    let remaining = list_with(&world, &["--paths"]);
+    let expected = [
+        canonical_child(&world, "zz/cache"),
+        canonical_child(&world, "zz/keep"),
+    ];
+    assert_eq!(
+        text(&remaining.stdout),
+        format!("{}\n", expected.join("\n"))
+    );
+}
+
+#[test]
 fn remove_by_relative_path_removes_only_that_directory() {
     let world = sandbox(&["a/src", "b/src"]);
     for child in ["a/src", "b/src"] {

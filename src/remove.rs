@@ -1,4 +1,4 @@
-use crate::paths;
+use std::path::{Component, Path};
 
 /// Wildcard match of `pattern` against `text`, case-insensitively: `*` spans
 /// any run of characters including `\`, `?` is exactly one, the rest is literal.
@@ -38,7 +38,8 @@ pub fn wildcard_match(pattern: &str, text: &str) -> bool {
 /// lowercased path key, or a lowercased path wildcard pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
-    /// The pattern carries no wildcard and no separator: match directory names.
+    /// The pattern carries no wildcard and no separator: it is matched
+    /// against every normal segment, so a folder brings its descendants.
     Name(String),
     /// The pattern resolved to one directory: match its exact lowercased key.
     Key(String),
@@ -46,10 +47,16 @@ pub enum Target {
     KeyPattern(String),
 }
 
-/// Whether `path` (a stored canonical path) is selected by `target`.
+/// Whether `path` (a stored canonical path) is selected: a name target
+/// matches any normal segment, the others the whole lowercased path.
 pub fn matches(target: &Target, path: &str) -> bool {
     match target {
-        Target::Name(pattern) => wildcard_match(pattern, &paths::split(path).name),
+        Target::Name(pattern) => Path::new(path).components().any(|component| {
+            let Component::Normal(segment) = component else {
+                return false;
+            };
+            wildcard_match(pattern, &segment.to_string_lossy())
+        }),
         Target::Key(key) => path.to_lowercase() == *key,
         Target::KeyPattern(pattern) => wildcard_match(pattern, &path.to_lowercase()),
     }
@@ -130,11 +137,19 @@ mod tests {
     }
 
     #[test]
-    fn name_targets_compare_the_last_segment_only() {
-        let name = Target::Name("src".to_owned());
-        assert!(matches(&name, "c:\\dev\\proj\\src"));
-        assert!(matches(&name, "c:\\dev\\proj\\Src"));
-        assert!(!matches(&name, "c:\\dev\\proj\\src\\bin"));
-        assert!(!matches(&name, "c:\\dev\\src\\bin"));
+    fn name_targets_match_any_normal_segment() {
+        let appdata = Target::Name("*appdata*".to_owned());
+        assert!(matches(&appdata, "C:\\Users\\x\\AppData\\Local\\y"));
+        let prefix = Target::Name("ombi*".to_owned());
+        assert!(matches(&prefix, "C:\\apps\\ombi"));
+        assert!(matches(&prefix, "C:\\apps\\ombi\\sub"));
+        assert!(!matches(&prefix, "C:\\apps\\xombi"));
+    }
+
+    #[test]
+    fn a_name_pattern_never_matches_the_drive_prefix() {
+        let drive = Target::Name("c*".to_owned());
+        assert!(!matches(&drive, "C:\\dev\\x"));
+        assert!(matches(&drive, "C:\\dev\\cache"));
     }
 }
