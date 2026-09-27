@@ -1,4 +1,13 @@
 ## 2026-09-27 — branch main — v0.2.0
+Done: lot 39 — `cargo deny check` is DoD step 3 of 6 (after clippy, before tests). `deny.toml` at the root: advisories
+default, pinned license allow list, `multiple-versions = warn`, sources crates.io-only. CONTRIBUTING.md gains the
+`cargo install --locked cargo-deny` setup line and the network note (RustSec fetch). No code, no dependency change.
+Decisions (Hervé, 2026-09-27): MPL-2.0 stays out of the allow list; two per-crate `licenses.exceptions` instead —
+nucleo-matcher (direct dep, opt-in engine, SPEC-v2 §20) and option-ext (transitive via dirs 7.0.0).
+Next: multiple-versions warnings unresolved: hashbrown 0.16.1/0.17.1 (rsqlite-vfs vs hashlink), syn 2.0.119/3.0.6
+(tracing-attributes vs clap_derive/serde_derive); reviewer pass owed.
+
+## 2026-09-27 — branch main — v0.2.0
 Done: lot 47b — `query_directories` no longer runs `storage::recall` when the query fell back to the disk walk:
 `Recall::Nothing` short-circuits it, `--explain` keeps the lookup so its `memory:` line is unchanged, and every
 output stays byte-identical (SPEC-v2 §24: memory never applies to the fallback). 1 cli test, red first.
