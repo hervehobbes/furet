@@ -19,7 +19,7 @@ use furet::memory::{self, Recall};
 use furet::paths;
 use furet::preview;
 use furet::project;
-use furet::rank::{self, Candidate, Stage};
+use furet::rank::{self, Candidate, Scored, Stage};
 use furet::remove;
 use furet::soft_delete;
 use furet::stats;
@@ -410,14 +410,7 @@ fn query_directories(
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
-    let project_root = if local {
-        Some(
-            project::root(&current.path, &project::RealGitMarker)
-                .ok_or("not inside a git repository")?,
-        )
-    } else {
-        None
-    };
+    let project_root = local_root(&current.path, local)?;
     // WHY: the root itself is the answer Hervé wants from `f -l`, so no database is even opened.
     if let Some(root) = &project_root
         && query.trim().is_empty()
@@ -430,14 +423,7 @@ fn query_directories(
     let conn = storage::open()?;
     // WHY: a non-empty query only stats the directories it matches, so its cost no longer grows with every known directory.
     let check_all = explain || query.trim().is_empty();
-    let mut entries = storage::dir_entries(&conn)?;
-    if let Some(root) = &project_root {
-        let root_key = root.to_lowercase();
-        entries.retain(|entry| project::within(&entry.path.to_lowercase(), &root_key));
-    }
-    if check_all {
-        entries = reconcile_on_disk(&conn, entries, &clock)?;
-    }
+    let entries = scoped_entries(&conn, project_root.as_deref(), check_all, &clock)?;
     let candidates: Vec<Candidate> = entries
         .iter()
         .map(|entry| {
@@ -465,22 +451,10 @@ fn query_directories(
         engine,
     );
     if !check_all {
-        let matched: HashSet<&str> = db_ranked
-            .iter()
-            .map(|scored| scored.candidate.path.as_str())
-            .collect();
-        let to_check: Vec<storage::DirEntry> = entries
-            .into_iter()
-            .filter(|entry| matched.contains(entry.path.as_str()))
-            .collect();
-        let missing: HashSet<String> = reconcile_on_disk(&conn, to_check, &clock)?
-            .into_iter()
-            .filter(|entry| entry.missing)
-            .map(|entry| entry.path)
-            .collect();
-        db_ranked.retain(|scored| !missing.contains(&scored.candidate.path));
+        drop_missing(&conn, entries, &mut db_ranked, &clock)?;
     }
     let is_fallback = !query.trim().is_empty() && db_ranked.is_empty();
+    // WHY: kept as if/else; the lot's `.then(..).unwrap_or_default()` form trips clippy::obfuscated_if_else.
     let fallback_pool = if is_fallback {
         fallback_candidates(&current.path, no_ignore, &settings, project_root.as_deref())
     } else {
@@ -499,25 +473,14 @@ fn query_directories(
         (&candidates, db_ranked)
     };
     debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
-    let recall = if !settings.query_memory {
-        Recall::Disabled
-    } else if is_fallback && !explain {
-        Recall::Nothing
-    } else {
-        storage::recall(&conn, &memory::key(query))?
-    };
+    let recall = query_recall(&conn, query, settings.query_memory, is_fallback, explain)?;
     debug!(?recall, "query memory");
     if explain {
-        let origin = if is_fallback {
-            Origin::Fallback
-        } else {
-            Origin::Database
-        };
         let mut report = explain::explain_recalled(
             query,
             &current.path,
             pool,
-            origin,
+            origin(is_fallback),
             settings.typo_min_length,
             engine,
             recall,
@@ -527,7 +490,7 @@ fn query_directories(
         return Ok(());
     }
     // WHY: SPEC-v2 §24 never lets memory reach the disk fallback's candidates.
-    let remembered = if is_fallback { None } else { recall.path() };
+    let remembered = recall.path().filter(|_| !is_fallback);
     let memory_applied = memory::applies(&ranked, remembered);
     let ranked = memory::promote(ranked, remembered);
     if list {
@@ -544,62 +507,182 @@ fn query_directories(
         Some(top) if memory_applied => Decision::Jump(top.candidate),
         _ => decision::decide(&ranked),
     };
+    let stage = query_stage(query, is_fallback, &decision, &ranked);
+    let journal = Journal {
+        conn: &conn,
+        clock: &clock,
+        current_path: &current.path,
+        query,
+        stage: stage.as_deref(),
+    };
+    conclude(&journal, decision, is_fallback, &settings.exclude_dirs)
+}
+
+fn local_root(current_path: &str, local: bool) -> Result<Option<String>, Box<dyn Error>> {
+    if local {
+        Ok(Some(
+            project::root(current_path, &project::RealGitMarker)
+                .ok_or("not inside a git repository")?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn scoped_entries(
+    conn: &Connection,
+    project_root: Option<&str>,
+    check_all: bool,
+    clock: &SystemClock,
+) -> Result<Vec<storage::DirEntry>, Box<dyn Error>> {
+    let mut entries = storage::dir_entries(conn)?;
+    if let Some(root) = project_root {
+        let root_key = root.to_lowercase();
+        entries.retain(|entry| project::within(&entry.path.to_lowercase(), &root_key));
+    }
+    if check_all {
+        entries = reconcile_on_disk(conn, entries, clock)?;
+    }
+    Ok(entries)
+}
+
+fn drop_missing(
+    conn: &Connection,
+    entries: Vec<storage::DirEntry>,
+    ranked: &mut Vec<Scored<'_>>,
+    clock: &SystemClock,
+) -> Result<(), Box<dyn Error>> {
+    let matched: HashSet<&str> = ranked
+        .iter()
+        .map(|scored| scored.candidate.path.as_str())
+        .collect();
+    let to_check: Vec<storage::DirEntry> = entries
+        .into_iter()
+        .filter(|entry| matched.contains(entry.path.as_str()))
+        .collect();
+    let missing: HashSet<String> = reconcile_on_disk(conn, to_check, clock)?
+        .into_iter()
+        .filter(|entry| entry.missing)
+        .map(|entry| entry.path)
+        .collect();
+    ranked.retain(|scored| !missing.contains(&scored.candidate.path));
+    Ok(())
+}
+
+fn query_recall(
+    conn: &Connection,
+    query: &str,
+    query_memory: bool,
+    is_fallback: bool,
+    explain: bool,
+) -> Result<Recall, Box<dyn Error>> {
+    if !query_memory {
+        Ok(Recall::Disabled)
+    } else if is_fallback && !explain {
+        Ok(Recall::Nothing)
+    } else {
+        Ok(storage::recall(conn, &memory::key(query))?)
+    }
+}
+
+fn origin(is_fallback: bool) -> Origin {
+    if is_fallback {
+        Origin::Fallback
+    } else {
+        Origin::Database
+    }
+}
+
+fn query_stage(
+    query: &str,
+    is_fallback: bool,
+    decision: &Decision,
+    ranked: &[Scored<'_>],
+) -> Option<String> {
     // WHY: SPEC §15 never logs the empty-query regression case; `stage` stays unevaluated rather than hit the unreachable `None` arm.
-    let logged_query = !query.trim().is_empty();
-    let stage = logged_query.then(|| {
-        if is_fallback {
-            "fallback".to_owned()
-        } else if matches!(decision, Decision::Menu(_)) {
-            "menu".to_owned()
-        } else {
-            match ranked.first() {
-                Some(scored) => match scored.stage {
-                    Stage::One => "1".to_owned(),
-                    Stage::Two => "2".to_owned(),
-                },
-                None => unreachable!("a non-fallback non-empty query always reaches decide"),
-            }
+    if query.trim().is_empty() {
+        return None;
+    }
+    if is_fallback {
+        Some("fallback".to_owned())
+    } else if matches!(decision, Decision::Menu(_)) {
+        Some("menu".to_owned())
+    } else {
+        match ranked.first().map(|scored| scored.stage) {
+            Some(Stage::One) => Some("1".to_owned()),
+            Some(Stage::Two) => Some("2".to_owned()),
+            None => unreachable!("a non-fallback non-empty query always reaches decide"),
         }
-    });
+    }
+}
+
+struct Journal<'a> {
+    conn: &'a Connection,
+    clock: &'a SystemClock,
+    current_path: &'a str,
+    query: &'a str,
+    stage: Option<&'a str>,
+}
+
+impl Journal<'_> {
+    fn record(&self, result_dir_id: Option<i64>, outcome: &str) -> Result<(), Box<dyn Error>> {
+        if let Some(stage) = self.stage {
+            storage::insert_query(
+                self.conn,
+                self.clock.now(),
+                self.current_path,
+                self.query,
+                result_dir_id,
+                stage,
+                outcome,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn result_dir_id(
+    conn: &Connection,
+    path: &str,
+    is_fallback: bool,
+    clock: &SystemClock,
+    exclude_dirs: &[remove::Target],
+) -> Result<Option<i64>, Box<dyn Error>> {
+    // WHY: a fallback pick books its visit first and reuses the id; excluded keeps NULL.
+    if is_fallback {
+        record_fallback_visit(conn, path, clock, exclude_dirs)
+    } else {
+        Ok(storage::dir_id_by_key(conn, &path.to_lowercase())?)
+    }
+}
+
+fn conclude(
+    journal: &Journal<'_>,
+    decision: Decision<'_>,
+    is_fallback: bool,
+    exclude_dirs: &[remove::Target],
+) -> Result<(), Box<dyn Error>> {
     match decision {
         Decision::None => {
-            if let Some(stage) = &stage {
-                storage::insert_query(
-                    &conn,
-                    clock.now(),
-                    &current.path,
-                    query,
-                    None,
-                    stage,
-                    "none",
-                )?;
-            }
+            journal.record(None, "none")?;
             info!(
-                stage = stage.as_deref().unwrap_or("-"),
+                stage = journal.stage.unwrap_or("-"),
                 outcome = "none",
                 "query outcome"
             );
-            Err(format!("no directory matches '{query}'").into())
+            Err(format!("no directory matches '{}'", journal.query).into())
         }
         Decision::Jump(candidate) => {
-            let result_dir_id = if is_fallback {
-                record_fallback_visit(&conn, &candidate.path, &clock, &settings.exclude_dirs)?
-            } else {
-                storage::dir_id_by_key(&conn, &candidate.path.to_lowercase())?
-            };
-            if let Some(stage) = &stage {
-                storage::insert_query(
-                    &conn,
-                    clock.now(),
-                    &current.path,
-                    query,
-                    result_dir_id,
-                    stage,
-                    "jump",
-                )?;
-            }
+            let result_dir_id = result_dir_id(
+                journal.conn,
+                &candidate.path,
+                is_fallback,
+                journal.clock,
+                exclude_dirs,
+            )?;
+            journal.record(result_dir_id, "jump")?;
             info!(
-                stage = stage.as_deref().unwrap_or("-"),
+                stage = journal.stage.unwrap_or("-"),
                 outcome = "jump",
                 target = %candidate.path,
                 "query outcome"
@@ -614,38 +697,19 @@ fn query_directories(
             let chosen =
                 decision::selection(&answer, shown.len()).and_then(|index| shown.get(index - 1));
             let Some(chosen) = chosen else {
-                if let Some(stage) = &stage {
-                    storage::insert_query(
-                        &conn,
-                        clock.now(),
-                        &current.path,
-                        query,
-                        None,
-                        stage,
-                        "menu",
-                    )?;
-                }
+                journal.record(None, "menu")?;
                 return Err("no directory selected".into());
             };
-            // WHY: a fallback pick books its visit first and reuses the id; excluded keeps NULL.
-            let result_dir_id = if is_fallback {
-                record_fallback_visit(&conn, &chosen.path, &clock, &settings.exclude_dirs)?
-            } else {
-                storage::dir_id_by_key(&conn, &chosen.path.to_lowercase())?
-            };
-            if let Some(stage) = &stage {
-                storage::insert_query(
-                    &conn,
-                    clock.now(),
-                    &current.path,
-                    query,
-                    result_dir_id,
-                    stage,
-                    "pick",
-                )?;
-            }
+            let result_dir_id = result_dir_id(
+                journal.conn,
+                &chosen.path,
+                is_fallback,
+                journal.clock,
+                exclude_dirs,
+            )?;
+            journal.record(result_dir_id, "pick")?;
             info!(
-                stage = stage.as_deref().unwrap_or("-"),
+                stage = journal.stage.unwrap_or("-"),
                 outcome = "pick",
                 target = %chosen.path,
                 "query outcome"

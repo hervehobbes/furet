@@ -1,4 +1,12 @@
 ## 2026-09-27 — branch main — v0.2.0
+Done: lot 48 — `query_directories` split into `local_root`, `scoped_entries`, `drop_missing`, `query_recall`, `origin`,
+`query_stage`, `Journal::record`, `result_dir_id`, `conclude`; pure refactor, every output byte-identical, the eight
+`test result` counts unchanged before/after (DoD green both sides).
+Decisions: the pinned `fallback_pool = is_fallback.then(..).unwrap_or_default()` rewrite trips `clippy::obfuscated_if_else`
+under `-D warnings`, so that one expression keeps the if/else form (a `// WHY:` marks it); `#[allow]` was not added.
+Next: reviewer pass; Hervé reruns `tools/Run-Sonar.ps1` to confirm S3776 is closed on `query_directories`.
+
+## 2026-09-27 — branch main — v0.2.0
 Done: lot 39 — `cargo deny check` is DoD step 3 of 6 (after clippy, before tests). `deny.toml` at the root: advisories
 default, pinned license allow list, `multiple-versions = warn`, sources crates.io-only. CONTRIBUTING.md gains the
 `cargo install --locked cargo-deny` setup line and the network note (RustSec fetch). No code, no dependency change.
