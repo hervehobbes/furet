@@ -10,5 +10,7 @@ Arguments:
   <PATTERN>  
 
 Options:
-      --confirm  List the matches and ask before removing them
+      --confirm  Ask before removing each directory ([y/N/a/q])
+      --yes      Never ask for confirmation (for scripts)
+      --dry-run  Print what would be removed and change nothing
   -h, --help     Print help

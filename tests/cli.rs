@@ -211,6 +211,42 @@ fn remove_answering(sandbox: &Sandbox, pattern: &str, cwd: &Path, answer: &str) 
     run(&mut cmd)
 }
 
+fn remove_with(
+    sandbox: &Sandbox,
+    pattern: &str,
+    cwd: &Path,
+    flags: &[&str],
+    answer: &str,
+) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("remove").arg(pattern).current_dir(cwd);
+    for flag in flags {
+        cmd.arg(flag);
+    }
+    cmd.write_stdin(answer);
+    run(&mut cmd)
+}
+
+fn missing_since_values(conn: &Connection) -> Vec<i64> {
+    let mut statement = conn
+        .prepare("SELECT COALESCE(missing_since, -1) FROM dirs ORDER BY path")
+        .expect("the missing_since query prepares");
+    statement
+        .query_map([], |row| row.get(0))
+        .expect("the missing_since rows read")
+        .collect::<Result<Vec<i64>, _>>()
+        .expect("the missing_since values collect")
+}
+
+fn dry_run_state(conn: &Connection) -> (i64, i64, i64, Vec<i64>) {
+    (
+        scalar(conn, "SELECT COUNT(*) FROM dirs"),
+        scalar(conn, "SELECT COUNT(*) FROM visits"),
+        scalar(conn, "SELECT COUNT(*) FROM queries"),
+        missing_since_values(conn),
+    )
+}
+
 fn local_time(conn: &Connection, seconds: i64) -> String {
     conn.query_row(
         "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
@@ -2632,7 +2668,7 @@ fn remove_drops_the_visits_and_queries_of_the_removed_directory() {
 }
 
 #[test]
-fn remove_confirm_yes_removes_after_listing_on_stderr() {
+fn remove_confirm_yes_to_each_removes_both() {
     let world = sandbox(&["ombi", "ombi-v4"]);
     for name in ["ombi", "ombi-v4"] {
         assert!(
@@ -2643,13 +2679,13 @@ fn remove_confirm_yes_removes_after_listing_on_stderr() {
     }
     let first = canonical_child(&world, "ombi");
     let second = canonical_child(&world, "ombi-v4");
-    let out = remove_answering(&world, "ombi*", world.tree.path(), "y\n");
+    let out = remove_answering(&world, "ombi*", world.tree.path(), "y\ny\n");
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert!(out.stdout.is_empty(), "remove never writes to stdout");
     assert_eq!(
         text(&out.stderr),
         format!(
-            "  {first}\n  {second}\nRemove 2 directories? [y/N] removed {first}\nremoved {second}\n"
+            "Remove {first}? [y/N/a/q] Remove {second}? [y/N/a/q] removed {first}\nremoved {second}\n"
         )
     );
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
@@ -2670,10 +2706,238 @@ fn remove_confirm_declined_or_eof_removes_nothing_and_exits_one() {
         assert!(out.stdout.is_empty());
         assert_eq!(
             text(&out.stderr),
-            format!("  {expected}\nRemove 1 directory? [y/N] furet: nothing removed\n")
+            format!("Remove {expected}? [y/N/a/q] furet: nothing removed\n")
         );
         assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
     }
+}
+
+#[test]
+fn remove_confirm_asks_once_per_directory_and_removes_the_yes_ones() {
+    let world = sandbox(&["ombi", "ombi-v4"]);
+    for name in ["ombi", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let first = canonical_child(&world, "ombi");
+    let second = canonical_child(&world, "ombi-v4");
+    let out = remove_answering(&world, "ombi*", world.tree.path(), "y\nn\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {first}? [y/N/a/q] Remove {second}? [y/N/a/q] removed {first}\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(text(&remaining.stdout), format!("{second}\n"));
+}
+
+#[test]
+fn remove_confirm_empty_and_no_answers_keep_everything() {
+    let world = sandbox(&["ombi", "ombi-v4"]);
+    for name in ["ombi", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let first = canonical_child(&world, "ombi");
+    let second = canonical_child(&world, "ombi-v4");
+    for answer in ["\n\n", "n\nno\n"] {
+        let out = remove_answering(&world, "ombi*", world.tree.path(), answer);
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert_eq!(
+            text(&out.stderr),
+            format!(
+                "Remove {first}? [y/N/a/q] Remove {second}? [y/N/a/q] furet: nothing removed\n"
+            )
+        );
+        assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 2);
+    }
+}
+
+#[test]
+fn remove_confirm_all_removes_the_rest_without_asking() {
+    let world = sandbox(&["ombi", "ombi-v2", "ombi-v4"]);
+    for name in ["ombi", "ombi-v2", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let first = canonical_child(&world, "ombi");
+    let second = canonical_child(&world, "ombi-v2");
+    let third = canonical_child(&world, "ombi-v4");
+    let out = remove_answering(&world, "ombi*", world.tree.path(), "n\na\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        format!(
+            "Remove {first}? [y/N/a/q] Remove {second}? [y/N/a/q] removed {second}\nremoved {third}\n"
+        )
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+    let remaining = list_with(&world, &["--paths"]);
+    assert_eq!(text(&remaining.stdout), format!("{first}\n"));
+}
+
+#[test]
+fn remove_confirm_yes_then_quit_removes_only_the_first() {
+    let world = sandbox(&["ombi", "ombi-v2", "ombi-v4"]);
+    for name in ["ombi", "ombi-v2", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let first = canonical_child(&world, "ombi");
+    let second = canonical_child(&world, "ombi-v2");
+    let out = remove_answering(&world, "ombi*", world.tree.path(), "y\nq\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {first}? [y/N/a/q] Remove {second}? [y/N/a/q] removed {first}\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 2);
+}
+
+#[test]
+fn remove_confirm_reasks_after_an_invalid_answer() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        add(&world, &world.child("ombi"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let path = canonical_child(&world, "ombi");
+    let out = remove_answering(&world, "ombi", world.tree.path(), "maybe\ny\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {path}? [y/N/a/q] Remove {path}? [y/N/a/q] removed {path}\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_confirm_eof_removes_nothing() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let path = canonical_child(&world, "tokio");
+    let out = remove_answering(&world, "tokio", world.tree.path(), "");
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {path}? [y/N/a/q] furet: nothing removed\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_yes_asks_nothing_and_removes() {
+    let world = sandbox(&["ombi", "ombi-v4"]);
+    for name in ["ombi", "ombi-v4"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = remove_with(&world, "ombi*", world.tree.path(), &["--yes"], "");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    let expected = [
+        canonical_child(&world, "ombi"),
+        canonical_child(&world, "ombi-v4"),
+    ]
+    .map(|path| format!("removed {path}"));
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_confirm_and_yes_conflict() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove_with(
+        &world,
+        "tokio",
+        world.tree.path(),
+        &["--confirm", "--yes"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_dry_run_changes_nothing() {
+    let world = sandbox(&["tokio/keep", "tokio/gone"]);
+    for child in ["tokio/keep", "tokio/gone"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let jumped = query(&world, "keep", world.tree.path(), false);
+    assert!(jumped.status.success(), "stderr: {}", text(&jumped.stderr));
+    missing_since_at(&world, &world.child("tokio/gone"), 1_000);
+    let conn = db(&world);
+    let before = dry_run_state(&conn);
+    assert!(before.2 >= 1, "at least one queries row was journaled");
+    let out = remove_with(
+        &world,
+        "tokio",
+        world.tree.path(),
+        &["--dry-run", "--confirm"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    let expected = [
+        canonical_child(&world, "tokio/gone"),
+        canonical_child(&world, "tokio/keep"),
+    ]
+    .map(|path| format!("would remove {path}"));
+    assert_eq!(text(&out.stderr), format!("{}\n", expected.join("\n")));
+    assert_eq!(dry_run_state(&conn), before);
+}
+
+#[test]
+fn remove_dry_run_with_no_match_fails_like_a_real_remove() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = remove_with(&world, "nope*", world.tree.path(), &["--dry-run"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "furet: no known directory matches 'nope*'\n"
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
 }
 
 #[test]

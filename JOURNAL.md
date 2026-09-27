@@ -1,3 +1,10 @@
+## 2026-09-27 — branch main — v0.1.1
+Done: lot 42 — `remove --confirm` now asks per directory (`Remove <path>? [y/N/a/q] `, y/n/a/q,
+EOF=quit, re-ask on invalid; removals applied after all questions in one `remove_dirs` call), via
+pure `Answer`/`parse_answer`/`confirm_each` in `src/remove.rs`; new `--yes` (accepted, inert until
+lot 43) and `--dry-run` (`would remove`, no question, no write), `--confirm --yes` refused by clap
+(exit 2). 10 new cli tests + 2 old-protocol ones updated + 5 unit tests, red first. Next: reviewer pass.
+
 ## 2026-09-26 — branch main — v0.1.1
 Done: lot 41 — opt-in nucleo stage 1 (`nucleo-matcher` 0.3.1, MPL-2.0): `engine` key, `query --engine`,
 `engine:` explain line; `rank` builds one matcher per call (private `Scorer`), tokens §7.1-normalized first.

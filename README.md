@@ -72,7 +72,8 @@ extra profile line.
   also lists directories missing from disk, with a `present`/`missing`
   column. Rows are ordered alphabetically by path, ignoring case.
   `--paths` (`-p`) prints the path alone, also with `--all`.
-- `furet remove <pattern> [--confirm]` — forget known directories matching
+- `furet remove <pattern> [--confirm | --yes] [--dry-run]` — forget known
+  directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
   **names** against every segment of the path: `ombi*` removes `ombi` and
   its known subdirectories, and `*appdata*` removes every known directory
@@ -82,8 +83,15 @@ extra profile line.
   `*` matches any run of characters, crossing `\`; `?` is exactly one
   character; matching ignores case. Every match is removed at once (missing
   ones included) and reported on stderr — stdout stays empty; a removed
-  directory comes back on the next `furet add` of it. `--confirm` lists the
-  matches and asks before removing (e.g. `furet remove *appdata* --confirm`).
+  directory comes back on the next `furet add` of it. `--confirm` asks one
+  question per directory on stderr (`Remove <path>? [y/N/a/q]`): `y`/`yes`
+  removes it, `n`/`no`/Enter keeps it, `a`/`all` removes it and every
+  later match without asking, `q`/`quit` or EOF keeps it and every later
+  match, and any other answer re-asks the same question (e.g.
+  `furet remove *appdata* --confirm`). `--yes` never asks — for scripts;
+  `--confirm --yes` is refused. `--dry-run` prints
+  `would remove <path>` per match on stderr, asks nothing even with
+  `--confirm`, and never touches the database.
   Quote the pattern under bash (`'ombi*'`); PowerShell passes it as is.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the

@@ -373,17 +373,29 @@ PS C:\dev\furet> furet remove *appdata*
 removed C:\Users\thouz\AppData\Local\sourcier\projects\Clyd-16e1bbba
 ```
 
-Avec `--confirm`, les correspondances sont listées et une confirmation est
-demandée avant de supprimer (toute autre réponse que `y` ou `yes`, ligne
-vide ou Ctrl-D compris, ne supprime rien) :
+Avec `--confirm`, une question est posée sur `stderr` pour chaque
+répertoire : `y`/`yes` le supprime, `n`/`no`/Entrée le garde, `a`/`all`
+supprime aussi tous les suivants sans rien demander, `q`/`quit` ou une
+fin d'entrée (Ctrl-Z) garde ce répertoire et tous les suivants ; toute
+autre réponse repose la même question. Les suppressions retenues sont
+appliquées après toutes les questions :
 
 ```powershell
 PS C:\dev\furet> furet remove ombi* --confirm
-  C:\apps\ombi
-  D:\x\Ombi-v4
-Remove 2 directories? [y/N] y
+Remove C:\apps\ombi? [y/N/a/q] y
+Remove D:\x\Ombi-v4? [y/N/a/q] y
 removed C:\apps\ombi
 removed D:\x\Ombi-v4
+```
+
+Pour voir ce qui serait supprimé sans rien toucher à la base,
+`--dry-run` imprime `would remove <chemin>` par correspondance et ne pose
+aucune question, même combiné à `--confirm` :
+
+```powershell
+PS C:\dev\furet> furet remove ombi* --dry-run
+would remove C:\apps\ombi
+would remove D:\x\Ombi-v4
 ```
 
 Un répertoire oublié revient dans la base au prochain `furet add`, comme

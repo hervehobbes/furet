@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::env;
 use std::error::Error;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -114,9 +114,15 @@ enum Command {
     /// Forget known directories matching a name or path pattern.
     Remove {
         pattern: String,
-        /// List the matches and ask before removing them.
+        /// Ask before removing each directory ([y/N/a/q]).
         #[arg(long)]
         confirm: bool,
+        /// Never ask for confirmation (for scripts).
+        #[arg(long, conflicts_with = "confirm")]
+        yes: bool,
+        /// Print what would be removed and change nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
@@ -218,7 +224,12 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
         Command::List { all, paths } => report(list_command(all, paths)),
-        Command::Remove { pattern, confirm } => report(remove_command(&pattern, confirm)),
+        Command::Remove {
+            pattern,
+            confirm,
+            yes,
+            dry_run,
+        } => report(remove_command(&pattern, confirm, yes, dry_run)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -901,8 +912,13 @@ fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn remove_command(pattern: &str, confirm: bool) -> Result<(), Box<dyn Error>> {
-    debug!(pattern, confirm, "remove");
+fn remove_command(
+    pattern: &str,
+    confirm: bool,
+    yes: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn Error>> {
+    debug!(pattern, confirm, yes, dry_run, "remove");
     if pattern.trim().is_empty() {
         return Err("empty pattern".into());
     }
@@ -918,13 +934,33 @@ fn remove_command(pattern: &str, confirm: bool) -> Result<(), Box<dyn Error>> {
     if candidates.is_empty() {
         return Err(format!("no known directory matches '{pattern}'").into());
     }
-    if confirm && !remove_confirmed(&candidates)? {
+    if dry_run {
+        for candidate in &candidates {
+            eprintln!("would remove {}", candidate.path);
+        }
+        return Ok(());
+    }
+    let questions: Vec<String> = candidates
+        .iter()
+        .map(|candidate| format!("Remove {}? [y/N/a/q] ", candidate.path))
+        .collect();
+    let decisions = if confirm {
+        remove::confirm_each(&questions, ask)
+    } else {
+        vec![true; candidates.len()]
+    };
+    let selected: Vec<&storage::DirEntry> = candidates
+        .iter()
+        .zip(&decisions)
+        .filter_map(|(candidate, &remove)| remove.then_some(candidate))
+        .collect();
+    if selected.is_empty() {
         return Err("nothing removed".into());
     }
-    let ids: Vec<i64> = candidates.iter().map(|entry| entry.id).collect();
+    let ids: Vec<i64> = selected.iter().map(|entry| entry.id).collect();
     let count = storage::remove_dirs(&conn, &ids)?;
     info!(count, "removed directories");
-    for candidate in &candidates {
+    for candidate in &selected {
         eprintln!("removed {}", candidate.path);
     }
     Ok(())
@@ -947,20 +983,16 @@ fn remove_target(pattern: &str, base: &Path) -> remove::Target {
     }
 }
 
-fn remove_confirmed(candidates: &[storage::DirEntry]) -> Result<bool, Box<dyn Error>> {
-    for candidate in candidates {
-        eprintln!("  {}", candidate.path);
+fn ask(question: &str) -> Option<String> {
+    eprint!("{question}");
+    if io::stderr().flush().is_err() {
+        return None;
     }
-    let count = candidates.len();
-    if count == 1 {
-        eprint!("Remove 1 directory? [y/N] ");
-    } else {
-        eprint!("Remove {count} directories? [y/N] ");
+    let mut line = String::new();
+    if io::stdin().read_line(&mut line).unwrap_or(0) == 0 {
+        return None;
     }
-    let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
-    let answer = answer.trim().to_lowercase();
-    Ok(answer == "y" || answer == "yes")
+    Some(line)
 }
 
 #[allow(clippy::print_stdout)]
