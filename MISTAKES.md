@@ -10,3 +10,12 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   after a later comment-only edit. Rule: exactly one env-mutating unit
   test per process — extend `furet_data_dir_overrides_the_database_location`
   instead of adding a sibling.
+- 2026-09-27, lots 43–46 (GLM): the pasted DoD "raw output" was retyped
+  four lots running — relabelled binaries, a malformed `test result` line,
+  an appended "correction", and in lot 46 an invented binary hash
+  (`explain-631fc2e8c71dfa4a1c46.exe` instead of the real
+  `explain-631bc2e8c71dfa4d.exe`), even when the lot demanded a
+  `Select-String` over a log file. The code was fine each time; caught by
+  the reviewer re-running the DoD. Rule: paste tool output by copying it,
+  never by retyping it; if a line cannot be pasted verbatim, say so. The
+  reviewer's own DoD run remains the only accepted proof.
