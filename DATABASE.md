@@ -86,7 +86,13 @@ two fixed values, both chosen distinct from any real session id so
 | `query` | TEXT | `NOT NULL` | The query text as typed. |
 | `result_dir_id` | INTEGER | nullable, `REFERENCES dirs (id)` | Directory the query jumped straight to; `NULL` when nothing jumped (no match, or a menu was shown). |
 | `stage` | TEXT | `NOT NULL`, `CHECK (stage IN ('1', '2', 'fallback', 'menu'))` | Matching stage or path that produced the decision. |
-| `outcome` | TEXT | `NOT NULL` (no `CHECK`) | What the query did; the code writes `'jump'`, `'none'`, or `'menu'`. |
+| `outcome` | TEXT | `NOT NULL` (no `CHECK`) | What the query did; the code writes `'jump'`, `'none'`, `'menu'`, `'pick'`. |
+
+`pick` (SPEC-v2 §24) journals the directory a menu chose: it appears with
+`stage = 'menu'` (a §9 menu choice or `furet add --query`) or `stage =
+'fallback'` (a fallback menu choice); `result_dir_id` is `NULL` for a pick
+only when the chosen directory is excluded (`exclude_dirs`, lot 38's rule).
+`furet stats` counts it in `jumps`, and calibration treats it like `jump`.
 
 ## Indexes
 

@@ -319,7 +319,9 @@ PS C:\dev\furet> furet queries --failures
 ```
 
 `--failures` liste les sauts qui étaient probablement des erreurs
-(SPEC §15) — utile pour repérer un mauvais classement à corriger.
+(SPEC §15) — utile pour repérer un mauvais classement à corriger. Les
+choix faits dans un menu (`furet query`) ou via `fi` sont aussi journalisés
+(`pick`) et comptés comme des sauts par la calibration.
 
 ### Lister les répertoires connus
 

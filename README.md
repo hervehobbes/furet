@@ -57,6 +57,8 @@ extra profile line.
   the right (`--preview "furet preview {}"`, `--preview-window
   "right,50%"`) listing the highlighted directory's contents through the
   `furet preview` subcommand; the console menu branch has no preview.
+  Choices made in menus and `fi` are remembered in the query journal
+  (`outcome = 'pick'`) — the base of the query memory that follows.
 - `furet query --local <query>` — the flag behind `f -l`: restrict the
   candidate pool to the current git project; combines with `--list`,
   `--explain`, `--color`, and `--no-ignore`. Outside a git repository it

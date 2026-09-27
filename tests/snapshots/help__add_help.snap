@@ -13,4 +13,5 @@ Options:
       --session <SESSION>  Terminal session the visit belongs to
       --source <SOURCE>    What triggered the visit [default: hook] [possible values: hook, jump, back, up, fallback, import]
       --from <FROM>        Directory the visit started from
+      --query <QUERY>      Query text that led to this directory; journals it as a pick
   -h, --help               Print help

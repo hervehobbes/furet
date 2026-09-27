@@ -55,6 +55,9 @@ enum Command {
         /// Directory the visit started from.
         #[arg(long)]
         from: Option<String>,
+        /// Query text that led to this directory; journals it as a pick.
+        #[arg(long, requires = "from")]
+        query: Option<String>,
     },
     /// Rank recorded directories and print the best match, falling back to a
     /// disk walk (SPEC section 11) when nothing matches.
@@ -216,7 +219,14 @@ fn main() {
             session,
             source,
             from,
-        } => report(add(&path, &session, source, from.as_deref())),
+            query,
+        } => report(add(
+            &path,
+            &session,
+            source,
+            from.as_deref(),
+            query.as_deref(),
+        )),
         Command::Query {
             query,
             list,
@@ -317,8 +327,16 @@ fn add(
     session: &str,
     source: Source,
     from: Option<&str>,
+    query: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
-    debug!(path, session, source = source.as_str(), from = ?from, "add");
+    debug!(
+        path,
+        session,
+        source = source.as_str(),
+        from = ?from,
+        query = ?query,
+        "add"
+    );
     let clock = SystemClock::new();
     let base = env::current_dir()?;
     let dir = paths::resolve(path, &base)?;
@@ -328,23 +346,28 @@ fn add(
         return Ok(());
     }
     let conn = storage::open()?;
-    let dir_id = storage::upsert_dir(&conn, &dir.path, &dir.key, clock.now())?;
-    let from_dir_id = match from {
+    // WHY: the pick row shares the visit's timestamp so calibration sees the landing.
+    let now = clock.now();
+    let dir_id = storage::upsert_dir(&conn, &dir.path, &dir.key, now)?;
+    let (from_dir_id, from_cwd) = match from {
         Some(input) => {
             let origin = paths::resolve(input, &base)?;
-            storage::dir_id_by_key(&conn, &origin.key)?
+            (
+                storage::dir_id_by_key(&conn, &origin.key)?,
+                Some(origin.path),
+            )
         }
-        None => None,
+        None => (None, None),
     };
-    storage::insert_visit(
-        &conn,
-        dir_id,
-        clock.now(),
-        source.as_str(),
-        session,
-        from_dir_id,
-    )?;
+    storage::insert_visit(&conn, dir_id, now, source.as_str(), session, from_dir_id)?;
     info!(path = %dir.path, source = source.as_str(), "visit recorded");
+    if let Some(text) = query
+        && let Some(cwd) = from_cwd.as_deref()
+        && !text.trim().is_empty()
+    {
+        storage::insert_query(&conn, now, cwd, text, Some(dir_id), "menu", "pick")?;
+        info!(query = text, outcome = "pick", "query journal insert");
+    }
     let retention_days = settings.retention_days;
     if retention_days > 0 {
         let cutoff = clock
@@ -503,9 +526,7 @@ fn query_directories(
     }
     debug!(ranked = ranked.len(), "decision");
     let decision = decision::decide(&ranked);
-    // WHY: SPEC section 15 never logs the empty-query-without-list regression case;
-    // its `ranked` is always empty on the non-fallback path, so `stage` must stay
-    // unevaluated there rather than hit the otherwise-unreachable `None` arm below.
+    // WHY: SPEC §15 never logs the empty-query regression case; `stage` stays unevaluated rather than hit the unreachable `None` arm.
     let logged_query = !query.trim().is_empty();
     let stage = logged_query.then(|| {
         if is_fallback {
@@ -569,28 +590,45 @@ fn query_directories(
             Ok(())
         }
         Decision::Menu(shown) => {
+            eprint!("{}", decision::render_menu(&shown));
+            let mut answer = String::new();
+            io::stdin().read_line(&mut answer)?;
+            let chosen =
+                decision::selection(&answer, shown.len()).and_then(|index| shown.get(index - 1));
+            let Some(chosen) = chosen else {
+                if let Some(stage) = &stage {
+                    storage::insert_query(
+                        &conn,
+                        clock.now(),
+                        &current.path,
+                        query,
+                        None,
+                        stage,
+                        "menu",
+                    )?;
+                }
+                return Err("no directory selected".into());
+            };
+            // WHY: a fallback pick books its visit first and reuses the id; excluded keeps NULL.
+            let result_dir_id = if is_fallback {
+                record_fallback_visit(&conn, &chosen.path, &clock, &settings.exclude_dirs)?
+            } else {
+                storage::dir_id_by_key(&conn, &chosen.path.to_lowercase())?
+            };
             if let Some(stage) = &stage {
                 storage::insert_query(
                     &conn,
                     clock.now(),
                     &current.path,
                     query,
-                    None,
+                    result_dir_id,
                     stage,
-                    "menu",
+                    "pick",
                 )?;
-            }
-            eprint!("{}", decision::render_menu(&shown));
-            let mut answer = String::new();
-            io::stdin().read_line(&mut answer)?;
-            let index = decision::selection(&answer, shown.len()).ok_or("no directory selected")?;
-            let chosen = shown.get(index - 1).ok_or("no directory selected")?;
-            if is_fallback {
-                let _ = record_fallback_visit(&conn, &chosen.path, &clock, &settings.exclude_dirs)?;
             }
             info!(
                 stage = stage.as_deref().unwrap_or("-"),
-                outcome = "menu",
+                outcome = "pick",
                 target = %chosen.path,
                 "query outcome"
             );

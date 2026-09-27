@@ -44,7 +44,8 @@ fn earliest(visits: &[VisitRecord], predicate: impl Fn(&VisitRecord) -> bool) ->
         .map(|(index, _)| index)
 }
 
-/// Flags every `queries` jump whose landing was likely a mistake (SPEC section 15).
+/// Flags every `queries` jump or pick whose landing was likely a mistake
+/// (SPEC section 15, SPEC-v2 section 24).
 pub fn probable_failures<'a>(
     queries: &'a [QueryRecord],
     visits: &[VisitRecord],
@@ -56,7 +57,7 @@ pub fn probable_failures<'a>(
     );
     queries
         .iter()
-        .filter(|query| query.outcome == "jump")
+        .filter(|query| query.outcome == "jump" || query.outcome == "pick")
         .filter_map(|query| {
             let dir_id = query.result_dir_id?;
             let landing_index = earliest(visits, |visit| {
@@ -193,6 +194,22 @@ mod tests {
     fn a_non_jump_outcome_is_never_considered() {
         let queries = [query(1, 100, Some(7), "menu")];
         let visits = [visit(7, 105, "jump", "s"), visit(9, 108, "back", "s")];
+        assert!(probable_failures(&queries, &visits).is_empty());
+    }
+
+    #[test]
+    fn a_pick_followed_by_a_quick_back_is_flagged_like_a_jump() {
+        let queries = [query(1, 100, Some(7), "pick")];
+        let visits = [visit(7, 105, "jump", "s"), visit(9, 110, "back", "s")];
+        let flagged = probable_failures(&queries, &visits);
+        assert_eq!(flagged.len(), 1);
+        assert!(matches!(flagged[0].reason, FailureReason::Backtrack));
+    }
+
+    #[test]
+    fn a_menu_outcome_is_still_never_considered() {
+        let queries = [query(1, 100, Some(7), "menu")];
+        let visits = [visit(7, 105, "jump", "s"), visit(9, 110, "back", "s")];
         assert!(probable_failures(&queries, &visits).is_empty());
     }
 

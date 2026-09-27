@@ -214,7 +214,16 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
   `furet remove` (`storage::remove_dirs` unlinks surviving visits'
   `from_dir_id` instead of cascading).
 - `queries(id, ts, cwd, query, result_dir_id, stage, outcome)` — the SPEC §15
-  journal; `stage` is one of `'1' | '2' | 'fallback' | 'menu'`.
+  journal; `stage` is one of `'1' | '2' | 'fallback' | 'menu'`; `outcome` is
+  one of `'jump' | 'none' | 'menu' | 'pick'` (SPEC-v2 §24). A `pick`
+  journals a menu choice, written after the answer: `result_dir_id` is the
+  chosen directory — database menus look it up by key, a fallback menu
+  choice gets its `dirs` row through `record_fallback_visit` first and
+  reuses that id, and only an excluded (`exclude_dirs`) fallback choice
+  keeps `NULL` — with the stage the query had computed (`'menu'` or
+  `'fallback'`). A cancelled menu (empty, invalid, or EOF answer) writes
+  exactly the pre-lot-46 row: same stage, `outcome = 'menu'`,
+  `result_dir_id = NULL`, same error and exit code.
 - Retention: every `furet add` runs `storage::purge_before(now -
   retention_days)`, deleting older `visits` and `queries` rows (indexed by
   `idx_visits_ts` / `idx_queries_ts`); `dirs` rows are deleted only by
@@ -241,14 +250,28 @@ source of truth for those locations (`load_settings` and `logging::init` call
 them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`
 and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
 
-- `furet add <path> --session <s> [--source <src>] [--from <dir>]` — records
+- `furet add <path> --session <s> [--source <src>] [--from <dir>] [--query <text>]` — records
   one visit; `source` defaults to `hook`. A path matching `exclude_dirs` is
   not recorded (exit 0, nothing on stdout or stderr, the database is not
-  opened; `--from` is unaffected).
+  opened; `--from` is unaffected, and `--query` writes nothing either).
+  `--query` (SPEC-v2 §24) requires `--from` (clap exits 2 without it); a
+  non-blank `<text>` is journaled after the visit as one `queries` row —
+  `outcome = 'pick'`, `stage = 'menu'`, `result_dir_id` = the added
+  directory, `ts` = the visit's timestamp (one `clock.now()` covers both, so
+  §15 calibration sees the landing visit), `cwd` = the canonical `--from`
+  path (the same format `furet query` writes), `query` = the text as typed.
+  A blank or whitespace-only text writes no row; the retention purge still
+  runs after these writes.
 - `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local] [--engine <reference|nucleo>]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
-  on a stage-2 tie, reading the answer from stdin. An omitted `<text>` is
+  on a stage-2 tie, reading the answer from stdin. The menu's journal row is
+  written **after** the answer (SPEC-v2 §24): a valid choice writes
+  `outcome = 'pick'` with `result_dir_id` = the chosen directory (see the
+  storage contract above for the fallback and excluded cases), while a
+  cancelled menu (empty, invalid, or EOF answer) writes the pre-lot-46 row —
+  `outcome = 'menu'`, `result_dir_id = NULL` — with the same error and exit
+  code. An omitted `<text>` is
   the empty query (`fi` relies on it for its initial fzf list).
   `--local` (`-l`, SPEC §19, Hervé 2026-09-26) restricts the candidate pool
   to the current **git project**: the project root is the nearest of the
@@ -336,8 +359,20 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   preview {}"` and `--preview-window "right,50%"` (SPEC-v2 §23), so a
   right-hand pane lists the highlighted directory through the `furet
   preview` subcommand; fzf quotes `{}` correctly under cmd.exe (a path
-  with a space and a `&` verified against fzf 0.74.2, lot 45). The
-  console menu branch has no preview. One completer —
+  with a space and a `&` verified against fzf 0.74.2, lot 45). Lot 46
+  (SPEC-v2 §24) adds `--print-query` to both calls and captures the output
+  as an array: `lines[0]` is fzf's final query (an empty query line comes
+  back as an empty element, so `lines[1]` is the selection) and fewer than
+  two lines — abort or no selection — returns without moving; the selection
+  is ANSI-stripped as before. The console menu branch has no preview. On a
+  jump the fzf branch calls `__furet_record $target $from 'jump'
+  $finalQuery` and the console-menu branch `__furet_record $target $from
+  'jump' $query` (its joined arguments); `__furet_record($target, $from,
+  $source, $query)` gained that optional 4th parameter — when it is
+  non-blank (`-not [string]::IsNullOrWhiteSpace`) the add call gains
+  `--query $query` before `-- $target`, so a choice journals exactly one
+  `pick` row (none for an empty query), and every 3-argument call (all of
+  `f`'s) behaves exactly as before. One completer —
   the `FuretArgs` registration above — handles every line, `-l` included:
   the declared switch keeps pwsh's completion binder on the normal path
   (lot 40b, Hervé 2026-09-26, replacing a `-Native` fallback that relied on
@@ -348,7 +383,9 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.
 - `furet queries --failures` — prints tab-separated probable-mistake rows
-  **to stdout**, not stderr. Accepted exception to the stdout-discipline
+  **to stdout**, not stderr. Calibration (SPEC-v2 §24) considers
+  `outcome IN ('jump', 'pick')` — a menu choice followed by a quick back is
+  flagged like a jump — and the output format is unchanged. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`. `furet list` below is the
   second accepted stdout exception, `furet stats` below the third, for
@@ -370,7 +407,7 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   `missing_since`), `missing_directories` (rows with), `visits`,
   `visits_last_30_days` (`ts >= since`), `queries`,
   `queries_last_30_days` (same window), `jumps` (`outcome IN ('jump',
-  'pick')`, so lot 46's `pick` rows need no change here),
+  'pick')`),
   `probable_failures` (`calibration::probable_failures(&query_log,
   &visit_log).len()`), `failure_rate` (`{:.1}%` of `probable_failures ×
   100 / jumps`, `0.0%` when `jumps = 0`), `stage_1`, `stage_2`,

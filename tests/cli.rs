@@ -93,6 +93,29 @@ fn add(
     run(&mut cmd)
 }
 
+fn add_with_query(
+    sandbox: &Sandbox,
+    path: &Path,
+    session: &str,
+    from: &Path,
+    query: &str,
+    source: Option<&str>,
+) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("add")
+        .arg(path)
+        .arg("--session")
+        .arg(session)
+        .arg("--from")
+        .arg(from)
+        .arg("--query")
+        .arg(query);
+    if let Some(source) = source {
+        cmd.arg("--source").arg(source);
+    }
+    run(&mut cmd)
+}
+
 fn query(sandbox: &Sandbox, query: &str, cwd: &Path, list: bool) -> Output {
     let mut cmd = sandbox.furet();
     cmd.arg("query").arg(query).current_dir(cwd);
@@ -624,6 +647,60 @@ fn query_menu_cancels_on_an_empty_answer_and_on_no_answer_at_all() {
     assert!(text(&eof.stderr).contains("no directory selected"));
 }
 
+fn single_query_row(sandbox: &Sandbox) -> (i64, String, String, Option<String>, String, String) {
+    db(sandbox)
+        .query_row(
+            "SELECT ts, cwd, query, (SELECT path FROM dirs WHERE id = result_dir_id), stage, outcome FROM queries",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
+        .expect("the single queries row reads back")
+}
+
+#[test]
+fn query_menu_choice_journals_a_pick_with_the_chosen_directory() {
+    let (world, first, second) = ambiguous_world();
+    let out = query_answering(&world, "tokoi", world.tree.path(), "2\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{second}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let (_, _, query_text, result_path, stage, outcome) = single_query_row(&world);
+    assert_eq!(query_text, "tokoi");
+    assert_eq!(stage, "menu");
+    assert_eq!(outcome, "pick");
+    assert_eq!(result_path.as_deref(), Some(second.as_str()));
+    assert_ne!(result_path.as_deref(), Some(first.as_str()));
+}
+
+#[test]
+fn query_menu_cancel_still_journals_menu_without_a_result() {
+    for answer in ["\n", ""] {
+        let (world, _, _) = ambiguous_world();
+        let out = query_answering(&world, "tokoi", world.tree.path(), answer);
+        assert!(!out.status.success(), "answer: {answer:?}");
+        let conn = db(&world);
+        assert_eq!(
+            scalar(&conn, "SELECT COUNT(*) FROM queries"),
+            1,
+            "answer: {answer:?}"
+        );
+        let (_, _, _, result_path, stage, outcome) = single_query_row(&world);
+        assert_eq!(stage, "menu", "answer: {answer:?}");
+        assert_eq!(outcome, "menu", "answer: {answer:?}");
+        assert_eq!(result_path, None, "answer: {answer:?}");
+    }
+}
+
 #[test]
 fn query_list_dumps_a_tie_without_asking_anything() {
     let (world, first, second) = ambiguous_world();
@@ -1149,7 +1226,7 @@ fn init_pwsh_records_a_real_session_visit_after_every_successful_query_including
     );
 
     let record_def = script
-        .find("function global:__furet_record($target, $from, $source) {")
+        .find("function global:__furet_record($target, $from, $source, $query) {")
         .expect("__furet_record is defined");
     let record_body = &script[record_def..];
     assert!(
@@ -1381,6 +1458,61 @@ fn a_fallback_jump_to_an_excluded_directory_jumps_but_records_nothing() {
     assert_eq!(result_dir_id, None);
 }
 
+// WHY: wd/tokio and the sibling tokio tie in stage 2; path order puts the sibling first.
+fn fallback_tie_world() -> (Sandbox, String, String) {
+    let world = sandbox(&["tokio", "wd/tokio"]);
+    let sibling = canonical_child(&world, "tokio");
+    let nested = canonical_child(&world, "wd/tokio");
+    (world, sibling, nested)
+}
+
+#[test]
+fn query_fallback_menu_choice_journals_a_pick_with_stage_fallback() {
+    let (world, sibling, nested) = fallback_tie_world();
+    let cwd = world.child("wd");
+    let out = query_answering(&world, "tokoi", &cwd, "2\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{nested}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let (_, _, query_text, result_path, stage, outcome) = single_query_row(&world);
+    assert_eq!(query_text, "tokoi");
+    assert_eq!(stage, "fallback");
+    assert_eq!(outcome, "pick");
+    assert_eq!(result_path.as_deref(), Some(nested.as_str()));
+    assert_ne!(result_path.as_deref(), Some(sibling.as_str()));
+    assert_eq!(
+        scalar(&conn, "SELECT COUNT(*) FROM dirs"),
+        1,
+        "the chosen fallback directory gets its dirs row"
+    );
+    let (visit_source, visit_session): (String, String) = conn
+        .query_row("SELECT source, session FROM visits", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("the fallback visit reads back");
+    assert_eq!(visit_source, "fallback");
+    assert_eq!(visit_session, "fallback");
+}
+
+#[test]
+fn query_fallback_menu_choice_of_an_excluded_directory_journals_a_pick_without_result() {
+    let (world, _sibling, nested) = fallback_tie_world();
+    write_config(&world, "exclude_dirs = ['wd']");
+    let cwd = world.child("wd");
+    let out = query_answering(&world, "tokoi", &cwd, "2\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{nested}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let (_, _, _, result_path, stage, outcome) = single_query_row(&world);
+    assert_eq!(stage, "fallback");
+    assert_eq!(outcome, "pick");
+    assert_eq!(result_path, None);
+}
+
 #[test]
 fn query_list_color_wraps_every_path_in_the_ls_colors_directory_code() {
     let world = sandbox(&["stock", "tokio"]);
@@ -1606,6 +1738,110 @@ fn the_bare_empty_query_without_list_regression_case_records_no_queries_row() {
     assert!(!out.status.success());
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn add_query_journals_one_pick_row() {
+    let world = sandbox(&["tokio", "origin"]);
+    let tokio = world.child("tokio");
+    let origin = world.child("origin");
+    let out = add_with_query(&world, &tokio, "session-1", &origin, "Tok io", None);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let visit_ts: i64 = conn
+        .query_row("SELECT ts FROM visits", [], |row| row.get(0))
+        .expect("the visit reads back");
+    let (ts, cwd, query_text, result_path, stage, outcome) = single_query_row(&world);
+    assert_eq!(ts, visit_ts, "the pick row shares the visit's timestamp");
+    let from_canonical = paths::canonical(&origin)
+        .expect("the origin canonicalizes")
+        .path;
+    assert_eq!(cwd, from_canonical);
+    assert_eq!(query_text, "Tok io");
+    let tokio_canonical = paths::canonical(&tokio)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    assert_eq!(result_path.as_deref(), Some(tokio_canonical.as_str()));
+    assert_eq!(stage, "menu");
+    assert_eq!(outcome, "pick");
+}
+
+#[test]
+fn add_query_without_from_is_refused() {
+    let world = sandbox(&["tokio"]);
+    let mut cmd = world.furet();
+    cmd.arg("add")
+        .arg(world.child("tokio"))
+        .arg("--session")
+        .arg("session-1")
+        .arg("--query")
+        .arg("tok");
+    let out = run(&mut cmd);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(!world.data.path().join("furet.db").exists());
+}
+
+#[test]
+fn add_query_with_a_blank_text_writes_no_queries_row() {
+    let world = sandbox(&["tokio", "origin"]);
+    let tokio = world.child("tokio");
+    let origin = world.child("origin");
+    for blank in ["", "   "] {
+        let out = add_with_query(&world, &tokio, "session-1", &origin, blank, None);
+        assert!(out.status.success(), "blank: {blank:?}");
+        let conn = db(&world);
+        assert_eq!(
+            scalar(&conn, "SELECT COUNT(*) FROM queries"),
+            0,
+            "blank: {blank:?}"
+        );
+    }
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 2);
+}
+
+#[test]
+fn add_query_of_an_excluded_directory_writes_nothing() {
+    let world = sandbox(&["zzskip", "origin"]);
+    write_config(&world, "exclude_dirs = ['zzskip']");
+    let out = add_with_query(
+        &world,
+        &world.child("zzskip"),
+        "session-1",
+        &world.child("origin"),
+        "tok",
+        None,
+    );
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty());
+    assert!(!world.data.path().join("furet.db").exists());
+}
+
+#[test]
+fn queries_failures_flags_a_pick_followed_by_a_quick_back() {
+    let world = sandbox(&["tokio", "helix", "origin"]);
+    let tokio = world.child("tokio");
+    let helix = world.child("helix");
+    let origin = world.child("origin");
+    let picked = add_with_query(&world, &tokio, "session-1", &origin, "tok", None);
+    assert!(picked.status.success(), "stderr: {}", text(&picked.stderr));
+    let back = add(&world, &helix, "session-1", Some("back"), Some(&tokio));
+    assert!(back.status.success(), "stderr: {}", text(&back.stderr));
+    visited_at(&world, &tokio, 1_700_000_000);
+    visited_at(&world, &helix, 1_700_000_005);
+    db(&world)
+        .execute("UPDATE queries SET ts = 1_700_000_000", [])
+        .expect("the pick row keeps the visit's aged timestamp");
+    let out = run(world.furet().arg("queries").arg("--failures"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let tokio_canonical = canonical_child(&world, "tokio");
+    let origin_canonical = canonical_child(&world, "origin");
+    assert_eq!(
+        text(&out.stdout),
+        format!("{origin_canonical}\ttok\t{tokio_canonical}\tbacktrack\n")
+    );
 }
 
 #[test]

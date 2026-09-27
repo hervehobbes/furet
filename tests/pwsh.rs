@@ -172,6 +172,14 @@ fn fzf_stub(target: &str) -> String {
     format!("function global:fzf {{ \"`e[01;34m{target}`e[0m\" }}\n")
 }
 
+// WHY: fzf prints the final query line before the selection, so the stub emits two objects.
+fn fzf_stub_two_lines(query: &str, target: &str) -> String {
+    format!(
+        "function global:fzf {{ {query}, \"`e[01;34m{target}`e[0m\" }}\n",
+        query = pwsh_quote(query),
+    )
+}
+
 // WHY: fi's no-fzf branch only triggers once every fzf/fzf.exe on PATH is hidden.
 const HIDE_FZF: &str = "$env:PATH = ((($env:PATH -split ';') | Where-Object { \
     -not (Test-Path (Join-Path $_ 'fzf.exe')) -and -not (Test-Path (Join-Path $_ 'fzf')) \
@@ -496,12 +504,109 @@ fn fi_fzf_branch_uses_the_stub_line_strips_ansi_and_jumps() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
     seed(&world, &tokio, "seed");
-    let body = format!("{}fi tok", fzf_stub(&canonical(&tokio)));
+    let body = format!("{}fi tok", fzf_stub_two_lines("tok", &canonical(&tokio)));
     let run = run_pwsh(&world, "", "", world.tree.path(), &body);
     assert_eq!(run.cwd, canonical(&tokio), "stderr: {}", run.stderr);
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
     assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn fi_fzf_branch_journals_exactly_one_pick_with_the_final_query() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    seed(&world, &tokio, "seed");
+    let body = format!("{}fi tok", fzf_stub_two_lines("toki", &canonical(&tokio)));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&tokio), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let (query_text, stage, outcome, result_path): (String, String, String, String) = conn
+        .query_row(
+            "SELECT query, stage, outcome, (SELECT path FROM dirs WHERE id = result_dir_id) FROM queries",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the single queries row reads back");
+    assert_eq!(query_text, "toki");
+    assert_eq!(stage, "menu");
+    assert_eq!(outcome, "pick");
+    assert_eq!(result_path, canonical(&tokio));
+}
+
+#[test]
+fn fi_fzf_aborted_with_only_a_query_line_does_not_move() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    seed(&world, &tokio, "seed");
+    let start = world.tree.path();
+    let body = format!("{}fi tok", fzf_stub("toki"));
+    let run = run_pwsh(&world, "", "", start, &body);
+    assert_eq!(run.cwd, canonical(start), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn fi_menu_branch_journals_exactly_one_pick() {
+    let (world, _first, second) = ambiguous_world();
+    let body = format!("{HIDE_FZF}function global:Read-Host {{ '2' }}\nfi tokoi");
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, second, "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 1);
+    let (query_text, stage, outcome, result_path): (String, String, String, String) = conn
+        .query_row(
+            "SELECT query, stage, outcome, (SELECT path FROM dirs WHERE id = result_dir_id) FROM queries",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the single queries row reads back");
+    assert_eq!(query_text, "tokoi");
+    assert_eq!(stage, "menu");
+    assert_eq!(outcome, "pick");
+    assert_eq!(result_path, second);
+}
+
+#[test]
+fn fi_without_a_query_writes_no_pick_row() {
+    let world = sandbox(&["tokio"]);
+    let tokio = world.child("tokio");
+    seed(&world, &tokio, "seed");
+    let via_fzf = format!("{}fi", fzf_stub_two_lines("", &canonical(&tokio)));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &via_fzf);
+    assert_eq!(run.cwd, canonical(&tokio), "stderr: {}", run.stderr);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM queries"), 0);
+
+    let (world, _first, second) = ambiguous_world();
+    let via_menu = format!("{HIDE_FZF}function global:Read-Host {{ '2' }}\nfi");
+    let run = run_pwsh(&world, "", "", world.tree.path(), &via_menu);
+    assert_eq!(run.cwd, second, "stderr: {}", run.stderr);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn fi_fzf_branch_passes_print_query() {
+    let world = sandbox(&[]);
+    let out = world
+        .furet()
+        .arg("init")
+        .arg("pwsh")
+        .output()
+        .expect("furet init pwsh runs");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let script = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        script.matches("--print-query").count(),
+        2,
+        "both fzf calls must pass --print-query: {script}"
+    );
 }
 
 #[test]

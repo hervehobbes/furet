@@ -1,4 +1,14 @@
 ## 2026-09-27 — branch main — v0.1.1
+Done: lot 46 — query memory part A: a valid §9 menu choice journals `outcome = 'pick'` after the answer
+(stage 'menu'/'fallback', result = the choice, NULL only for an excluded fallback pick); cancel keeps today's `menu`
+row. New `furet add --query` (requires `--from`): one `pick` row, ts = the visit's ts (one clock.now()), cwd =
+canonical `--from`, blank text writes nothing. Calibration counts pick. pwsh: `__furet_record` gains `$query`
+(`--query` when non-blank); fi fzf uses `--print-query` (lines[0] query, lines[1] selection, <2 lines = abort);
+fi menu records the joined query. Docs + add-help snapshot; 2 unit + 9 cli + 5 pwsh tests, red first.
+Forced beyond the one allowed pwsh test: cli.rs pins __furet_record's signature — updated to the 4th parameter.
+Next: reviewer pass.
+
+## 2026-09-27 — branch main — v0.1.1
 Done: lot 45 — both `fi` fzf calls pass `--preview "furet preview {}"` + `--preview-window "right,50%"`;
 new `furet preview <path>`: SGR-stripped arg, dirs (`name\`) then files, case-insensitive sort with
 original tiebreak, 50 lines + `… +K more`, `(not a directory)` (missing/file) or `(unreadable: …)`; exit 0
