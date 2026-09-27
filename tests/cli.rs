@@ -177,6 +177,69 @@ fn missing_since_at(sandbox: &Sandbox, path: &Path, seconds: i64) {
     assert_eq!(updated, 1, "exactly one dir row is {}", path.display());
 }
 
+fn visit_source_at(sandbox: &Sandbox, path: &Path, source: &str, seconds: i64) {
+    let canonical = paths::canonical(path)
+        .expect("the recorded directory canonicalizes")
+        .path;
+    let updated = db(sandbox)
+        .execute(
+            "UPDATE visits SET ts = ?3
+         WHERE source = ?2 AND dir_id = (SELECT id FROM dirs WHERE path = ?1)",
+            params![canonical, source, seconds],
+        )
+        .expect("the visit timestamp is forced");
+    assert_eq!(
+        updated,
+        1,
+        "exactly one {source} visit belongs to {}",
+        path.display()
+    );
+}
+
+fn dir_row_id(sandbox: &Sandbox, path: &str) -> i64 {
+    db(sandbox)
+        .query_row(
+            "SELECT id FROM dirs WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("the dir row reads back")
+}
+
+fn journal_row(
+    sandbox: &Sandbox,
+    ts: i64,
+    query: &str,
+    result_path: Option<&str>,
+    stage: &str,
+    outcome: &str,
+) {
+    let result_dir_id = result_path.map(|path| dir_row_id(sandbox, path));
+    db(sandbox)
+        .execute(
+            "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![ts, "c:\\dev", query, result_dir_id, stage, outcome],
+        )
+        .expect("the journal row inserts");
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("the system clock reads after the epoch")
+        .as_secs() as i64
+}
+
+fn stats(sandbox: &Sandbox, extra: &[&str]) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("stats");
+    for arg in extra {
+        cmd.arg(arg);
+    }
+    run(&mut cmd)
+}
+
 fn list(sandbox: &Sandbox, all: bool) -> Output {
     let mut cmd = sandbox.furet();
     cmd.arg("list");
@@ -1893,6 +1956,208 @@ fn list_writes_nothing_to_stderr_on_success() {
         all.stderr.is_empty(),
         "list --all writes nothing to stderr: {}",
         text(&all.stderr)
+    );
+}
+
+#[test]
+fn stats_prints_the_exact_report_for_a_built_database() {
+    let world = sandbox(&["tokio", "helix", "gone", "cwd"]);
+    let tokio = world.child("tokio");
+    let helix = world.child("helix");
+    let gone = world.child("gone");
+    let cwd = world.child("cwd");
+    let now = unix_now();
+    let recent = now - 3_600;
+    let old = now - 40 * 86_400;
+    let calib = now - 60;
+    for (path, session) in [(&tokio, "s1"), (&helix, "s2"), (&gone, "s3")] {
+        assert!(add(&world, path, session, None, None).status.success());
+    }
+    assert!(
+        add(&world, &tokio, "s4", Some("jump"), None)
+            .status
+            .success()
+    );
+    assert!(add(&world, &tokio, "s5", Some("up"), None).status.success());
+    assert!(
+        add(&world, &helix, "s6", Some("back"), None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &helix, "s7", Some("fallback"), None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &gone, "s8", Some("import"), None)
+            .status
+            .success()
+    );
+    visit_source_at(&world, &tokio, "up", old);
+    assert!(query(&world, "tokio", &cwd, false).status.success());
+    let tokio_path = paths::canonical(&tokio).expect("tokio canonicalizes").path;
+    let helix_path = paths::canonical(&helix).expect("helix canonicalizes").path;
+    let quiet_path = format!(
+        "{}\\quiet",
+        paths::canonical(world.tree.path())
+            .expect("the sandbox tree canonicalizes")
+            .path
+    );
+    let conn = db(&world);
+    conn.execute(
+        "INSERT INTO dirs (path, key, first_seen) VALUES (?1, ?2, ?3)",
+        params![quiet_path, quiet_path.to_lowercase(), now - 100],
+    )
+    .expect("the visit-less dir inserts");
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session) VALUES (?1, ?2, 'jump', 'calib')",
+        params![dir_row_id(&world, &tokio_path), calib + 1],
+    )
+    .expect("the landing visit inserts");
+    conn.execute(
+        "INSERT INTO visits (dir_id, ts, source, session) VALUES (?1, ?2, 'back', 'calib')",
+        params![dir_row_id(&world, &helix_path), calib + 6],
+    )
+    .expect("the backtrack visit inserts");
+    journal_row(&world, calib, "tok", Some(&tokio_path), "1", "jump");
+    journal_row(&world, recent, "hel", Some(&quiet_path), "2", "jump");
+    journal_row(&world, recent, "gon", Some(&quiet_path), "fallback", "jump");
+    journal_row(&world, recent, "men", None, "menu", "menu");
+    journal_row(&world, recent, "no1", None, "1", "none");
+    for name in ["j2", "j3", "j4", "j5"] {
+        journal_row(&world, recent, name, Some(&quiet_path), "1", "jump");
+    }
+    journal_row(&world, old, "old", None, "2", "none");
+    drop(conn);
+    missing_since_at(&world, &gone, old);
+    let out = stats(&world, &[]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), "");
+    assert_eq!(
+        text(&out.stdout),
+        format!(
+            "known_directories\t3\n\
+             missing_directories\t1\n\
+             visits\t10\n\
+             visits_last_30_days\t9\n\
+             queries\t11\n\
+             queries_last_30_days\t10\n\
+             jumps\t8\n\
+             probable_failures\t1\n\
+             failure_rate\t12.5%\n\
+             stage_1\t7\n\
+             stage_2\t2\n\
+             stage_fallback\t1\n\
+             stage_menu\t1\n\
+             source_hook\t3\n\
+             source_jump\t2\n\
+             source_back\t2\n\
+             source_up\t1\n\
+             source_fallback\t1\n\
+             source_import\t1\n\
+             top\t4\t{helix_path}\n\
+             top\t4\t{tokio_path}\n\
+             top\t0\t{quiet_path}\n"
+        )
+    );
+}
+
+#[test]
+fn stats_on_an_empty_database_prints_zeros_and_no_top_line() {
+    let world = sandbox(&[]);
+    let out = stats(&world, &[]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), "");
+    assert_eq!(
+        text(&out.stdout),
+        "known_directories\t0\n\
+         missing_directories\t0\n\
+         visits\t0\n\
+         visits_last_30_days\t0\n\
+         queries\t0\n\
+         queries_last_30_days\t0\n\
+         jumps\t0\n\
+         probable_failures\t0\n\
+         failure_rate\t0.0%\n\
+         stage_1\t0\n\
+         stage_2\t0\n\
+         stage_fallback\t0\n\
+         stage_menu\t0\n\
+         source_hook\t0\n\
+         source_jump\t0\n\
+         source_back\t0\n\
+         source_up\t0\n\
+         source_fallback\t0\n\
+         source_import\t0\n"
+    );
+}
+
+#[test]
+fn stats_top_zero_prints_no_top_line() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = stats(&world, &["--top", "0"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout).lines().count(), 19);
+    assert!(!text(&out.stdout).contains("top\t"));
+    assert!(text(&out.stdout).starts_with("known_directories\t1\n"));
+}
+
+#[test]
+fn stats_top_two_prints_two_top_lines() {
+    let world = sandbox(&["aaa", "bbb", "ccc"]);
+    for (name, visits) in [("aaa", 3), ("bbb", 2), ("ccc", 1)] {
+        for i in 0..visits {
+            assert!(
+                add(
+                    &world,
+                    &world.child(name),
+                    &format!("session-{i}"),
+                    None,
+                    None
+                )
+                .status
+                .success()
+            );
+        }
+    }
+    let out = stats(&world, &["--top", "2"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    assert_eq!(stdout.lines().count(), 21);
+    let lines: Vec<&str> = stdout.lines().collect();
+    let aaa = canonical_child(&world, "aaa");
+    let bbb = canonical_child(&world, "bbb");
+    assert_eq!(lines[19], format!("top\t3\t{aaa}"));
+    assert_eq!(lines[20], format!("top\t2\t{bbb}"));
+}
+
+#[test]
+fn stats_writes_nothing() {
+    let world = sandbox(&["tokio", "gone", "marked", "cwd"]);
+    let tokio = world.child("tokio");
+    let gone = world.child("gone");
+    let marked = world.child("marked");
+    let cwd = world.child("cwd");
+    for path in [&tokio, &gone, &marked] {
+        assert!(add(&world, path, "session-1", None, None).status.success());
+    }
+    assert!(query(&world, "tokio", &cwd, false).status.success());
+    missing_since_at(&world, &marked, 1_700_000_000);
+    std::fs::remove_dir_all(&gone).expect("the recorded directory vanishes from disk");
+    let before = dry_run_state(&db(&world));
+    let out = stats(&world, &[]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), "");
+    let after = dry_run_state(&db(&world));
+    assert_eq!(
+        before, after,
+        "stats must not write anything, least of all mark the vanished directory"
     );
 }
 

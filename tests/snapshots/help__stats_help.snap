@@ -1,0 +1,11 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print database statistics as tab-separated lines
+
+Usage: furet stats [OPTIONS]
+
+Options:
+      --top <TOP>  Number of most-visited directories to list; 0 lists none [default: 10]
+  -h, --help       Print help

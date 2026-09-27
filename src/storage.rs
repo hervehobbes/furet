@@ -9,6 +9,7 @@ use tracing::debug;
 
 use crate::calibration;
 use crate::clock::Timestamp;
+use crate::stats;
 
 /// Failure to resolve the database location, or to open, configure, or
 /// migrate the database file.
@@ -454,13 +455,75 @@ pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, 
     }
 }
 
+/// Every aggregate `furet stats` prints (SPEC-v2 §22), with the 30-day
+/// windows counted from `since`.
+pub fn stats_counts(conn: &Connection, since: Timestamp) -> Result<stats::Counts, StorageError> {
+    let since = since.unix_seconds();
+    let count = |sql: &str| {
+        conn.query_row(sql, [], |row| row.get::<_, i64>(0))
+            .map_err(StorageError::from)
+    };
+    let window = |sql: &str| {
+        conn.query_row(sql, params![since], |row| row.get::<_, i64>(0))
+            .map_err(StorageError::from)
+    };
+    let mut stmt = conn.prepare("SELECT stage, COUNT(*) FROM queries GROUP BY stage")?;
+    let stages: HashMap<String, i64> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    let mut stmt = conn.prepare("SELECT source, COUNT(*) FROM visits GROUP BY source")?;
+    let sources: HashMap<String, i64> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    let grouped = |map: &HashMap<String, i64>, key: &str| map.get(key).copied().unwrap_or(0);
+    Ok(stats::Counts {
+        known_directories: count("SELECT COUNT(*) FROM dirs WHERE missing_since IS NULL")?,
+        missing_directories: count("SELECT COUNT(*) FROM dirs WHERE missing_since IS NOT NULL")?,
+        visits: count("SELECT COUNT(*) FROM visits")?,
+        visits_last_30_days: window("SELECT COUNT(*) FROM visits WHERE ts >= ?1")?,
+        queries: count("SELECT COUNT(*) FROM queries")?,
+        queries_last_30_days: window("SELECT COUNT(*) FROM queries WHERE ts >= ?1")?,
+        jumps: count("SELECT COUNT(*) FROM queries WHERE outcome IN ('jump', 'pick')")?,
+        stage_1: grouped(&stages, "1"),
+        stage_2: grouped(&stages, "2"),
+        stage_fallback: grouped(&stages, "fallback"),
+        stage_menu: grouped(&stages, "menu"),
+        source_hook: grouped(&sources, "hook"),
+        source_jump: grouped(&sources, "jump"),
+        source_back: grouped(&sources, "back"),
+        source_up: grouped(&sources, "up"),
+        source_fallback: grouped(&sources, "fallback"),
+        source_import: grouped(&sources, "import"),
+    })
+}
+
+/// The `--top` rows of `furet stats`: every present directory, visit count
+/// descending then `key` ascending, truncated to `limit`.
+pub fn top_dirs(conn: &Connection, limit: usize) -> Result<Vec<(i64, String)>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT COUNT(visits.id), dirs.path
+         FROM dirs
+         LEFT JOIN visits ON visits.dir_id = dirs.id
+         WHERE dirs.missing_since IS NULL
+         GROUP BY dirs.id
+         ORDER BY COUNT(visits.id) DESC, dirs.key ASC
+         LIMIT ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
         format_local_time, insert_query, insert_visit, known_keys, last_visited_dir, logs_dir,
         missing_since_by_id, open, open_at, purge_before, query_log, remove_dirs, resolve_data_dir,
-        set_missing_since, upsert_dir, visit_log,
+        set_missing_since, stats_counts, top_dirs, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -1231,5 +1294,89 @@ mod tests {
             dir_path_by_id(&conn, tokio + 1).expect("the unknown lookup runs"),
             None
         );
+    }
+
+    #[test]
+    fn stats_counts_splits_by_stage_source_and_window() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let alpha = upsert_dir(&conn, "c:\\dev\\alpha", "c:\\dev\\alpha", at(100))
+            .expect("the alpha fixture dir upserts");
+        let beta = upsert_dir(&conn, "c:\\dev\\beta", "c:\\dev\\beta", at(100))
+            .expect("the beta fixture dir upserts");
+        let gone = upsert_dir(&conn, "c:\\dev\\gone", "c:\\dev\\gone", at(100))
+            .expect("the gone fixture dir upserts");
+        set_missing_since(&conn, gone, Some(at(500))).expect("the fixture marks the dir missing");
+        insert_visit(&conn, alpha, at(100), "hook", "s", None)
+            .expect("the pre-window visit inserts");
+        insert_visit(&conn, alpha, at(150), "jump", "s", None)
+            .expect("the window-edge visit inserts");
+        insert_visit(&conn, alpha, at(200), "hook", "s", None)
+            .expect("the post-window visit inserts");
+        insert_visit(&conn, beta, at(120), "up", "s", None).expect("the beta visit inserts");
+        insert_query(&conn, at(100), "c:\\dev", "a", Some(alpha), "1", "jump")
+            .expect("the pre-window jump query inserts");
+        insert_query(&conn, at(150), "c:\\dev", "b", Some(alpha), "2", "jump")
+            .expect("the stage-2 jump query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "c", None, "fallback", "jump")
+            .expect("the fallback jump query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "d", None, "menu", "menu")
+            .expect("the menu query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "e", None, "1", "none")
+            .expect("the failed query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "f", Some(beta), "menu", "pick")
+            .expect("the pick query inserts");
+        let counts = stats_counts(&conn, at(150)).expect("the counts read");
+        assert_eq!(counts.known_directories, 2);
+        assert_eq!(counts.missing_directories, 1);
+        assert_eq!(counts.visits, 4);
+        assert_eq!(counts.visits_last_30_days, 2);
+        assert_eq!(counts.queries, 6);
+        assert_eq!(counts.queries_last_30_days, 5);
+        assert_eq!(counts.jumps, 4);
+        assert_eq!(counts.stage_1, 2);
+        assert_eq!(counts.stage_2, 1);
+        assert_eq!(counts.stage_fallback, 1);
+        assert_eq!(counts.stage_menu, 2);
+        assert_eq!(counts.source_hook, 2);
+        assert_eq!(counts.source_jump, 1);
+        assert_eq!(counts.source_back, 0);
+        assert_eq!(counts.source_up, 1);
+        assert_eq!(counts.source_fallback, 0);
+        assert_eq!(counts.source_import, 0);
+    }
+
+    #[test]
+    fn top_dirs_orders_by_visits_then_key_and_skips_missing() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let alpha = upsert_dir(&conn, "c:\\dev\\alpha", "c:\\dev\\alpha", at(100))
+            .expect("the alpha fixture dir upserts");
+        let beta = upsert_dir(&conn, "C:\\Dev\\Beta", "c:\\dev\\beta", at(100))
+            .expect("the beta fixture dir upserts");
+        upsert_dir(&conn, "c:\\dev\\gamma", "c:\\dev\\gamma", at(100))
+            .expect("the visit-less fixture dir upserts");
+        let gone = upsert_dir(&conn, "c:\\dev\\gone", "c:\\dev\\gone", at(100))
+            .expect("the gone fixture dir upserts");
+        set_missing_since(&conn, gone, Some(at(500))).expect("the fixture marks the dir missing");
+        for ts in [at(110), at(120)] {
+            insert_visit(&conn, alpha, ts, "hook", "s", None).expect("an alpha visit inserts");
+            insert_visit(&conn, beta, ts, "hook", "s", None).expect("a beta visit inserts");
+        }
+        for ts in [at(110), at(120), at(130), at(140), at(150)] {
+            insert_visit(&conn, gone, ts, "hook", "s", None).expect("a gone visit inserts");
+        }
+        let rows = top_dirs(&conn, 10).expect("the top rows read");
+        assert_eq!(
+            rows,
+            vec![
+                (2, "c:\\dev\\alpha".to_owned()),
+                (2, "C:\\Dev\\Beta".to_owned()),
+                (0, "c:\\dev\\gamma".to_owned()),
+            ]
+        );
+        let limited = top_dirs(&conn, 2).expect("the limited top rows read");
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0], (2, "c:\\dev\\alpha".to_owned()));
     }
 }

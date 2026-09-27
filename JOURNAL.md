@@ -1,4 +1,15 @@
 ## 2026-09-27 — branch main — v0.1.1
+Done: lot 44 — `furet stats [--top <n>]`: 19 tab-separated key/value lines on stdout
+(dirs present/missing, 30-day visit and query windows, jumps = outcome IN ('jump','pick'),
+probable_failures, failure_rate with one decimal, per-stage and per-source counts, an absent
+group counts 0), then at most n `top<TAB><visits><TAB><path>` lines (every present dir, 0-visit
+included, visits desc then key asc; --top defaults to 10, 0 lists none). Read-only, no reconcile.
+New pure src/stats.rs (render), storage::stats_counts/top_dirs, no schema change. 4 unit +
+2 storage + 5 cli tests + stats help snapshot, red first. README/CONTRACTS/example.md/ROADMAP.
+Decisions: architect's 1–4 (since = now − 30×86 400 s from SystemClock, injected for tests).
+Next: reviewer pass.
+
+## 2026-09-27 — branch main — v0.1.1
 Done: lot 43 — `remove --missing`: full reconcile (`soft_delete::reconcile` on every row,
 persisted unless `--dry-run`), absence dates computed in memory (stored `missing_since_by_id`
 overlaid with the updates, formatted by `format_local_time` like `furet list`), questions on

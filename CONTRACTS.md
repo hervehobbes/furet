@@ -228,7 +228,7 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 Only jump targets reach stdout: `furet query`'s resolved match and its
 `--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
 configured directory — plus `init pwsh`'s generated script. Everything
-else (menus, `--explain`, errors) goes to stderr, with two documented
+else (menus, `--explain`, errors) goes to stderr, with three documented
 exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
 
@@ -345,7 +345,8 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`. `furet list` below is the
-  second accepted stdout exception, for the same reason.
+  second accepted stdout exception and `furet stats` below the third, for
+  the same reason.
 - `furet list [--all] [--paths]` — prints one tab-separated line per known directory —
   `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
   ordered by path, ignoring case (the lowercased `key`);
@@ -356,6 +357,33 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   stored `missing_since` is shown as is, with no soft-delete
   reconciliation. An empty database prints nothing, exit 0
   (`src/storage.rs`, `dir_listing`; `main::list_command`).
+- `furet stats [--top <n>]` — prints the database overview as
+  tab-separated `key<TAB>value` lines **to stdout** (SPEC-v2 §22), in
+  this exact order: `known_directories` (`dirs` rows without
+  `missing_since`), `missing_directories` (rows with), `visits`,
+  `visits_last_30_days` (`ts >= since`), `queries`,
+  `queries_last_30_days` (same window), `jumps` (`outcome IN ('jump',
+  'pick')`, so lot 46's `pick` rows need no change here),
+  `probable_failures` (`calibration::probable_failures(&query_log,
+  &visit_log).len()`), `failure_rate` (`{:.1}%` of `probable_failures ×
+  100 / jumps`, `0.0%` when `jumps = 0`), `stage_1`, `stage_2`,
+  `stage_fallback`, `stage_menu` (`queries` grouped by `stage`),
+  `source_hook`, `source_jump`, `source_back`, `source_up`,
+  `source_fallback`, `source_import` (`visits` grouped by `source`); a
+  group with no row counts 0. The 30-day window is `since = now -
+  30 × 86 400` seconds, `now` read from `SystemClock` in the CLI and
+  injected as a parameter of `storage::stats_counts`, so the window is
+  testable against a fixed instant. Then at most `n` lines
+  `top<TAB><visits><TAB><path>` (`--top`, default 10, `0` prints none):
+  **every present directory** (`missing_since IS NULL`), 0-visit ones
+  included, visit count descending then `key` ascending
+  (`storage::top_dirs`). Read-only: no reconcile, no write of any kind —
+  `missing_since` is reported exactly as stored (`stats_writes_nothing`).
+  Third accepted stdout exception, same justification as `list`: a
+  reporting tool never called by `f`/`fi`. Empty database: every count 0,
+  `failure_rate` `0.0%`, no `top` line, exit 0. Pure renderer:
+  `stats::render` (`src/stats.rs`), fed by `storage::stats_counts` /
+  `storage::top_dirs` (no schema change).
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` — forgets known directories matching
   `<pattern>`, **hard-deleting** their `dirs` row (no `missing_since` reuse,
   no `removed_at` column, no schema change; not in SPEC — scope extension
@@ -479,6 +507,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
+| `stats [--top <n>]` | always, even with an empty database (`stats_on_an_empty_database_prints_zeros_and_no_top_line`) | a DB error |
 | `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |

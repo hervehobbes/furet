@@ -47,12 +47,12 @@
 | 41 | Opt-in `nucleo` stage-1 engine: `engine` config key, `furet query --engine`, `engine:` explain line (SPEC-v2 §20) |
 | 42 | `furet remove`: per-directory `[y/N/a/q]` confirmation, `--yes`, `--dry-run` |
 | 43 | `furet remove --missing`: full reconcile first, confirmation on by default |
+| 44 | `furet stats [--top <n>]` (SPEC-v2 §22) |
 
 ## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
 
 | Lot | Content | SPEC-v2 |
 |-----|---------|---------|
-| 44 | `furet stats [--top <n>]` | §22 |
 | 45 | fzf preview in `fi` and the `furet preview` subcommand | §23 |
 | 46 | Query memory, part A: journal menu and `fi` picks (`outcome = 'pick'`, `furet add --query`) | §24 |
 | 47 | Query memory, part B: the remembered directory ranks first (`query_memory` config key); version 0.2.0 | §24 |

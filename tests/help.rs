@@ -78,6 +78,11 @@ fn list_help_is_pinned() {
 }
 
 #[test]
+fn stats_help_is_pinned() {
+    snapshot_help("stats_help", &["stats", "--help"]);
+}
+
+#[test]
 fn remove_help_is_pinned() {
     snapshot_help("remove_help", &["remove", "--help"]);
 }

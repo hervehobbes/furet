@@ -345,6 +345,48 @@ C:\dev\CodeGroups\CodeGroups.Mcp
 C:\dev\RedditForKarakeep\mcp
 ```
 
+### Voir les statistiques
+
+`furet stats` imprime sur `stdout` un aperçu de la base, une ligne
+`clé<TAB>valeur` par statistique, dans un ordre fixe :
+
+```powershell
+PS C:\dev\furet> furet stats
+known_directories	142
+missing_directories	3
+visits	1204
+visits_last_30_days	376
+queries	233
+queries_last_30_days	88
+jumps	61
+probable_failures	2
+failure_rate	3.3%
+stage_1	180
+stage_2	29
+stage_fallback	17
+stage_menu	7
+source_hook	1102
+source_jump	71
+source_back	12
+source_up	4
+source_fallback	9
+source_import	6
+top	96	C:\dev\furet
+top	41	C:\dev\CodeGroups\CodeGroups.Mcp
+top	12	C:\dev\RedditForKarakeep\mcp
+```
+
+`failure_rate` rapporte les sauts probablement erronés (`furet queries
+--failures`, SPEC §15) au nombre total de sauts, avec une décimale — un
+indicateur de la qualité du classement. Puis viennent au plus `n` lignes
+`top<TAB><visites><TAB><chemin>` : les répertoires présents (marqueur
+`missing_since` absent), même sans aucune visite, les plus visités
+d'abord, à égalité par chemin croissant. `--top <n>` change cette limite
+(`10` par défaut ; `furet stats --top 0` n'affiche aucune ligne `top`).
+La commande est en lecture seule : rien n'est réconcilié ni écrit, les
+marqueurs de disparition stockés sont pris tels quels — comme
+`furet list`.
+
 ### Oublier un répertoire
 
 `furet remove` efface de la base les répertoires connus qui correspondent

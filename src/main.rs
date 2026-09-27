@@ -20,6 +20,7 @@ use furet::project;
 use furet::rank::{self, Candidate, Stage};
 use furet::remove;
 use furet::soft_delete;
+use furet::stats;
 use furet::storage;
 use rusqlite::Connection;
 use tracing::{debug, error, info, warn};
@@ -110,6 +111,12 @@ enum Command {
         /// Print only the path of each directory.
         #[arg(short, long)]
         paths: bool,
+    },
+    /// Print database statistics as tab-separated lines.
+    Stats {
+        /// Number of most-visited directories to list; 0 lists none.
+        #[arg(long, default_value_t = 10)]
+        top: usize,
     },
     /// Forget known directories matching a name or path pattern.
     Remove {
@@ -228,6 +235,7 @@ fn main() {
         },
         Command::Queries { failures } => report(queries_command(failures)),
         Command::List { all, paths } => report(list_command(all, paths)),
+        Command::Stats { top } => report(stats_command(top)),
         Command::Remove {
             pattern,
             missing,
@@ -920,6 +928,26 @@ fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
         })
         .collect();
     print_lines(&lines);
+    Ok(())
+}
+
+// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+fn stats_command(top: usize) -> Result<(), Box<dyn Error>> {
+    debug!(top, "stats");
+    let clock = SystemClock::new();
+    let since = Timestamp::from_unix_seconds(
+        clock
+            .now()
+            .unix_seconds()
+            .saturating_sub(30 * SECONDS_PER_DAY),
+    );
+    let conn = storage::open()?;
+    let counts = storage::stats_counts(&conn, since)?;
+    let queries = storage::query_log(&conn)?;
+    let visits = storage::visit_log(&conn)?;
+    let probable = calibration::probable_failures(&queries, &visits).len();
+    let top_rows = storage::top_dirs(&conn, top)?;
+    print_lines(&stats::render(&counts, probable, &top_rows));
     Ok(())
 }
 

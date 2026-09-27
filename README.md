@@ -72,6 +72,19 @@ extra profile line.
   also lists directories missing from disk, with a `present`/`missing`
   column. Rows are ordered alphabetically by path, ignoring case.
   `--paths` (`-p`) prints the path alone, also with `--all`.
+- `furet stats [--top <n>]` — print an overview of the database as
+  tab-separated `key<TAB>value` lines, in this exact order:
+  `known_directories`, `missing_directories`, `visits`,
+  `visits_last_30_days`, `queries`, `queries_last_30_days`, `jumps`,
+  `probable_failures`, `failure_rate` (`probable_failures / jumps` in
+  percent, one decimal, `0.0%` when there are no jumps), `stage_1`,
+  `stage_2`, `stage_fallback`, `stage_menu`, `source_hook`, `source_jump`,
+  `source_back`, `source_up`, `source_fallback`, `source_import`. Then at
+  most `n` lines `top<TAB><visits><TAB><path>`: every present directory,
+  0-visit ones included, most visited first, ties broken by path
+  (`n` defaults to 10; `0` lists none). Read-only, like `furet list`: the
+  stored `missing_since` flags are taken as is, nothing is reconciled or
+  written.
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` —
   forget known directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
