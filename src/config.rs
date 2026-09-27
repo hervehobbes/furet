@@ -85,47 +85,48 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
         }
     };
     for (key, value) in &table {
-        match key.as_str() {
-            "typo_min_length" => match value.as_integer().filter(|n| *n >= 1) {
-                Some(length) => settings.typo_min_length = length as usize,
-                None => warnings
-                    .push("typo_min_length must be an integer >= 1; using the default".to_owned()),
-            },
-            "fallback" => parse_fallback(value, &mut settings.fallback, &mut warnings),
-            "home" => match value.as_str().filter(|text| !text.is_empty()) {
-                Some(text) => settings.home = Some(text.to_owned()),
-                None => {
-                    warnings.push("home must be a non-empty string; using no override".to_owned())
-                }
-            },
-            "retention_days" => match value.as_integer().and_then(|n| u32::try_from(n).ok()) {
-                Some(days) => settings.retention_days = days,
-                None => warnings
-                    .push("retention_days must be an integer >= 0; using the default".to_owned()),
-            },
-            "exclude_dirs" => match parse_exclude(value) {
-                Some(entries) => settings.exclude_dirs = exclusion_targets(&entries, &mut warnings),
-                None => warnings.push(
-                    "exclude_dirs must be an array of non-empty strings; using no exclusion"
-                        .to_owned(),
-                ),
-            },
-            "engine" => match value.as_str() {
-                Some("reference") => settings.engine = Engine::Reference,
-                Some("nucleo") => settings.engine = Engine::Nucleo,
-                _ => warnings.push(ENGINE_WARNING.to_owned()),
-            },
-            "query_memory" => match value.as_bool() {
-                Some(enabled) => settings.query_memory = enabled,
-                None => warnings.push("query_memory must be a boolean; using true".to_owned()),
-            },
-            "ambiguity" | "keyboard_layout" => {
-                warnings.push(format!("{key} is not supported yet; ignored"));
-            }
-            other => warnings.push(format!("unknown config key '{other}'; ignored")),
-        }
+        apply(key, value, &mut settings, &mut warnings);
     }
     (settings, warnings)
+}
+
+fn apply(key: &str, value: &toml::Value, settings: &mut Settings, warnings: &mut Vec<String>) {
+    match key {
+        "typo_min_length" => match value.as_integer().filter(|n| *n >= 1) {
+            Some(length) => settings.typo_min_length = length as usize,
+            None => warnings
+                .push("typo_min_length must be an integer >= 1; using the default".to_owned()),
+        },
+        "fallback" => parse_fallback(value, &mut settings.fallback, warnings),
+        "home" => match value.as_str().filter(|text| !text.is_empty()) {
+            Some(text) => settings.home = Some(text.to_owned()),
+            None => warnings.push("home must be a non-empty string; using no override".to_owned()),
+        },
+        "retention_days" => match value.as_integer().and_then(|n| u32::try_from(n).ok()) {
+            Some(days) => settings.retention_days = days,
+            None => warnings
+                .push("retention_days must be an integer >= 0; using the default".to_owned()),
+        },
+        "exclude_dirs" => match parse_exclude(value) {
+            Some(entries) => settings.exclude_dirs = exclusion_targets(&entries, warnings),
+            None => warnings.push(
+                "exclude_dirs must be an array of non-empty strings; using no exclusion".to_owned(),
+            ),
+        },
+        "engine" => match value.as_str() {
+            Some("reference") => settings.engine = Engine::Reference,
+            Some("nucleo") => settings.engine = Engine::Nucleo,
+            _ => warnings.push(ENGINE_WARNING.to_owned()),
+        },
+        "query_memory" => match value.as_bool() {
+            Some(enabled) => settings.query_memory = enabled,
+            None => warnings.push("query_memory must be a boolean; using true".to_owned()),
+        },
+        "ambiguity" | "keyboard_layout" => {
+            warnings.push(format!("{key} is not supported yet; ignored"));
+        }
+        other => warnings.push(format!("unknown config key '{other}'; ignored")),
+    }
 }
 
 fn parse_fallback(

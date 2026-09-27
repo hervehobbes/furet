@@ -195,6 +195,21 @@ pub fn render(report: &Report) -> String {
         rendered.push_str("origin: fallback\n");
     }
     rendered.push_str("evaluated candidates:\n");
+    rendered.push_str(&render_evaluated(report));
+    rendered.push_str("eliminated candidates:\n");
+    rendered.push_str(&render_eliminated(report));
+    let criterion = if report.memory_applied {
+        "query memory"
+    } else {
+        criterion_label(report.deciding_criterion)
+    };
+    rendered.push_str(&format!("deciding criterion: {criterion}\n"));
+    rendered.push_str(&decision_label(&report.decision));
+    rendered
+}
+
+fn render_evaluated(report: &Report) -> String {
+    let mut rendered = String::new();
     let mut evaluated = 0usize;
     for evaluation in &report.evaluations {
         if let Evaluation::Matched {
@@ -232,7 +247,11 @@ pub fn render(report: &Report) -> String {
     if evaluated == 0 {
         rendered.push_str("  (none)\n");
     }
-    rendered.push_str("eliminated candidates:\n");
+    rendered
+}
+
+fn render_eliminated(report: &Report) -> String {
+    let mut rendered = String::new();
     let mut eliminated = 0usize;
     for evaluation in &report.evaluations {
         if let Evaluation::Eliminated { candidate, reason } = evaluation {
@@ -247,13 +266,6 @@ pub fn render(report: &Report) -> String {
     if eliminated == 0 {
         rendered.push_str("  (none)\n");
     }
-    let criterion = if report.memory_applied {
-        "query memory"
-    } else {
-        criterion_label(report.deciding_criterion)
-    };
-    rendered.push_str(&format!("deciding criterion: {criterion}\n"));
-    rendered.push_str(&decision_label(&report.decision));
     rendered
 }
 
