@@ -4,6 +4,7 @@ expression: "world.explain_with(\"tok io\", &cwd, &[\"--engine\", \"nucleo\"])"
 ---
 normalized query: tok io
 engine: nucleo
+memory: none
 evaluated candidates:
   stage 1 score 126 <tmp>\tokio-lab\tokio
     token 'tok': nucleo 88

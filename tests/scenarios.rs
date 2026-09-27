@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use furet::clock::{Clock, FixedClock, Timestamp};
 use furet::decision::{Decision, decide};
+use furet::memory;
 use furet::rank::{Candidate, Engine, rank};
 use furet::stage2::TYPO_MIN_QUERY_LEN;
 use serde::Deserialize;
@@ -46,6 +47,8 @@ struct Case {
     none: Option<bool>,
     #[serde(default)]
     engine: Option<EngineName>,
+    #[serde(default)]
+    memory: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -193,6 +196,14 @@ fn scenario_files_parse_with_the_expected_shape() -> Result<(), Box<dyn std::err
                 case.name
             );
             assert!(
+                case.memory
+                    .as_deref()
+                    .is_none_or(|path| !path.trim().is_empty()),
+                "{}: case '{}' sets an empty memory path",
+                path.display(),
+                case.name
+            );
+            assert!(
                 case.none.unwrap_or(true),
                 "{}: case '{}' sets none = false; drop the key or use a real outcome",
                 path.display(),
@@ -223,11 +234,17 @@ fn scenario_cases_reach_their_expected_outcome() -> Result<(), Box<dyn std::erro
                 TYPO_MIN_QUERY_LEN,
                 engine,
             );
+            let remembered = case.memory.as_deref();
+            let applied = memory::applies(&ranked, remembered);
+            let ranked = memory::promote(ranked, remembered);
             let found: Vec<&str> = ranked
                 .iter()
                 .map(|scored| scored.candidate.path.as_str())
                 .collect();
-            let decision = decide(&ranked);
+            let decision = match ranked.first() {
+                Some(top) if applied => Decision::Jump(top.candidate),
+                _ => decide(&ranked),
+            };
             match (&case.jump, &case.menu, case.none) {
                 (Some(expected), None, None) => match &decision {
                     Decision::Jump(candidate) => assert_eq!(

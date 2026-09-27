@@ -5,6 +5,7 @@ pub mod decision;
 pub mod explain;
 pub mod fallback;
 pub mod import;
+pub mod memory;
 pub mod normalize;
 pub mod paths;
 pub mod preview;

@@ -15,7 +15,11 @@ per invalid key (reading the file is `main::load_settings`'s job);
 `import` parses `<score> <path>` lines, deduplicates them by key, and
 plans synthetic timestamps as pure functions; `calibration::probable_failures`
 flags probably-mistaken jumps from the journaled `queries` and `visits`
-rows alone; `soft_delete::reconcile` is deterministic given an injected
+rows alone, through the per-row `calibration::failure_of`; `memory` (query
+memory, SPEC-v2 §24) computes the memory key of a query and
+`memory::promote` moves the remembered directory to the front of `rank`'s
+output — the journal lookup behind it is `storage::recall`, on the outer
+side; `soft_delete::reconcile` is deterministic given an injected
 `Filesystem` trait — `RealFilesystem`, the disk check, is the outer
 implementation; `project::root` finds the nearest ancestor holding a
 `.git` entry through the injected `GitMarker` trait (`RealGitMarker`, the

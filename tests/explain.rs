@@ -147,6 +147,44 @@ fn explain_reports_each_nucleo_token_score_under_engine_nucleo() {
 }
 
 #[test]
+fn explain_reports_an_applied_query_memory() {
+    let world = scored_world();
+    const CHOSEN: i64 = 1_700_000_000;
+    let out = world
+        .furet()
+        .arg("add")
+        .arg(world.child("tokei"))
+        .arg("--session")
+        .arg("pick-session")
+        .arg("--from")
+        .arg(world.tree.path())
+        .arg("--query")
+        .arg("TOK")
+        .assert()
+        .get_output()
+        .clone();
+    assert!(out.status.success(), "the pick is recorded");
+    let conn = world.db();
+    conn.execute(
+        "UPDATE visits SET ts = ?1 WHERE session = 'pick-session'",
+        params![CHOSEN],
+    )
+    .expect("the pick visit is dated");
+    conn.execute("UPDATE queries SET ts = ?1", params![CHOSEN])
+        .expect("the pick row is dated");
+    let chosen: String = conn
+        .query_row(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+            params![CHOSEN],
+            |row| row.get(0),
+        )
+        .expect("the choice date formats in local time");
+    let cwd = world.tree.path().to_path_buf();
+    let rendered = world.explain("tok", &cwd).replace(&chosen, "<chosen>");
+    insta::assert_snapshot!("memory_applied", rendered);
+}
+
+#[test]
 fn explain_beats_list_when_both_flags_are_passed() {
     let world = scored_world();
     let out = world

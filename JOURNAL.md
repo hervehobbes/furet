@@ -1,3 +1,14 @@
+## 2026-09-27 — branch main — v0.2.0
+Query memory part B ships, and furet is 0.2.0. Done: lot 47 — pure `memory` (`key`, `matches`, `applies`,
+`promote`) puts the directory last chosen for the same §7.1 key first, only on the database pool, never the fallback;
+`calibration::failure_of` is the per-row test `probable_failures` now maps; `storage::recall` (read-only, no index)
+cancels on a probable failure; the call site jumps even on a stage-2 tie (`decide`, `rank` untouched); `--list` puts
+it first; `--explain` gains `memory:`; config `query_memory`. 7 proptests, 16 unit, 6 scenarios, 7 cli, 1 snapshot, red first.
+Perf (20k queries, 30 runs, median overhead): first cut 5.81 ms worst case (over the gate, not committed); ASCII
+`matches` 3.72/4.86 ms; final sequential scan keeping max (ts, id): 1.80 ms worst, 2.57 ms typical.
+Decisions (Hervé): example renamed to om/ombi (forbidden word); jump rows keep feeding memory, so 2 old cli tests set it off.
+Next: reviewer pass; the git tag is Hervé's call.
+
 ## 2026-09-27 — branch main — v0.1.1
 Done: lot 46 — query memory part A: a valid §9 menu choice journals `outcome = 'pick'` after the answer
 (stage 'menu'/'fallback', result = the choice, NULL only for an excluded fallback pick); cancel keeps today's `menu`

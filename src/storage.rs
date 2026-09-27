@@ -9,6 +9,7 @@ use tracing::debug;
 
 use crate::calibration;
 use crate::clock::Timestamp;
+use crate::memory::{self, Recall};
 use crate::stats;
 
 /// Failure to resolve the database location, or to open, configure, or
@@ -436,6 +437,97 @@ pub fn visit_log(conn: &Connection) -> Result<Vec<calibration::VisitRecord>, Sto
     Ok(records)
 }
 
+/// What the journal remembers for memory key `key` (SPEC-v2 §24): the latest
+/// `jump` or `pick` row with a result, unless it is a probable failure.
+pub fn recall(conn: &Connection, key: &str) -> Result<Recall, StorageError> {
+    if key.is_empty() {
+        return Ok(Recall::Nothing);
+    }
+    let Some(latest) = latest_choice(conn, key)? else {
+        return Ok(Recall::Nothing);
+    };
+    let visits = visits_since(conn, latest.ts)?;
+    if calibration::failure_of(&latest, &visits).is_some() {
+        debug!(id = latest.id, "remembered choice is a probable failure");
+        return Ok(Recall::ProbableFailure);
+    }
+    let Some(path) = latest
+        .result_dir_id
+        .map(|dir_id| dir_path_by_id(conn, dir_id))
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(Recall::Nothing);
+    };
+    let chosen = format_local_time(conn, latest.ts)?;
+    Ok(Recall::Remembered { path, chosen })
+}
+
+fn latest_choice(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<calibration::QueryRecord>, StorageError> {
+    // WHY: no index covers the query text, so one sequential scan keeping the max (ts, id) beats walking idx_queries_ts row by row.
+    let mut stmt = conn.prepare(
+        "SELECT id, ts, query FROM queries
+         WHERE outcome IN ('jump', 'pick') AND result_dir_id IS NOT NULL",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut latest: Option<(i64, i64)> = None;
+    while let Some(row) = rows.next()? {
+        if !memory::matches(
+            row.get_ref(2)?.as_str().map_err(rusqlite::Error::from)?,
+            key,
+        ) {
+            continue;
+        }
+        let found = (row.get::<_, i64>(1)?, row.get::<_, i64>(0)?);
+        if latest.is_none_or(|best| found > best) {
+            latest = Some(found);
+        }
+    }
+    let Some((_, id)) = latest else {
+        return Ok(None);
+    };
+    conn.query_row(
+        "SELECT id, ts, cwd, query, result_dir_id, stage, outcome FROM queries WHERE id = ?1",
+        params![id],
+        |row| {
+            Ok(calibration::QueryRecord {
+                id: row.get(0)?,
+                ts: Timestamp::from_unix_seconds(row.get(1)?),
+                cwd: row.get(2)?,
+                query: row.get(3)?,
+                result_dir_id: row.get(4)?,
+                stage: row.get(5)?,
+                outcome: row.get(6)?,
+            })
+        },
+    )
+    .map(Some)
+    .map_err(StorageError::from)
+}
+
+fn visits_since(
+    conn: &Connection,
+    since: Timestamp,
+) -> Result<Vec<calibration::VisitRecord>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT dir_id, ts, source, session FROM visits WHERE ts >= ?1 ORDER BY ts ASC, id ASC",
+    )?;
+    let records = stmt
+        .query_map(params![since.unix_seconds()], |row| {
+            Ok(calibration::VisitRecord {
+                dir_id: row.get(0)?,
+                ts: Timestamp::from_unix_seconds(row.get(1)?),
+                source: row.get(2)?,
+                session: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(records)
+}
+
 /// Every `dirs.key` currently stored, used to keep `furet import` idempotent.
 pub fn known_keys(conn: &Connection) -> Result<HashSet<String>, StorageError> {
     let mut stmt = conn.prepare("SELECT key FROM dirs")?;
@@ -522,10 +614,11 @@ mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
         format_local_time, insert_query, insert_visit, known_keys, last_visited_dir, logs_dir,
-        missing_since_by_id, open, open_at, purge_before, query_log, remove_dirs, resolve_data_dir,
-        set_missing_since, stats_counts, top_dirs, upsert_dir, visit_log,
+        missing_since_by_id, open, open_at, purge_before, query_log, recall, remove_dirs,
+        resolve_data_dir, set_missing_since, stats_counts, top_dirs, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
+    use crate::memory::{self, Recall};
     use rusqlite::{Connection, params};
     use std::path::{Path, PathBuf};
 
@@ -1378,5 +1471,88 @@ mod tests {
         let limited = top_dirs(&conn, 2).expect("the limited top rows read");
         assert_eq!(limited.len(), 2);
         assert_eq!(limited[0], (2, "c:\\dev\\alpha".to_owned()));
+    }
+
+    fn journal(conn: &Connection, seconds: i64, text: &str, result: Option<i64>, outcome: &str) {
+        insert_query(conn, at(seconds), "c:\\dev", text, result, "1", outcome)
+            .expect("the journal row inserts");
+    }
+
+    fn remembered(conn: &Connection, path: &str, seconds: i64) -> Recall {
+        Recall::Remembered {
+            path: path.to_owned(),
+            chosen: format_local_time(conn, at(seconds)).expect("the choice date formats"),
+        }
+    }
+
+    #[test]
+    fn recall_takes_the_latest_row_by_ts_then_by_id() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\a", "c:\\a", at(0)).expect("a inserts");
+        let b = upsert_dir(&conn, "c:\\b", "c:\\b", at(0)).expect("b inserts");
+        let c = upsert_dir(&conn, "c:\\c", "c:\\c", at(0)).expect("c inserts");
+        journal(&conn, 100, "cl", Some(a), "pick");
+        journal(&conn, 300, "CL", Some(b), "jump");
+        journal(&conn, 200, " cl ", Some(c), "pick");
+        let key = memory::key("cl");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            remembered(&conn, "c:\\b", 300),
+            "a later ts wins over a larger id"
+        );
+        journal(&conn, 300, "Cl", Some(c), "pick");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            remembered(&conn, "c:\\c", 300),
+            "a ts tie goes to the larger id"
+        );
+    }
+
+    #[test]
+    fn recall_ignores_other_keys_other_outcomes_and_rows_without_a_result() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\a", "c:\\a", at(0)).expect("a inserts");
+        let b = upsert_dir(&conn, "c:\\b", "c:\\b", at(0)).expect("b inserts");
+        let key = memory::key("cl");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            Recall::Nothing
+        );
+        journal(&conn, 100, "cl", Some(a), "jump");
+        journal(&conn, 200, "cl", None, "jump");
+        journal(&conn, 300, "cl", Some(b), "menu");
+        journal(&conn, 400, "cl", Some(b), "none");
+        journal(&conn, 500, "cl x", Some(b), "pick");
+        journal(&conn, 600, "lc", Some(b), "pick");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            remembered(&conn, "c:\\a", 100)
+        );
+    }
+
+    #[test]
+    fn a_latest_row_that_is_a_probable_failure_cancels_the_memory() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\a", "c:\\a", at(0)).expect("a inserts");
+        let b = upsert_dir(&conn, "c:\\b", "c:\\b", at(0)).expect("b inserts");
+        journal(&conn, 100, "cl", Some(a), "pick");
+        insert_visit(&conn, a, at(100), "jump", "s", None).expect("the good landing inserts");
+        journal(&conn, 200, "cl", Some(b), "jump");
+        insert_visit(&conn, b, at(200), "jump", "s", None).expect("the bad landing inserts");
+        let key = memory::key("cl");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            remembered(&conn, "c:\\b", 200),
+            "no follow-up visit yet: the latest row stands"
+        );
+        insert_visit(&conn, a, at(205), "back", "s", None).expect("the backtrack inserts");
+        assert_eq!(
+            recall(&conn, &key).expect("the recall reads"),
+            Recall::ProbableFailure,
+            "the latest word wins; the older good row is never used"
+        );
     }
 }

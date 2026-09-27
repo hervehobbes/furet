@@ -1,0 +1,66 @@
+# Query memory (SPEC-v2 §24): `memory` names the directory last chosen for
+# this case's query; it ranks first whenever it still matches the query.
+
+[[case]]
+name = "om goes to the remembered ombi over the better-matched om"
+query = "om"
+dirs = [
+    { path = "c:\\om", visited = "-1h" },
+    { path = "c:\\dev\\ombi", visited = "-30d" },
+]
+memory = "c:\\dev\\ombi"
+jump = "c:\\dev\\ombi"
+
+[[case]]
+name = "a remembered directory that no longer matches leaves the ranking unchanged"
+query = "om"
+dirs = [
+    { path = "c:\\om", visited = "-1h" },
+    { path = "c:\\dev\\ombi", visited = "-2h" },
+    { path = "c:\\dev\\helix", visited = "-3h" },
+]
+memory = "c:\\dev\\helix"
+jump = "c:\\om"
+
+[[case]]
+name = "a stage-2 tie that would open a menu jumps straight to the remembered directory"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/archive/tokio", visited = "-2h" },
+]
+memory = "/archive/tokio"
+jump = "/archive/tokio"
+
+[[case]]
+name = "a remembered directory that is the current directory leaves the ranking unchanged"
+query = "om"
+current_dir = "c:\\dev\\ombi"
+dirs = [
+    { path = "c:\\om", visited = "-1h" },
+    { path = "c:\\dev\\ombi", visited = "-2h" },
+    { path = "c:\\dev\\omit", visited = "-3h" },
+]
+memory = "c:\\dev\\ombi"
+jump = "c:\\om"
+
+[[case]]
+name = "a remembered directory that disappeared leaves the stage-2 tie to its menu"
+query = "tokoi"
+dirs = [
+    { path = "/dev/tokio", visited = "-1h" },
+    { path = "/archive/tokio", visited = "-2h" },
+    { path = "/opt/tokio", visited = "-3h", missing = true },
+]
+memory = "/opt/tokio"
+menu = ["/dev/tokio", "/archive/tokio"]
+
+[[case]]
+name = "the remembered directory is matched ignoring case"
+query = "om"
+dirs = [
+    { path = "c:\\om", visited = "-1h" },
+    { path = "c:\\dev\\ombi", visited = "-2h" },
+]
+memory = "C:\\DEV\\OMBI"
+jump = "c:\\dev\\ombi"

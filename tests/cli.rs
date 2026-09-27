@@ -613,6 +613,8 @@ fn query_with_a_stage_two_tie_prints_the_menu_on_stderr_only() {
 #[test]
 fn query_menu_prints_the_selected_path_and_exits_zero() {
     let (world, first, second) = ambiguous_world();
+    // WHY: query memory would send the second query to the first pick without a menu.
+    write_config(&world, "query_memory = false");
     let picked_first = query_answering(&world, "tokoi", world.tree.path(), "1\n");
     assert!(
         picked_first.status.success(),
@@ -3827,7 +3829,7 @@ fn query_explain_local_prints_the_project_root_line() {
     let stderr = text(&out.stderr);
     assert!(
         stderr.starts_with(&format!(
-            "normalized query: tokio\nengine: reference\nproject root: {root}\n"
+            "normalized query: tokio\nengine: reference\nmemory: none\nproject root: {root}\n"
         )),
         "{stderr}"
     );
@@ -3860,7 +3862,8 @@ fn query_engine_flag_overrides_the_config() {
         .expect("the reference winner canonicalizes")
         .path;
     assert_eq!(reference, format!("{expected}\n"));
-    write_config(&world, "engine = \"nucleo\"");
+    // WHY: query memory would send "dev" back to the reference winner's journaled jump.
+    write_config(&world, "engine = \"nucleo\"\nquery_memory = false");
     let nucleo = winner(&["dev"]);
     let nucleo_winner = paths::canonical(&world.child("my-dev"))
         .expect("the nucleo winner canonicalizes")
@@ -3946,5 +3949,243 @@ fn preview_never_opens_the_database() {
     assert!(
         !world.data.path().join("furet.db").exists(),
         "preview must not create the database file"
+    );
+}
+
+// WHY: setup visits are aged and in their own session, so no later pick reads them as a probable failure.
+fn aged_world(children: &[&str], known: &[&str]) -> Sandbox {
+    let world = sandbox(children);
+    for (age, child) in known.iter().enumerate() {
+        let path = world.child(child);
+        assert!(add(&world, &path, "setup", None, None).status.success());
+        visited_at(&world, &path, unix_now() - 100 - age as i64);
+    }
+    world
+}
+
+fn pick(world: &Sandbox, child: &str, query_text: &str) {
+    let out = add_with_query(
+        world,
+        &world.child(child),
+        "session-1",
+        &world.child("origin"),
+        query_text,
+        None,
+    );
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+}
+
+fn jumped_to(out: &Output) -> String {
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty(), "stderr: {}", text(&out.stderr));
+    text(&out.stdout)
+}
+
+fn latest_query_row(world: &Sandbox) -> (String, String, Option<String>) {
+    db(world)
+        .query_row(
+            "SELECT stage, outcome, (SELECT path FROM dirs WHERE id = result_dir_id)
+             FROM queries ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the latest queries row reads back")
+}
+
+fn om_world() -> (Sandbox, String, String) {
+    let world = aged_world(&["om", "dev/ombi", "origin"], &["om", "dev/ombi"]);
+    let om = canonical_child(&world, "om");
+    let ombi = canonical_child(&world, "dev/ombi");
+    (world, om, ombi)
+}
+
+#[test]
+fn query_memory_sends_the_same_query_to_the_last_picked_directory() {
+    let (world, om, ombi) = om_world();
+    let root = world.tree.path();
+    assert_eq!(
+        jumped_to(&query(&world, "om", root, false)),
+        format!("{om}\n")
+    );
+    pick(&world, "dev/ombi", "om");
+    for variant in ["om", "OM", "  om  "] {
+        assert_eq!(
+            jumped_to(&query(&world, variant, root, false)),
+            format!("{ombi}\n"),
+            "variant {variant:?}"
+        );
+    }
+    assert_eq!(
+        jumped_to(&query(&world, "ombi", root, false)),
+        format!("{ombi}\n")
+    );
+    assert_eq!(
+        jumped_to(&query(&world, "o m", root, false)),
+        format!("{om}\n"),
+        "a different key keeps the normal winner"
+    );
+}
+
+#[test]
+fn query_memory_is_cancelled_by_a_probable_failure() {
+    let (world, om, _) = om_world();
+    pick(&world, "dev/ombi", "om");
+    let back = add(
+        &world,
+        &world.child("om"),
+        "session-1",
+        Some("back"),
+        Some(&world.child("dev/ombi")),
+    );
+    assert!(back.status.success(), "stderr: {}", text(&back.stderr));
+    let picked_at = unix_now() - 50;
+    let conn = db(&world);
+    conn.execute(
+        "UPDATE visits SET ts = ?1 WHERE session = 'session-1' AND source = 'hook'",
+        params![picked_at],
+    )
+    .expect("the pick landing is dated");
+    conn.execute(
+        "UPDATE visits SET ts = ?1 WHERE source = 'back'",
+        params![picked_at + 5],
+    )
+    .expect("the backtrack is dated five seconds later");
+    conn.execute("UPDATE queries SET ts = ?1", params![picked_at])
+        .expect("the pick row is dated");
+    let explained = query_with(&world, &["--explain", "om"], world.tree.path());
+    assert!(
+        text(&explained.stderr).contains("\nmemory: not applied (probable failure)\n"),
+        "{}",
+        text(&explained.stderr)
+    );
+    assert_eq!(
+        jumped_to(&query(&world, "om", world.tree.path(), false)),
+        format!("{om}\n")
+    );
+}
+
+#[test]
+fn query_memory_is_ignored_when_disabled_in_config() {
+    let (world, om, _) = om_world();
+    write_config(&world, "query_memory = false");
+    pick(&world, "dev/ombi", "om");
+    assert_eq!(
+        scalar(
+            &db(&world),
+            "SELECT COUNT(*) FROM queries WHERE outcome = 'pick'"
+        ),
+        1,
+        "part A keeps journaling the pick"
+    );
+    let root = world.tree.path();
+    assert_eq!(
+        jumped_to(&query(&world, "om", root, false)),
+        format!("{om}\n")
+    );
+    let listed = query(&world, "om", root, true);
+    assert!(text(&listed.stdout).starts_with(&format!("{om}\n")));
+    let explained = query_with(&world, &["--explain", "om"], root);
+    let report = text(&explained.stderr);
+    assert!(
+        report.starts_with("normalized query: om\nengine: reference\nmemory: disabled\n"),
+        "{report}"
+    );
+    assert!(report.contains("deciding criterion: score\n"), "{report}");
+}
+
+#[test]
+fn query_memory_respects_local_scope() {
+    let world = aged_world(
+        &[
+            "proj/.git",
+            "proj/om",
+            "proj/omega",
+            "elsewhere/ombi",
+            "origin",
+        ],
+        &["proj/om", "proj/omega", "elsewhere/ombi"],
+    );
+    pick(&world, "elsewhere/ombi", "om");
+    let cwd = world.child("proj");
+    let explained = query_with(&world, &["--local", "--explain", "om"], &cwd);
+    assert!(
+        text(&explained.stderr).contains("\nmemory: not applied (no longer matches)\n"),
+        "{}",
+        text(&explained.stderr)
+    );
+    assert_eq!(
+        jumped_to(&query_with(&world, &["om"], &cwd)),
+        format!("{}\n", canonical_child(&world, "elsewhere/ombi"))
+    );
+    assert_eq!(
+        jumped_to(&query_with(&world, &["--local", "om"], &cwd)),
+        format!("{}\n", canonical_child(&world, "proj/om"))
+    );
+}
+
+#[test]
+fn query_memory_jump_journals_the_real_stage() {
+    let world = aged_world(
+        &["aaa/tokio", "zzz/tokio", "origin"],
+        &["aaa/tokio", "zzz/tokio"],
+    );
+    let zzz = canonical_child(&world, "zzz/tokio");
+    pick(&world, "zzz/tokio", "tokoi");
+    let out = query_answering(&world, "tokoi", world.tree.path(), "");
+    assert_eq!(jumped_to(&out), format!("{zzz}\n"), "no menu opens");
+    assert_eq!(
+        latest_query_row(&world),
+        ("2".to_owned(), "jump".to_owned(), Some(zzz.clone()))
+    );
+    let (om_world, _, ombi) = om_world();
+    pick(&om_world, "dev/ombi", "om");
+    let out = query(&om_world, "om", om_world.tree.path(), false);
+    assert_eq!(jumped_to(&out), format!("{ombi}\n"));
+    assert_eq!(
+        latest_query_row(&om_world),
+        ("1".to_owned(), "jump".to_owned(), Some(ombi))
+    );
+}
+
+#[test]
+fn query_list_puts_the_remembered_directory_first() {
+    let (world, om, ombi) = om_world();
+    let root = world.tree.path();
+    let before = query(&world, "om", root, true);
+    assert_eq!(text(&before.stdout), format!("{om}\n{ombi}\n"));
+    pick(&world, "dev/ombi", "om");
+    let queries_before = scalar(&db(&world), "SELECT COUNT(*) FROM queries");
+    let after = query(&world, "Om", root, true);
+    assert!(after.status.success(), "stderr: {}", text(&after.stderr));
+    assert_eq!(text(&after.stdout), format!("{ombi}\n{om}\n"));
+    assert_eq!(
+        scalar(&db(&world), "SELECT COUNT(*) FROM queries"),
+        queries_before
+    );
+}
+
+#[test]
+fn query_memory_never_applies_to_the_disk_fallback() {
+    let world = aged_world(
+        &["tokio", "wd/tokio", "gone/tokio", "origin"],
+        &["gone/tokio"],
+    );
+    let sibling = canonical_child(&world, "tokio");
+    let nested = canonical_child(&world, "wd/tokio");
+    pick(&world, "gone/tokio", "tokoi");
+    std::fs::remove_dir_all(world.child("gone/tokio")).expect("the remembered directory vanishes");
+    let out = query_answering(&world, "tokoi", &world.child("wd"), "");
+    assert!(!out.status.success(), "stdout: {}", text(&out.stdout));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        format!(
+            "{}furet: no directory selected\n",
+            expected_menu(&sibling, &nested)
+        )
+    );
+    assert_eq!(
+        latest_query_row(&world),
+        ("fallback".to_owned(), "menu".to_owned(), None)
     );
 }

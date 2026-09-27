@@ -1,4 +1,5 @@
 use crate::decision::{self, Decision};
+use crate::memory::{self, Recall};
 use crate::normalize::Normalized;
 use crate::rank::{self, Candidate, Engine, Stage, TieBreak};
 use crate::stage1_nucleo::{self, NucleoScorer};
@@ -56,6 +57,10 @@ pub struct Report<'a> {
     pub deciding_criterion: Option<TieBreak>,
     pub origin: Origin,
     pub stage2_max_distance: usize,
+    /// What query memory found for this query (SPEC-v2 §24).
+    pub memory: Recall,
+    /// Whether the remembered directory was ranked, so it was put first.
+    pub memory_applied: bool,
 }
 
 /// Ranks and decides exactly as `furet query` would, keeping the score
@@ -68,7 +73,44 @@ pub fn explain<'a>(
     typo_min_length: usize,
     engine: Engine,
 ) -> Report<'a> {
+    explain_recalled(
+        query,
+        current_dir,
+        candidates,
+        origin,
+        typo_min_length,
+        engine,
+        Recall::Nothing,
+    )
+}
+
+/// `explain`, with the query memory `furet query` found applied on top
+/// (SPEC-v2 §24); a fallback report never applies it.
+pub fn explain_recalled<'a>(
+    query: &str,
+    current_dir: &str,
+    candidates: &'a [Candidate],
+    origin: Origin,
+    typo_min_length: usize,
+    engine: Engine,
+    recall: Recall,
+) -> Report<'a> {
     let ranked = rank::rank(query, current_dir, candidates, typo_min_length, engine);
+    let remembered = match origin {
+        Origin::Database => recall.path(),
+        Origin::Fallback => None,
+    };
+    let memory_applied = memory::applies(&ranked, remembered);
+    let deciding_criterion = if memory_applied {
+        None
+    } else {
+        rank::deciding_criterion(&ranked)
+    };
+    let ranked = memory::promote(ranked, remembered);
+    let decision = match ranked.first() {
+        Some(top) if memory_applied => Decision::Jump(top.candidate),
+        _ => decision::decide(&ranked),
+    };
     let mut nucleo = (engine == Engine::Nucleo).then(NucleoScorer::new);
     let mut evaluations: Vec<Evaluation<'a>> = Vec::with_capacity(candidates.len());
     for scored in &ranked {
@@ -112,11 +154,13 @@ pub fn explain<'a>(
         normalized_query: Normalized::new(query).text(),
         engine,
         project_root: None,
-        decision: decision::decide(&ranked),
-        deciding_criterion: rank::deciding_criterion(&ranked),
+        decision,
+        deciding_criterion,
         evaluations,
         origin,
         stage2_max_distance: stage2::query_max_distance(query),
+        memory: recall,
+        memory_applied,
     }
 }
 
@@ -143,6 +187,7 @@ fn eliminate(
 pub fn render(report: &Report) -> String {
     let mut rendered = format!("normalized query: {}\n", report.normalized_query);
     rendered.push_str(&format!("engine: {}\n", report.engine.name()));
+    rendered.push_str(&memory_line(report));
     if let Some(root) = &report.project_root {
         rendered.push_str(&format!("project root: {root}\n"));
     }
@@ -202,12 +247,26 @@ pub fn render(report: &Report) -> String {
     if eliminated == 0 {
         rendered.push_str("  (none)\n");
     }
-    rendered.push_str(&format!(
-        "deciding criterion: {}\n",
+    let criterion = if report.memory_applied {
+        "query memory"
+    } else {
         criterion_label(report.deciding_criterion)
-    ));
+    };
+    rendered.push_str(&format!("deciding criterion: {criterion}\n"));
     rendered.push_str(&decision_label(&report.decision));
     rendered
+}
+
+fn memory_line(report: &Report) -> String {
+    match &report.memory {
+        Recall::Disabled => "memory: disabled\n".to_owned(),
+        Recall::Nothing => "memory: none\n".to_owned(),
+        Recall::ProbableFailure => "memory: not applied (probable failure)\n".to_owned(),
+        Recall::Remembered { path, chosen } if report.memory_applied => {
+            format!("memory: {path} (chosen {chosen})\n")
+        }
+        Recall::Remembered { .. } => "memory: not applied (no longer matches)\n".to_owned(),
+    }
 }
 
 fn render_breakdown(breakdown: &stage1::Breakdown) -> String {
@@ -301,9 +360,12 @@ fn decision_label(decision: &Decision) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Elimination, Evaluation, Origin, Report, Stage1Detail, explain, render};
+    use super::{
+        Elimination, Evaluation, Origin, Report, Stage1Detail, explain, explain_recalled, render,
+    };
     use crate::clock::Timestamp;
     use crate::decision::Decision;
+    use crate::memory::Recall;
     use crate::rank::{Candidate, Engine, Stage, TieBreak};
     use crate::stage1_nucleo::NucleoScorer;
     use crate::stage2::TYPO_MIN_QUERY_LEN;
@@ -598,6 +660,7 @@ mod tests {
         ));
         let expected = "normalized query: tokio\n\
             engine: reference\n\
+            memory: none\n\
             evaluated candidates:\n\
             \x20 stage 1 score 90 /dev/tokio\n\
             \x20   token 'tokio': base 10 + length 5 + placement 50 + prefix 10 + density 10 = 85\n\
@@ -638,7 +701,7 @@ mod tests {
                 TYPO_MIN_QUERY_LEN,
                 Engine::Reference
             )),
-            "normalized query: tokio\nengine: reference\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
+            "normalized query: tokio\nengine: reference\nmemory: none\nevaluated candidates:\n  (none)\neliminated candidates:\n  (none)\ndeciding criterion: none (no runner-up)\ndecision: none\n"
         );
     }
 
@@ -688,6 +751,7 @@ mod tests {
         let expected = format!(
             "normalized query: neo vim\n\
             engine: nucleo\n\
+            memory: none\n\
             evaluated candidates:\n\
             \x20 stage 1 score {} /src/neovim/neovim\n\
             \x20   token 'neo': nucleo {}\n\
@@ -725,6 +789,127 @@ mod tests {
         );
         assert!(!rendered.contains("folder bonus"), "{rendered}");
         assert!(!rendered.contains("order bonus"), "{rendered}");
+    }
+
+    fn om_world() -> Vec<Candidate> {
+        vec![
+            dir("c:\\om", "om", "c:", 1),
+            dir("c:\\dev\\ombi", "ombi", "c:\\dev", 2),
+            dir("c:\\dev\\helix", "helix", "c:\\dev", 3),
+        ]
+    }
+
+    fn recalled(path: &str) -> Recall {
+        Recall::Remembered {
+            path: path.to_owned(),
+            chosen: "2026-09-27T10:00:00".to_owned(),
+        }
+    }
+
+    fn recalled_report<'a>(candidates: &'a [Candidate], query: &str, recall: Recall) -> Report<'a> {
+        explain_recalled(
+            query,
+            "",
+            candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+            recall,
+        )
+    }
+
+    #[test]
+    fn an_applied_memory_names_the_directory_and_its_date_and_decides() {
+        let candidates = om_world();
+        let report = recalled_report(&candidates, "om", recalled("C:\\Dev\\Ombi"));
+        assert!(report.memory_applied);
+        assert_eq!(report.decision, Decision::Jump(&candidates[1]));
+        let rendered = render(&report);
+        assert!(
+            rendered.starts_with(
+                "normalized query: om\nengine: reference\nmemory: C:\\Dev\\Ombi (chosen 2026-09-27T10:00:00)\nevaluated candidates:\n  stage 1 score "
+            ),
+            "{rendered}"
+        );
+        let ombi = rendered.find("c:\\dev\\ombi\n").expect("ombi is evaluated");
+        let om = rendered.find("c:\\om\n").expect("om is evaluated");
+        assert!(
+            ombi < om,
+            "the remembered directory is listed first: {rendered}"
+        );
+        assert!(
+            rendered.ends_with("deciding criterion: query memory\ndecision: jump c:\\dev\\ombi\n"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn an_applied_memory_jumps_over_a_stage_two_tie() {
+        let candidates = [
+            dir("/aaa/tokio", "tokio", "/aaa", 1),
+            dir("/zzz/tokio", "tokio", "/zzz", 2),
+        ];
+        let plain = recalled_report(&candidates, "tokoi", Recall::Nothing);
+        assert!(matches!(plain.decision, Decision::Menu(_)));
+        let report = recalled_report(&candidates, "tokoi", recalled("/zzz/tokio"));
+        assert_eq!(report.decision, Decision::Jump(&candidates[1]));
+        assert_eq!(matched(&report, "/zzz/tokio"), Some((Stage::Two, 2)));
+    }
+
+    #[test]
+    fn each_unapplied_memory_names_its_reason_and_changes_nothing_else() {
+        let candidates = om_world();
+        let baseline = render(&recalled_report(&candidates, "om", Recall::Nothing));
+        assert!(
+            baseline.starts_with("normalized query: om\nengine: reference\nmemory: none\n"),
+            "{baseline}"
+        );
+        for (recall, line) in [
+            (Recall::Disabled, "memory: disabled\n"),
+            (
+                Recall::ProbableFailure,
+                "memory: not applied (probable failure)\n",
+            ),
+            (
+                recalled("c:\\dev\\helix"),
+                "memory: not applied (no longer matches)\n",
+            ),
+            (
+                recalled("c:\\gone"),
+                "memory: not applied (no longer matches)\n",
+            ),
+        ] {
+            let report = recalled_report(&candidates, "om", recall);
+            assert!(!report.memory_applied);
+            assert_eq!(report.decision, Decision::Jump(&candidates[0]));
+            let rendered = render(&report);
+            assert_eq!(rendered, baseline.replace("memory: none\n", line));
+        }
+    }
+
+    #[test]
+    fn memory_never_applies_to_a_fallback_report() {
+        let candidates = om_world();
+        let report = explain_recalled(
+            "om",
+            "",
+            &candidates,
+            Origin::Fallback,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+            recalled("c:\\dev\\ombi"),
+        );
+        assert!(!report.memory_applied);
+        assert_eq!(report.decision, Decision::Jump(&candidates[0]));
+        let rendered = render(&report);
+        assert!(
+            rendered.contains("memory: not applied (no longer matches)\n"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("deciding criterion: score\n"),
+            "{rendered}"
+        );
     }
 
     static NAMES: &[&str] = &[

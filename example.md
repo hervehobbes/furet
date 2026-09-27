@@ -214,6 +214,43 @@ les fichiers, tri sans tenir compte de la casse, au plus 50 lignes puis
 `… +<K> more`. Un chemin absent ou un fichier affiche `(not a directory)`.
 Ce panneau n'existe pas dans le menu numéroté de la console.
 
+### La mémoire des requêtes
+
+Quand une requête vous a déjà mené quelque part, la même requête y
+retourne en priorité, même si un autre répertoire correspond mieux.
+`c:\om` correspond mieux à `om` que `c:\dev\ombi` ; mais une fois
+`ombi` choisi pour `om` :
+
+```powershell
+PS C:\dev\furet> f om
+PS C:\om>
+PS C:\om> fi om                # choix de C:\dev\ombi dans fzf ou le menu
+PS C:\dev\ombi> cd \
+PS C:\> f om
+PS C:\dev\ombi>
+```
+
+La casse, les accents et les espaces en trop ne comptent pas (`f OM`,
+`f " om "` retournent aussi dans `ombi`), l'ordre des fragments si
+(`f io tok` n'est pas `f tok io`). C'est le seul critère placé avant le
+score, et il ne s'applique que si le répertoire correspond encore à la
+requête et reste candidat (ni le répertoire courant, ni disparu, ni hors
+du projet avec `-l`) ; le repli disque n'est jamais concerné. Un saut suivi
+en moins de 10 secondes d'un `f -` ou d'un départ ailleurs (un échec
+probable) annule la mémoire. La complétion Tab et `fi` proposent le
+répertoire mémorisé en premier, et `f om --explain` affiche une ligne
+`memory:` :
+
+```text
+memory: C:\dev\ombi (chosen 2026-09-27T10:12:40)
+```
+
+Pour la désactiver, dans `config.toml` :
+
+```toml
+query_memory = false
+```
+
 ## Commandes `furet` directes (sans le hook pwsh)
 
 Ces sous-commandes sont utiles pour scripter ou déboguer ; elles écrivent
@@ -421,7 +458,7 @@ Pour oublier d'un coup tous les répertoires connus situés sous un dossier
 
 ```powershell
 PS C:\dev\furet> furet remove *appdata*
-removed C:\Users\thouz\AppData\Local\sourcier\projects\Clyd-16e1bbba
+removed C:\Users\thouz\AppData\Local\sourcier\projects\Ombi-16e1bbba
 ```
 
 Avec `--confirm`, une question est posée sur `stderr` pour chaque

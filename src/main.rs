@@ -15,6 +15,7 @@ use furet::decision::{self, Decision};
 use furet::explain::{self, Origin};
 use furet::fallback;
 use furet::import;
+use furet::memory::{self, Recall};
 use furet::paths;
 use furet::preview;
 use furet::project;
@@ -498,24 +499,35 @@ fn query_directories(
         (&candidates, db_ranked)
     };
     debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
+    let recall = if settings.query_memory {
+        storage::recall(&conn, &memory::key(query))?
+    } else {
+        Recall::Disabled
+    };
+    debug!(?recall, "query memory");
     if explain {
         let origin = if is_fallback {
             Origin::Fallback
         } else {
             Origin::Database
         };
-        let mut report = explain::explain(
+        let mut report = explain::explain_recalled(
             query,
             &current.path,
             pool,
             origin,
             settings.typo_min_length,
             engine,
+            recall,
         );
         report.project_root = project_root.clone();
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
+    // WHY: SPEC-v2 §24 never lets memory reach the disk fallback's candidates.
+    let remembered = if is_fallback { None } else { recall.path() };
+    let memory_applied = memory::applies(&ranked, remembered);
+    let ranked = memory::promote(ranked, remembered);
     if list {
         let lines: Vec<String> = ranked
             .iter()
@@ -525,7 +537,11 @@ fn query_directories(
         return Ok(());
     }
     debug!(ranked = ranked.len(), "decision");
-    let decision = decision::decide(&ranked);
+    // WHY: a remembered directory jumps even from a stage-2 tie; decide itself stays SPEC §9.
+    let decision = match ranked.first() {
+        Some(top) if memory_applied => Decision::Jump(top.candidate),
+        _ => decision::decide(&ranked),
+    };
     // WHY: SPEC §15 never logs the empty-query regression case; `stage` stays unevaluated rather than hit the unreachable `None` arm.
     let logged_query = !query.trim().is_empty();
     let stage = logged_query.then(|| {

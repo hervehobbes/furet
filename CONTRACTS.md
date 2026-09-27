@@ -9,6 +9,43 @@ when stage 1 returns `None`), and returns a `Vec<Scored>` sorted per SPEC §8: s
 recency (D1 — never the other way around), then name length, then path, as a
 strict deterministic total order.
 
+### Query memory (SPEC-v2 §24)
+
+Hervé's decision of 2026-09-26 (`CLAUDE.md`, D1) adds one criterion above
+the score, and only this one: the sort order of `furet query` is **query
+memory, score, recency, name length, path**. It is not recency, and
+recency still never outranks a better match.
+
+- `rank::rank` and `decision::decide` are unchanged. `memory::promote(ranked,
+  remembered) -> Vec<Scored>` (pure) moves the remembered directory, matched
+  by path ignoring case like `rank`'s current-directory check, to the front
+  when it is among `ranked`; every other candidate keeps `rank`'s relative
+  order, so D1 still holds among them. A remembered directory absent from
+  `ranked` changes nothing. `memory::applies(ranked, remembered)` says
+  whether it is among them. Proven by proptest in `src/memory.rs`: no
+  memory or an unranked memory gives exactly `rank`'s order; a ranked
+  memory comes first with the others' relative order kept; the result is
+  deterministic (input order included) and keeps every `Scored` exactly
+  once; D1 holds among every directory but the remembered one.
+- The **memory key** (`memory::key`) is the query split on whitespace, each
+  token normalized with SPEC §7.1, empty tokens dropped, joined by one
+  space: case, §7.1 accents, and extra spaces never change it, token order
+  does (`tok io` ≠ `io tok`). `memory::matches(text, key)` answers `key(text)
+  == key` without allocating for ASCII text (proptest
+  `matches_agrees_with_comparing_keys`).
+- The **remembered directory** of a key is the `result_dir_id` of the most
+  recent `queries` row with that key, `outcome IN ('jump', 'pick')`, and a
+  non-null `result_dir_id` (`ts` descending, then `id` descending). If that
+  row is a probable failure (SPEC §15, decided by
+  `calibration::failure_of`, the per-row function `probable_failures` is
+  built on), there is no memory: the latest word wins, an older row is never
+  used. Because every jump journals a `jump` row, a query that jumped once
+  keeps going to the same directory until a probable failure or a different
+  choice (menu, `fi`) replaces it.
+- The §9 decision: when the memory applied, the call site decides
+  `Jump(first)` directly, even on a stage-2 tie that would open a menu;
+  otherwise `decision::decide` runs as before.
+
 ### Stage 1 — optimal subsequence (SPEC §7.2)
 
 `stage1::score(query, name, folder) -> Option<u32>` (`src/stage1.rs`). The
@@ -170,6 +207,12 @@ string or a non-string warns `engine must be "reference" or "nucleo"; using
 `a_wrong_type_engine_warns_and_keeps_the_reference_engine`). `furet query
 --engine` overrides it.
 
+`query_memory` (SPEC-v2 §24) is a boolean, `true` by default. `false`
+disables query memory entirely — `furet query` does no lookup at all and
+`--explain` prints `memory: disabled` — while menu and `fi` picks keep
+being journaled. A non-boolean warns `query_memory must be a boolean; using
+true` and keeps `true` (`a_wrong_type_query_memory_warns_and_keeps_true`).
+
 `exclude_dirs` (not in SPEC — scope extension decided by Hervé 2026-09-26,
 modelled on zoxide's `_ZO_EXCLUDE_DIRS`) is an array of non-empty strings,
 each resolved by `remove::exclusion_target` with the same pattern syntax as
@@ -224,6 +267,17 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
   `'fallback'`). A cancelled menu (empty, invalid, or EOF answer) writes
   exactly the pre-lot-46 row: same stage, `outcome = 'menu'`,
   `result_dir_id = NULL`, same error and exit code.
+  `storage::recall(conn, key)` (read-only, no schema change, no index)
+  finds the remembered directory of a memory key: one sequential scan of the
+  `jump`/`pick` rows with a result, comparing each text with
+  `memory::matches` and keeping the greatest `(ts, id)`; then only the
+  `visits` with `ts >=` that row's `ts` are read for
+  `calibration::failure_of`. It returns `memory::Recall`: `Nothing`,
+  `ProbableFailure`, or `Remembered { path, chosen }`, `chosen` being the
+  row's `ts` in the `furet list` local-time format. Measured on 20,000
+  `queries` rows (lot 47): under 3 ms of median overhead per query.
+  `retention_days` purges old rows, so the memory forgets them, and `furet
+  remove` deletes a directory's `queries` rows, so its memory goes with it.
 - Retention: every `furet add` runs `storage::purge_before(now -
   retention_days)`, deleting older `visits` and `queries` rows (indexed by
   `idx_visits_ts` / `idx_queries_ts`); `dirs` rows are deleted only by
@@ -294,7 +348,7 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   `--list`/`--explain` prints the project root on stdout and exits 0 before
   the database is even opened — no reconcile, no `queries` row (`f -l`
   records the jump itself as `--source jump`). `--explain` gains a
-  `project root: <path>` line right after the `engine:` line (absent
+  `project root: <path>` line right after the `memory:` line (absent
   without `--local`); the `queries` row is written exactly as for a global
   query, the scope is not stored.
   `--engine <reference|nucleo>` (SPEC-v2 §20, clap value enum, no clap
@@ -308,6 +362,24 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   line per token (the §7.1-normalized token), then `sum <s>, floored
   <max(s, 4)>`, then `folder bonus +2` only when awarded; nucleo's internal
   bonuses are not shown (`explain__nucleo_tokens` snapshot).
+  Query memory (SPEC-v2 §24, see the engine contract) applies after `rank`
+  on the database pool only — once the current directory, `missing`
+  entries, and everything outside the `--local` scope are excluded — and
+  never to the disk fallback's candidates
+  (`query_memory_never_applies_to_the_disk_fallback`,
+  `query_memory_respects_local_scope`). The remembered directory jumps
+  directly, without a menu even on a stage-2 tie; its `queries` row keeps
+  its real stage (`'1'` or `'2'`) with `outcome = 'jump'`
+  (`query_memory_jump_journals_the_real_stage`). `--list`, and so Tab
+  completion and `fi`, lists it first (`query_list_puts_the_remembered_directory_first`).
+  `--explain` prints a `memory:` line right after `engine:` (before any
+  `project root:` line): `memory: <path> (chosen <local date>)` when
+  applied — the deciding criterion is then `query memory`, the decision is
+  the jump, and the remembered directory is listed first — else `memory:
+  none`, `memory: not applied (probable failure)`, `memory: not applied (no
+  longer matches)` (remembered, but not among the ranked candidates, which
+  includes every fallback report), or `memory: disabled`; nothing else in
+  the report changes (`explain__memory_applied` snapshot).
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited

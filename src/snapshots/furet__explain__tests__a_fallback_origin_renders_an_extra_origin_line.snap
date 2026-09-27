@@ -4,6 +4,7 @@ expression: fallback
 ---
 normalized query: tokio
 engine: reference
+memory: none
 origin: fallback
 evaluated candidates:
   stage 1 score 90 /dev/tokio

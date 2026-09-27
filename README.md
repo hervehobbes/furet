@@ -58,7 +58,19 @@ extra profile line.
   "right,50%"`) listing the highlighted directory's contents through the
   `furet preview` subcommand; the console menu branch has no preview.
   Choices made in menus and `fi` are remembered in the query journal
-  (`outcome = 'pick'`) — the base of the query memory that follows.
+  (`outcome = 'pick'`) — the base of query memory, below.
+- **Query memory** — once a query has taken you to a directory, the same
+  query goes back there first, even when another directory matches better:
+  pick `c:\dev\ombi` for `om` once (menu or `fi`), and the next `f om` goes
+  to `ombi` rather than `c:\om`. Case, accents, and extra spaces do not
+  matter (`OM`, ` om ` are the same query); token order does. It is the only
+  rule above the match score, and it applies only while the directory still
+  matches the query and is a candidate (not the current directory, not
+  missing, inside the `-l` scope); it never touches the disk fallback. A
+  jump followed within 10 seconds by `f -` or by moving elsewhere (a
+  probable failure) cancels it. Tab completion and `fi` list the
+  remembered directory first; `--explain` shows a `memory:` line. Set
+  `query_memory = false` to turn it off.
 - `furet query --local <query>` — the flag behind `f -l`: restrict the
   candidate pool to the current git project; combines with `--list`,
   `--explain`, `--color`, and `--no-ignore`. Outside a git repository it
@@ -165,6 +177,7 @@ line naming the key. `furet query`, `furet home`, `furet add`, and
 | `home` | string | unset | absolute path, `/` accepted as separator, no `~`/env-var expansion |
 | `retention_days` | integer | 365 | `>= 0`; `furet add` deletes `visits` and `queries` rows older than this many days, `0` keeps everything |
 | `engine` | string | `"reference"` | `"reference"` or `"nucleo"`; `furet query --engine` overrides it |
+| `query_memory` | bool | true | `false` stops sending a query back to the directory last chosen for it; choices are still journaled |
 | `exclude_dirs` | array of strings | empty | patterns in the `furet remove` syntax, e.g. `['node_modules', 'C:\Windows\*', '*\target\*']` |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the
@@ -198,5 +211,10 @@ configurable `home`, stage-2's query-length rule, and importing zoxide's
 database (`furet import zoxide`). Lot 22 added a 42-case ranking scenario
 suite. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI
 contracts.
+
+Version 0.2.0 completes `prompts/SPEC-v2.md`: completions for `furet`'s
+subcommands, `--local`, the opt-in `nucleo` engine, `furet remove`'s
+confirmation and `--missing`, `furet stats`, the `fi` preview, and query
+memory.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

@@ -27,6 +27,8 @@ pub struct Settings {
     pub exclude_dirs: Vec<remove::Target>,
     /// Stage-1 scorer; `--engine` overrides it.
     pub engine: Engine,
+    /// Whether `furet query` puts the directory last chosen for the same query first.
+    pub query_memory: bool,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -51,6 +53,7 @@ impl Default for Settings {
             retention_days: RETENTION_DAYS,
             exclude_dirs: Vec::new(),
             engine: Engine::Reference,
+            query_memory: true,
         }
     }
 }
@@ -111,6 +114,10 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
                 Some("reference") => settings.engine = Engine::Reference,
                 Some("nucleo") => settings.engine = Engine::Nucleo,
                 _ => warnings.push(ENGINE_WARNING.to_owned()),
+            },
+            "query_memory" => match value.as_bool() {
+                Some(enabled) => settings.query_memory = enabled,
+                None => warnings.push("query_memory must be a boolean; using true".to_owned()),
             },
             "ambiguity" | "keyboard_layout" => {
                 warnings.push(format!("{key} is not supported yet; ignored"));
@@ -544,6 +551,41 @@ mod tests {
             assert!(settings.exclude_dirs.is_empty(), "{text}");
             assert_eq!(warnings.len(), 1, "{text}");
             assert!(warnings[0].contains("exclude_dirs"), "{text}");
+        }
+    }
+
+    #[test]
+    fn query_memory_defaults_to_true() {
+        assert!(Settings::default().query_memory);
+        let (settings, warnings) = parse("");
+        assert!(settings.query_memory);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn query_memory_accepts_true_and_false() {
+        let (settings, warnings) = parse("query_memory = false");
+        assert!(!settings.query_memory);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (settings, warnings) = parse("query_memory = true");
+        assert!(settings.query_memory);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn a_wrong_type_query_memory_warns_and_keeps_true() {
+        for text in [
+            "query_memory = \"no\"",
+            "query_memory = 0",
+            "query_memory = []",
+        ] {
+            let (settings, warnings) = parse(text);
+            assert!(settings.query_memory, "{text}");
+            assert_eq!(
+                warnings,
+                ["query_memory must be a boolean; using true"],
+                "{text}"
+            );
         }
     }
 }
