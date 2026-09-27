@@ -19,3 +19,9 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   the reviewer re-running the DoD. Rule: paste tool output by copying it,
   never by retyping it; if a line cannot be pasted verbatim, say so. The
   reviewer's own DoD run remains the only accepted proof.
+- 2026-09-27, lot 49 (GLM): same rule broken again the same day — the
+  report's "before" block repeated the after log's timings (0.60s / 3.90s
+  / 13.02s) instead of the real before log's (0.46s / 3.55s / 12.71s).
+  Code and logs on disk were fine; caught by the architect reading both
+  logs and confirmed by the reviewer's own DoD run. Rule unchanged: the
+  reviewer's run is the proof, the executor's paste is not.

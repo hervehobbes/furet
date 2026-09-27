@@ -2,8 +2,8 @@
 Done: lot 49 — `config::parse`'s key match moved into `apply(key, value, settings, warnings)`; `explain::render`'s two
 candidate loops moved into `render_evaluated` and `render_eliminated`. Pure refactor: warnings and rendered bytes
 unchanged, no `.snap` touched, all eight `test result` counts identical before/after (DoD green both sides).
-Decisions: two compiler-forced reflows inside the moved bodies — `match key` instead of `key.as_str()` (key is `&str`
-now; `str::as_str` is unstable) and `warnings` passed without `&mut` (implicit reborrow); tokens and strings unchanged.
+Decisions: two compiler-forced reflows inside the moved bodies — `match key` instead of `key.as_str()` (key is already
+`&str` in `apply`) and `warnings` passed without `&mut` (implicit reborrow); tokens and strings unchanged.
 Next: reviewer pass; Hervé reruns `tools/Run-Sonar.ps1` for S3776 on `parse` and `render`.
 
 ## 2026-09-27 — branch main — v0.2.0

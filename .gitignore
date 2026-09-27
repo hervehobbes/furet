@@ -72,3 +72,4 @@ $RECYCLE.BIN/
 prompts/
 .zcode/
 tools/forbidden-words.txt
+.sonar/

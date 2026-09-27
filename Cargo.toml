@@ -5,6 +5,12 @@ edition = "2024"
 description = "A zoxide-like fuzzy directory jumper, Windows-first"
 license = "MIT"
 
+[package.metadata.sonar]
+project-key = "furet"
+sources = ["src", "tools"]
+tests = ["tests"]
+exclusions = ["target/**"]
+
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 clap_complete = "4.6.11"
