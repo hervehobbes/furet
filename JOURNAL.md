@@ -1,4 +1,16 @@
 ## 2026-09-27 — branch main — v0.1.1
+Done: lot 45 — both `fi` fzf calls gain `--preview "furet preview {}"` + `--preview-window "right,50%"`;
+new `furet preview <path>`: SGR-stripped arg, dirs (`name\`) then files, case-insensitive sort with
+original-name tiebreak, 50 lines + `… +K more`, `(not a directory)` for missing/file, `(unreadable: …)`,
+exit 0, no DB, no config — 4th stdout exception in CONTRACTS. Pure src/preview.rs, disk access in main.rs.
+3 unit + 5 cli + 1 pwsh tests + preview help snapshot, red first.
+Manual check (fzf 0.74.2 on PATH): real fzf run in a minimized console; the preview pane listed the colored
+`C:\temp\furet lot45\x & y` line — `{}` quoting under cmd.exe and ANSI stripping confirmed.
+zoxide: takes the dedicated-preview-command idea; declines its unix-only `enable_preview` (no-op on
+Windows), its `ls -Cp {2..}` + `SHELL=sh` dance (furet ships its own subcommand), and `down,30%,sharp`.
+Next: reviewer pass.
+
+## 2026-09-27 — branch main — v0.1.1
 Done: lot 44 — `furet stats [--top <n>]`: 19 tab-separated key/value lines on stdout
 (dirs present/missing, 30-day visit and query windows, jumps = outcome IN ('jump','pick'),
 probable_failures, failure_rate with one decimal, per-stage and per-source counts, an absent

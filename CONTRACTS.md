@@ -228,7 +228,7 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 Only jump targets reach stdout: `furet query`'s resolved match and its
 `--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
 configured directory — plus `init pwsh`'s generated script. Everything
-else (menus, `--explain`, errors) goes to stderr, with three documented
+else (menus, `--explain`, errors) goes to stderr, with four documented
 exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
 
@@ -331,7 +331,13 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   scope (`furet query --explain --local -- $query`, decision 2, Hervé
   2026-09-26). `fi -l` scopes the whole interactive flow: the fzf initial
   list and every reload (`furet query --list --color --local [ {q}]`) and
-  the console menu (`furet query --list --local $query`). One completer —
+  the console menu (`furet query --list --local $query`). The fzf branch
+  of `fi` — both calls, local and non-local — passes `--preview "furet
+  preview {}"` and `--preview-window "right,50%"` (SPEC-v2 §23), so a
+  right-hand pane lists the highlighted directory through the `furet
+  preview` subcommand; fzf quotes `{}` correctly under cmd.exe (a path
+  with a space and a `&` verified against fzf 0.74.2, lot 45). The
+  console menu branch has no preview. One completer —
   the `FuretArgs` registration above — handles every line, `-l` included:
   the declared switch keeps pwsh's completion binder on the normal path
   (lot 40b, Hervé 2026-09-26, replacing a `-Native` fallback that relied on
@@ -345,8 +351,9 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   **to stdout**, not stderr. Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
   nothing pipes its output into `Set-Location`. `furet list` below is the
-  second accepted stdout exception and `furet stats` below the third, for
-  the same reason.
+  second accepted stdout exception, `furet stats` below the third, for
+  the same reason, and `furet preview` below the fourth — its output is
+  read by fzf's preview pane, never by `Set-Location`.
 - `furet list [--all] [--paths]` — prints one tab-separated line per known directory —
   `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
   ordered by path, ignoring case (the lowercased `key`);
@@ -482,6 +489,26 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   the one with the highest score before the known-keys filter; an excluded
   directory (`exclude_dirs`) is counted in `excluded` before dedupe, so it
   is never counted as `known` or `duplicate`. No `queries` journal entry.
+- `furet preview <path>` — lists a directory's contents for fzf's preview
+  pane (SPEC-v2 §23) **to stdout** — the fourth accepted stdout exception:
+  unlike the three reporting exceptions above it is called by `fi`, but
+  only through fzf, which reads the output into its preview pane; nothing
+  ever pipes it into `Set-Location`. ANSI SGR sequences (`ESC[` + digits
+  or `;` + `m`, and nothing else) are stripped from `<path>` first
+  (`preview::strip_sgr`), so the colored lines `fi` feeds fzf work as is;
+  a lone `ESC` or a non-SGR sequence is kept. Output: subdirectories
+  first, each name followed by `\`, then files — each group sorted by the
+  lowercased name with the original name as tiebreak (deterministic),
+  hidden entries included; at most 50 lines, then `… +<K> more` when
+  `K > 0` entries remain (pure `preview::render`, `src/preview.rs`).
+  `main::preview_command` does the disk access: a missing path **or a
+  file** prints the single line `(not a directory)`; a directory whose
+  `read_dir` fails prints `(unreadable: <error>)`; each entry is
+  classified by `entry.path().is_dir()` (follows links, so a symlink or
+  junction pointing at a directory lists as a directory) and an entry
+  that cannot be read during iteration is skipped. Exit 0 in every case.
+  Never opens the database and never reads `config.toml`, so the pane
+  stays fast (`preview_never_opens_the_database`).
 
 ### Exit codes
 
@@ -511,6 +538,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
+| `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 
 ### Accepted spec discrepancies
 

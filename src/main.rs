@@ -16,6 +16,7 @@ use furet::explain::{self, Origin};
 use furet::fallback;
 use furet::import;
 use furet::paths;
+use furet::preview;
 use furet::project;
 use furet::rank::{self, Candidate, Stage};
 use furet::remove;
@@ -142,6 +143,11 @@ enum Command {
         /// Tool to import from.
         source: ImportSource,
     },
+    /// List a directory's contents for the fzf preview pane.
+    Preview {
+        /// Directory to list; ANSI color codes are ignored.
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -253,6 +259,7 @@ fn main() {
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
         }),
+        Command::Preview { path } => report(preview_command(&path)),
     };
     // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
     drop(guard);
@@ -834,6 +841,32 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
     eprintln!(
         "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate}, excluded {excluded})"
     );
+    Ok(())
+}
+
+// WHY: fzf pipes this output into its preview pane, not into Set-Location.
+fn preview_command(path: &str) -> Result<(), Box<dyn Error>> {
+    debug!(path, "preview");
+    let cleaned = preview::strip_sgr(path);
+    let target = Path::new(&cleaned);
+    if !target.is_dir() {
+        print_lines(&["(not a directory)".to_owned()]);
+        return Ok(());
+    }
+    let entries: Vec<(String, bool)> = match std::fs::read_dir(target) {
+        Ok(iterator) => iterator
+            .filter_map(|entry| entry.ok())
+            .map(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                (name, entry.path().is_dir())
+            })
+            .collect(),
+        Err(error) => {
+            print_lines(&[format!("(unreadable: {error})")]);
+            return Ok(());
+        }
+    };
+    print_lines(&preview::render(entries));
     Ok(())
 }
 

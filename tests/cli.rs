@@ -3633,3 +3633,82 @@ fn query_engine_flag_overrides_the_config() {
     assert_eq!(winner(&["dev", "--engine", "reference"]), reference);
     assert_eq!(winner(&["--engine", "nucleo", "dev"]), nucleo);
 }
+
+fn write_entry(path: &Path, contents: &[u8]) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("the parent directory exists");
+    }
+    std::fs::write(path, contents).expect("the entry is written on disk");
+}
+
+#[test]
+fn preview_lists_directories_then_files_sorted_ignoring_case() {
+    let world = sandbox(&[]);
+    let dir = world.tree.path().join("listed");
+    for child in ["Beta", "alpha", ".git"] {
+        std::fs::create_dir_all(dir.join(child)).expect("the child directory exists");
+    }
+    write_entry(&dir.join("Zeta.txt"), b"x");
+    write_entry(&dir.join("a-file.md"), b"x");
+    let out = run(world.furet().arg("preview").arg(&dir));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        ".git\\\nalpha\\\nBeta\\\na-file.md\nZeta.txt\n"
+    );
+}
+
+#[test]
+fn preview_truncates_at_fifty_entries() {
+    let world = sandbox(&[]);
+    let dir = world.tree.path().join("many");
+    std::fs::create_dir_all(&dir).expect("the listed directory exists");
+    for i in 0..51 {
+        write_entry(&dir.join(format!("e{i:02}")), b"x");
+    }
+    let out = run(world.furet().arg("preview").arg(&dir));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 51);
+    for (i, line) in lines[..50].iter().enumerate() {
+        assert_eq!(*line, format!("e{i:02}"));
+    }
+    assert_eq!(lines[50], "… +1 more");
+}
+
+#[test]
+fn preview_of_a_missing_path_or_a_file_says_not_a_directory() {
+    let world = sandbox(&[]);
+    let missing = world.tree.path().join("nope");
+    let file = world.tree.path().join("file.txt");
+    write_entry(&file, b"x");
+    for path in [&missing, &file] {
+        let out = run(world.furet().arg("preview").arg(path));
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "(not a directory)\n");
+    }
+}
+
+#[test]
+fn preview_strips_ansi_codes_from_its_argument() {
+    let world = sandbox(&[]);
+    let dir = world.tree.path().join("sneaky");
+    std::fs::create_dir_all(&dir).expect("the listed directory exists");
+    write_entry(&dir.join("entry.txt"), b"x");
+    let colored = format!("\x1b[01;34m{}\x1b[0m", dir.display());
+    let out = run(world.furet().arg("preview").arg(&colored));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "entry.txt\n");
+}
+
+#[test]
+fn preview_never_opens_the_database() {
+    let world = sandbox(&[]);
+    let out = run(world.furet().arg("preview").arg(world.tree.path()));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(
+        !world.data.path().join("furet.db").exists(),
+        "preview must not create the database file"
+    );
+}

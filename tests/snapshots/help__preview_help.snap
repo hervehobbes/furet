@@ -1,0 +1,13 @@
+---
+source: tests/help.rs
+expression: text
+---
+List a directory's contents for the fzf preview pane
+
+Usage: furet preview <PATH>
+
+Arguments:
+  <PATH>  Directory to list; ANSI color codes are ignored
+
+Options:
+  -h, --help  Print help

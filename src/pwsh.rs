@@ -134,10 +134,10 @@ function global:fi {
     if (Get-Command fzf -ErrorAction SilentlyContinue) {
         if ($scoped) {
             $initial = furet query --list --color --local
-            $selection = $initial | fzf --disabled --ansi --bind "change:reload:furet query --list --color --local {q}"
+            $selection = $initial | fzf --disabled --ansi --preview "furet preview {}" --preview-window "right,50%" --bind "change:reload:furet query --list --color --local {q}"
         } else {
             $initial = furet query --list --color
-            $selection = $initial | fzf --disabled --ansi --bind "change:reload:furet query --list --color {q}"
+            $selection = $initial | fzf --disabled --ansi --preview "furet preview {}" --preview-window "right,50%" --bind "change:reload:furet query --list --color {q}"
         }
         if ([string]::IsNullOrEmpty($selection)) {
             return

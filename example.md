@@ -207,6 +207,13 @@ pertinent au moins pertinent :
 PS C:\dev\furet> fi
 ```
 
+Avec `fzf` installé, un panneau d'aperçu s'ouvre à droite de la liste
+(`furet preview {}`, moitié droite de l'écran) : il affiche le contenu du
+répertoire surligné — d'abord les sous-dossiers (terminés par `\`), puis
+les fichiers, tri sans tenir compte de la casse, au plus 50 lignes puis
+`… +<K> more`. Un chemin absent ou un fichier affiche `(not a directory)`.
+Ce panneau n'existe pas dans le menu numéroté de la console.
+
 ## Commandes `furet` directes (sans le hook pwsh)
 
 Ces sous-commandes sont utiles pour scripter ou déboguer ; elles écrivent

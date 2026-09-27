@@ -505,6 +505,33 @@ fn fi_fzf_branch_uses_the_stub_line_strips_ansi_and_jumps() {
 }
 
 #[test]
+fn fi_fzf_branch_passes_the_preview_options() {
+    let world = sandbox(&[]);
+    let out = world
+        .furet()
+        .arg("init")
+        .arg("pwsh")
+        .output()
+        .expect("furet init pwsh runs");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let script = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        script.matches("--preview \"furet preview {}\"").count(),
+        2,
+        "both fzf calls must pass the preview command: {script}"
+    );
+    assert_eq!(
+        script.matches("--preview-window \"right,50%\"").count(),
+        2,
+        "both fzf calls must pass the preview window: {script}"
+    );
+}
+
+#[test]
 fn import_zoxide_through_a_real_pwsh_pipe_imports_an_accented_path() {
     let world = sandbox(&["r\u{e9}f\u{e9}rence"]);
     let target = world.child("r\u{e9}f\u{e9}rence");

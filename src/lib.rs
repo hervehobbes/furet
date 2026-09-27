@@ -7,6 +7,7 @@ pub mod fallback;
 pub mod import;
 pub mod normalize;
 pub mod paths;
+pub mod preview;
 pub mod project;
 pub mod rank;
 pub mod remove;

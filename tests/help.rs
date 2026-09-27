@@ -96,3 +96,8 @@ fn home_help_is_pinned() {
 fn import_help_is_pinned() {
     snapshot_help("import_help", &["import", "--help"]);
 }
+
+#[test]
+fn preview_help_is_pinned() {
+    snapshot_help("preview_help", &["preview", "--help"]);
+}

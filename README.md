@@ -53,6 +53,10 @@ extra profile line.
 - `fi [<query>]` — interactively pick from ranked matches (uses `fzf` if
   installed, else a numbered console menu). `fi -l [<query>]` restricts the
   candidates to the current git project, before and after every fzf reload.
+  In the fzf branch, both calls (local and non-local) open a preview pane on
+  the right (`--preview "furet preview {}"`, `--preview-window
+  "right,50%"`) listing the highlighted directory's contents through the
+  `furet preview` subcommand; the console menu branch has no preview.
 - `furet query --local <query>` — the flag behind `f -l`: restrict the
   candidate pool to the current git project; combines with `--list`,
   `--explain`, `--color`, and `--no-ignore`. Outside a git repository it
@@ -120,6 +124,14 @@ extra profile line.
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
   default, so set it yourself, e.g. `$env:LS_COLORS = "di=1;36"`.
+- `furet preview <path>` — list a directory's contents for the fzf preview
+  pane: directories first (each name followed by `\`), then files, each
+  group sorted ignoring case, hidden entries included, at most 50 lines
+  then `… +<K> more`. Any ANSI SGR sequences in `<path>` are stripped
+  first, so the colored lines `fi` feeds fzf work as is. A missing path or
+  a file prints `(not a directory)`, an unreadable directory prints
+  `(unreadable: <error>)`; the exit code is 0 in every case. Never opens
+  the database and never reads `config.toml`, so it stays fast.
 
 ## Importing from zoxide
 
