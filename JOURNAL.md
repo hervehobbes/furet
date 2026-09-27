@@ -1,4 +1,10 @@
 ## 2026-09-27 — branch main — v0.2.0
+Done: lot 47b — `query_directories` no longer runs `storage::recall` when the query fell back to the disk walk:
+`Recall::Nothing` short-circuits it, `--explain` keeps the lookup so its `memory:` line is unchanged, and every
+output stays byte-identical (SPEC-v2 §24: memory never applies to the fallback). 1 cli test, red first.
+Decisions: none — the lot prompt pinned the change. Next: reviewer pass; Hervé tags v0.2.0.
+
+## 2026-09-27 — branch main — v0.2.0
 Query memory part B ships, and furet is 0.2.0. Done: lot 47 — pure `memory` (`key`, `matches`, `applies`,
 `promote`) puts the directory last chosen for the same §7.1 key first, only on the database pool, never the fallback;
 `calibration::failure_of` is the per-row test `probable_failures` now maps; `storage::recall` (read-only, no index)

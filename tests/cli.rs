@@ -1770,6 +1770,52 @@ fn add_query_journals_one_pick_row() {
 }
 
 #[test]
+fn a_fallback_query_skips_the_query_memory_lookup() {
+    // WHY: the pick's key is "zebra" but its directory's name does not match, so the query falls back.
+    let world = sandbox(&["projects/zebra", "origin"]);
+    let cwd = world.child("projects");
+    let picked = add_with_query(
+        &world,
+        &world.child("origin"),
+        "session-1",
+        &cwd,
+        "zebra",
+        None,
+    );
+    assert!(picked.status.success(), "stderr: {}", text(&picked.stderr));
+    let out = run(world
+        .furet()
+        .env("FURET_LOG", "debug")
+        .arg("query")
+        .arg("zebra")
+        .current_dir(&cwd));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&cwd.join("zebra"))
+        .expect("the fallback hit canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+    let log = log_contents(&world);
+    let ranking: Vec<&str> = log
+        .lines()
+        .filter(|line| line.contains("ranking"))
+        .collect();
+    assert_eq!(ranking.len(), 1, "one ranking line, got: {log:?}");
+    assert!(
+        ranking[0].contains("fallback=true"),
+        "the query fell back to the disk walk: {ranking:?}"
+    );
+    let memory: Vec<&str> = log
+        .lines()
+        .filter(|line| line.contains("query memory"))
+        .collect();
+    assert_eq!(memory.len(), 1, "one query memory line, got: {log:?}");
+    assert!(
+        memory[0].contains("recall=Nothing"),
+        "the fallback path skips the memory lookup: {memory:?}"
+    );
+}
+
+#[test]
 fn add_query_without_from_is_refused() {
     let world = sandbox(&["tokio"]);
     let mut cmd = world.furet();

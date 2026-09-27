@@ -51,3 +51,4 @@
 | 45 | fzf preview in `fi` and the `furet preview` subcommand (SPEC-v2 §23) |
 | 46 | Query memory, part A: journal menu and `fi` picks (`outcome = 'pick'`, `furet add --query`) (SPEC-v2 §24) |
 | 47 | Query memory, part B: the remembered directory ranks first (`query_memory` config key); version 0.2.0 (SPEC-v2 §24) |
+| 47b | Query-memory lookup skipped on the disk-fallback path (explain keeps it) |

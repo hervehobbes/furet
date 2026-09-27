@@ -499,10 +499,12 @@ fn query_directories(
         (&candidates, db_ranked)
     };
     debug!(candidates = pool.len(), fallback = is_fallback, "ranking");
-    let recall = if settings.query_memory {
-        storage::recall(&conn, &memory::key(query))?
-    } else {
+    let recall = if !settings.query_memory {
         Recall::Disabled
+    } else if is_fallback && !explain {
+        Recall::Nothing
+    } else {
+        storage::recall(&conn, &memory::key(query))?
     };
     debug!(?recall, "query memory");
     if explain {
