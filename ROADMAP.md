@@ -46,12 +46,12 @@
 | 40b | pwsh: `-l` as a declared switch on `f`/`fi`; the `-Native` completer fallback removed |
 | 41 | Opt-in `nucleo` stage-1 engine: `engine` config key, `furet query --engine`, `engine:` explain line (SPEC-v2 §20) |
 | 42 | `furet remove`: per-directory `[y/N/a/q]` confirmation, `--yes`, `--dry-run` |
+| 43 | `furet remove --missing`: full reconcile first, confirmation on by default |
 
 ## Planned — v0.2.0 (`prompts/SPEC-v2.md`)
 
 | Lot | Content | SPEC-v2 |
 |-----|---------|---------|
-| 43 | `furet remove --missing` (full reconcile first, confirmation by default) | §21 |
 | 44 | `furet stats [--top <n>]` | §22 |
 | 45 | fzf preview in `fi` and the `furet preview` subcommand | §23 |
 | 46 | Query memory, part A: journal menu and `fi` picks (`outcome = 'pick'`, `furet add --query`) | §24 |

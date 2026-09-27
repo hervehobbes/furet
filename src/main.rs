@@ -113,7 +113,11 @@ enum Command {
     },
     /// Forget known directories matching a name or path pattern.
     Remove {
-        pattern: String,
+        #[arg(required_unless_present = "missing")]
+        pattern: Option<String>,
+        /// Target known directories missing from disk; asks before each unless --yes.
+        #[arg(long)]
+        missing: bool,
         /// Ask before removing each directory ([y/N/a/q]).
         #[arg(long)]
         confirm: bool,
@@ -226,10 +230,17 @@ fn main() {
         Command::List { all, paths } => report(list_command(all, paths)),
         Command::Remove {
             pattern,
+            missing,
             confirm,
             yes,
             dry_run,
-        } => report(remove_command(&pattern, confirm, yes, dry_run)),
+        } => report(remove_command(
+            pattern.as_deref(),
+            missing,
+            confirm,
+            yes,
+            dry_run,
+        )),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -913,14 +924,22 @@ fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
 }
 
 fn remove_command(
-    pattern: &str,
+    pattern: Option<&str>,
+    missing: bool,
     confirm: bool,
     yes: bool,
     dry_run: bool,
 ) -> Result<(), Box<dyn Error>> {
-    debug!(pattern, confirm, yes, dry_run, "remove");
-    if pattern.trim().is_empty() {
-        return Err("empty pattern".into());
+    debug!(?pattern, missing, confirm, yes, dry_run, "remove");
+    let pattern = match pattern {
+        Some(pattern) if pattern.trim().is_empty() => {
+            return Err("empty pattern".into());
+        }
+        Some(pattern) => pattern,
+        None => return remove_missing(None, confirm, yes, dry_run),
+    };
+    if missing {
+        return remove_missing(Some(pattern), confirm, yes, dry_run);
     }
     let base = env::current_dir()?;
     let target = remove_target(pattern, &base);
@@ -962,6 +981,98 @@ fn remove_command(
     info!(count, "removed directories");
     for candidate in &selected {
         eprintln!("removed {}", candidate.path);
+    }
+    Ok(())
+}
+
+fn remove_missing(
+    pattern: Option<&str>,
+    confirm: bool,
+    yes: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn Error>> {
+    debug!(?pattern, confirm, yes, dry_run, "remove --missing");
+    let clock = SystemClock::new();
+    let conn = storage::open()?;
+    let mut absence = storage::missing_since_by_id(&conn)?;
+    let reconciled = soft_delete::reconcile(
+        storage::dir_entries(&conn)?,
+        &soft_delete::RealFilesystem,
+        clock.now(),
+    );
+    for (dir_id, update) in &reconciled.updates {
+        match update {
+            Some(ts) => {
+                absence.insert(*dir_id, *ts);
+            }
+            None => {
+                absence.remove(dir_id);
+            }
+        }
+    }
+    if !dry_run {
+        for (dir_id, update) in &reconciled.updates {
+            storage::set_missing_since(&conn, *dir_id, *update)?;
+        }
+    }
+    let target = match pattern {
+        Some(pattern) => Some(remove_target(pattern, &env::current_dir()?)),
+        None => None,
+    };
+    let mut candidates: Vec<(storage::DirEntry, Timestamp)> = reconciled
+        .entries
+        .into_iter()
+        .filter(|entry| entry.missing)
+        .filter(|entry| match &target {
+            Some(target) => remove::matches(target, &entry.path),
+            None => true,
+        })
+        .map(|entry| {
+            let since = absence.remove(&entry.id).unwrap_or_else(|| clock.now());
+            (entry, since)
+        })
+        .collect();
+    candidates.sort_by_key(|(entry, _)| entry.path.to_lowercase());
+    if candidates.is_empty() {
+        return Err(match pattern {
+            Some(pattern) => format!("no missing known directory matches '{pattern}'").into(),
+            None => "no missing known directory".into(),
+        });
+    }
+    if dry_run {
+        for (candidate, _) in &candidates {
+            eprintln!("would remove {}", candidate.path);
+        }
+        return Ok(());
+    }
+    let questions: Vec<String> = candidates
+        .iter()
+        .map(|(candidate, since)| {
+            Ok::<String, Box<dyn Error>>(format!(
+                "Remove {} (missing since {})? [y/N/a/q] ",
+                candidate.path,
+                storage::format_local_time(&conn, *since)?
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let decisions = if yes {
+        vec![true; candidates.len()]
+    } else {
+        remove::confirm_each(&questions, ask)
+    };
+    let selected: Vec<(i64, String)> = candidates
+        .iter()
+        .zip(&decisions)
+        .filter_map(|((entry, _), &remove)| remove.then_some((entry.id, entry.path.clone())))
+        .collect();
+    if selected.is_empty() {
+        return Err("nothing removed".into());
+    }
+    let ids: Vec<i64> = selected.iter().map(|(id, _)| *id).collect();
+    let count = storage::remove_dirs(&conn, &ids)?;
+    info!(count, "removed missing directories");
+    for (_, path) in &selected {
+        eprintln!("removed {path}");
     }
     Ok(())
 }

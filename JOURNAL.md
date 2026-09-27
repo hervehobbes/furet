@@ -1,4 +1,13 @@
 ## 2026-09-27 — branch main — v0.1.1
+Done: lot 43 — `remove --missing`: full reconcile (`soft_delete::reconcile` on every row,
+persisted unless `--dry-run`), absence dates computed in memory (stored `missing_since_by_id`
+overlaid with the updates, formatted by `format_local_time` like `furet list`), questions on
+by default (`Remove <path> (missing since <date>)? [y/N/a/q] `) unless `--yes`, now effective;
+pattern optional only with `--missing` (clap exit 2 without either); `no missing known
+directory[ matches '<pattern>']` exit 1. 8 new cli tests + 2 storage unit tests, red first.
+Next: reviewer pass.
+
+## 2026-09-27 — branch main — v0.1.1
 Done: lot 42 — `remove --confirm` now asks per directory (`Remove <path>? [y/N/a/q] `, y/n/a/q,
 EOF=quit, re-ask on invalid; removals applied after all questions in one `remove_dirs` call), via
 pure `Answer`/`parse_answer`/`confirm_each` in `src/remove.rs`; new `--yes` (accepted, inert until

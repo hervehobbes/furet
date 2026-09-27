@@ -401,6 +401,39 @@ would remove D:\x\Ombi-v4
 Un répertoire oublié revient dans la base au prochain `furet add`, comme
 avec zoxide.
 
+### Nettoyer les dossiers disparus
+
+`furet remove --missing` réconcilie d’abord toute la base avec le disque,
+puis cible les répertoires vraiment disparus : un dossier revenu — clé USB
+rebranchée, lecteur réseau de retour — n’est jamais supprimé et son
+marqueur périmé est effacé. Comme un disque débranché ressemble lui
+aussi à un dossier disparu, la question est posée **par défaut**, avec la
+date de disparition :
+
+```powershell
+PS C:\dev\furet> furet remove --missing
+Remove D:\x\Ombi-v4 (missing since 2026-09-25T18:42:10)? [y/N/a/q] y
+Remove E:\backup\old (missing since 2026-09-20T09:03:55)? [y/N/a/q] n
+removed D:\x\Ombi-v4
+```
+
+`--yes` supprime tout sans aucune question, et `--dry-run` montre ce qui
+serait supprimé (`would remove <chemin>`) sans rien écrire en base —
+même les marqueurs de disparition restent tels quels :
+
+```powershell
+PS C:\dev\furet> furet remove --missing --yes
+removed D:\x\Ombi-v4
+removed E:\backup\old
+
+PS C:\dev\furet> furet remove --missing --dry-run
+would remove D:\x\Ombi-v4
+would remove E:\backup\old
+```
+
+Un motif peut restreindre la sélection : `furet remove ombi* --missing`
+ne vise que les disparus dont le chemin correspond au motif.
+
 ### Importer la base zoxide
 
 Pour démarrer avec une base déjà remplie plutôt que vide :

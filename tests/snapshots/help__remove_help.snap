@@ -4,12 +4,13 @@ expression: text
 ---
 Forget known directories matching a name or path pattern
 
-Usage: furet remove [OPTIONS] <PATTERN>
+Usage: furet remove [OPTIONS] [PATTERN]
 
 Arguments:
-  <PATTERN>  
+  [PATTERN]  
 
 Options:
+      --missing  Target known directories missing from disk; asks before each unless --yes
       --confirm  Ask before removing each directory ([y/N/a/q])
       --yes      Never ask for confirmation (for scripts)
       --dry-run  Print what would be removed and change nothing

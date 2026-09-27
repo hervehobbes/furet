@@ -356,7 +356,7 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   stored `missing_since` is shown as is, with no soft-delete
   reconciliation. An empty database prints nothing, exit 0
   (`src/storage.rs`, `dir_listing`; `main::list_command`).
-- `furet remove <pattern> [--confirm | --yes] [--dry-run]` — forgets known directories matching
+- `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` — forgets known directories matching
   `<pattern>`, **hard-deleting** their `dirs` row (no `missing_since` reuse,
   no `removed_at` column, no schema change; not in SPEC — scope extension
   decided by Hervé 2026-09-26). zoxide's `remove` takes exact paths only;
@@ -391,8 +391,8 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   is applied. The protocol lives in `src/remove.rs`
   (`Answer`/`parse_answer`/`confirm_each`); `main::ask` wires `ask` to
   `eprint!` + flush + `stdin().read_line`, a 0-byte read meaning EOF.
-  `--yes` never asks — accepted and inert in this lot, its effect comes
-  with `--missing` (lot 43); `conflicts_with = "confirm"`, so
+  `--yes` never asks — for scripts; with `--missing` it skips the
+  default questions. `conflicts_with = "confirm"`, so
   `--confirm --yes` is refused by clap, exit 2. `--dry-run` computes the
   candidates exactly as a real removal and prints `would remove <path>` per
   candidate on stderr; it asks no question, even with `--confirm`, writes
@@ -407,6 +407,34 @@ and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
   visits' `from_dir_id` (set to `NULL`) so foreign keys stay enforced without
   `ON DELETE`. A removed directory comes back on the next `furet add` of it,
   exactly like zoxide (BACKLOG item 3: not prevented).
+  `--missing` (lot 43, SPEC-v2 §21) targets the known directories that are
+  really gone. `main::remove_missing` first reads every stored marker
+  (`storage::missing_since_by_id`), then runs `soft_delete::reconcile` over
+  **every** `dirs` row with `SystemClock`'s now, overlays the updates in
+  memory (`Some` sets the date, `None` removes it), and — unless
+  `--dry-run` — persists them with `storage::set_missing_since`, exactly as
+  `reconcile_on_disk` does; under `--dry-run` nothing is persisted, so the
+  date still works. A directory that came back despite a stale
+  `missing_since` is never a candidate and its marker is cleared (except
+  under `--dry-run`). Candidates are the reconciled entries with
+  `missing == true`, narrowed by the pattern (`remove::matches` on
+  `remove_target`, unchanged syntax) when one is given, sorted by
+  lowercased path. No candidate → `furet: no missing known directory`
+  (no pattern) or `furet: no missing known directory matches '<pattern>'`,
+  exit 1. Confirmation is **on by default**: `remove::confirm_each` runs
+  unless `--yes` is given; `--confirm` is accepted and changes nothing.
+  Each question carries the absence date — `Remove <path> (missing since
+  <date>)? [y/N/a/q] ` — `<date>` being the overlaid timestamp (the stored
+  `missing_since`, or the reconcile's now for a directory just marked)
+  formatted by `storage::format_local_time` with the same SQLite
+  `strftime('%Y-%m-%dT%H:%M:%S', <ts>, 'unixepoch', 'localtime')`
+  expression as `dir_listing`. `--dry-run` prints `would remove <path>`
+  per candidate — no date — asks nothing, and persists nothing; removal
+  itself, `removed <path>` lines, `nothing removed` (exit 1), and the
+  empty-pattern error (`furet: empty pattern`, exit 1, with or without
+  `--missing`) are lot 42's. The pattern is optional only with `--missing`
+  (`required_unless_present = "missing"`): a bare `furet remove` is
+  refused by clap, exit 2. stdout stays empty throughout.
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -451,7 +479,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
-| `remove <pattern> [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`) |
+| `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 

@@ -72,8 +72,8 @@ extra profile line.
   also lists directories missing from disk, with a `present`/`missing`
   column. Rows are ordered alphabetically by path, ignoring case.
   `--paths` (`-p`) prints the path alone, also with `--all`.
-- `furet remove <pattern> [--confirm | --yes] [--dry-run]` — forget known
-  directories matching
+- `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` —
+  forget known directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
   **names** against every segment of the path: `ombi*` removes `ombi` and
   its known subdirectories, and `*appdata*` removes every known directory
@@ -92,6 +92,16 @@ extra profile line.
   `--confirm --yes` is refused. `--dry-run` prints
   `would remove <path>` per match on stderr, asks nothing even with
   `--confirm`, and never touches the database.
+  Without a pattern, `--missing` reconciles every known directory with the
+  disk first, then targets the ones that are really gone: a directory that
+  came back — a reconnected USB key, a network drive back online — is never
+  removed and its stale marker is cleared. Questions are asked **by
+  default** (`Remove <path> (missing since <date>)? [y/N/a/q]`, the date in
+  local time), because a disconnected USB or network drive looks missing
+  too; `--yes` skips them. A pattern narrows the selection
+  (`furet remove ombi* --missing`); under `--dry-run` the reconciliation
+  stays in memory — no marker is written or cleared. Without a pattern and
+  without `--missing`, clap refuses the command (exit 2).
   Quote the pattern under bash (`'ombi*'`); PowerShell passes it as is.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the

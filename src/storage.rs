@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -251,6 +251,33 @@ pub fn set_missing_since(
     Ok(())
 }
 
+/// Every `dirs` row id with a set `missing_since`, read before overlaying
+/// a reconcile's in-memory updates.
+pub fn missing_since_by_id(conn: &Connection) -> Result<HashMap<i64, Timestamp>, StorageError> {
+    let mut stmt =
+        conn.prepare("SELECT id, missing_since FROM dirs WHERE missing_since IS NOT NULL")?;
+    let markers = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                Timestamp::from_unix_seconds(row.get(1)?),
+            ))
+        })?
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    Ok(markers)
+}
+
+/// Formats `ts` in local time with the same SQLite expression as
+/// `dir_listing`.
+pub fn format_local_time(conn: &Connection, ts: Timestamp) -> Result<String, StorageError> {
+    conn.query_row(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+        params![ts.unix_seconds()],
+        |row| row.get(0),
+    )
+    .map_err(StorageError::from)
+}
+
 /// Deletes the `visits` and `queries` rows older than `cutoff`, keeping every
 /// `dirs` row; returns how many visits and queries were deleted.
 pub fn purge_before(conn: &Connection, cutoff: Timestamp) -> Result<(usize, usize), StorageError> {
@@ -431,9 +458,9 @@ pub fn dir_path_by_id(conn: &Connection, dir_id: i64) -> Result<Option<String>, 
 mod tests {
     use super::{
         config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
-        insert_query, insert_visit, known_keys, last_visited_dir, logs_dir, open, open_at,
-        purge_before, query_log, remove_dirs, resolve_data_dir, set_missing_since, upsert_dir,
-        visit_log,
+        format_local_time, insert_query, insert_visit, known_keys, last_visited_dir, logs_dir,
+        missing_since_by_id, open, open_at, purge_before, query_log, remove_dirs, resolve_data_dir,
+        set_missing_since, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use rusqlite::{Connection, params};
@@ -952,6 +979,39 @@ mod tests {
             )
             .expect("the reactivated row reads back");
         assert_eq!(cleared, None);
+    }
+
+    #[test]
+    fn missing_since_by_id_returns_only_marked_rows() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let gone = upsert_dir(&conn, "c:\\dev\\gone", "c:\\dev\\gone", at(100))
+            .expect("the gone fixture dir upserts");
+        upsert_dir(&conn, "c:\\dev\\ok", "c:\\dev\\ok", at(100))
+            .expect("the ok fixture dir upserts");
+        set_missing_since(&conn, gone, Some(at(500))).expect("marking the dir missing runs");
+        let marked = missing_since_by_id(&conn).expect("the stored markers read");
+        assert_eq!(marked.len(), 1);
+        assert_eq!(marked.get(&gone), Some(&at(500)));
+        set_missing_since(&conn, gone, None).expect("reactivating the dir runs");
+        let cleared = missing_since_by_id(&conn).expect("the stored markers read");
+        assert!(cleared.is_empty());
+    }
+
+    #[test]
+    fn format_local_time_matches_the_list_format() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let formatted =
+            format_local_time(&conn, at(150)).expect("the timestamp formats in local time");
+        let expected: String = conn
+            .query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+                params![at(150).unix_seconds()],
+                |row| row.get(0),
+            )
+            .expect("the expected timestamp formats");
+        assert_eq!(formatted, expected);
     }
 
     #[test]

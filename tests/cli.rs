@@ -227,6 +227,25 @@ fn remove_with(
     run(&mut cmd)
 }
 
+fn remove_missing(
+    sandbox: &Sandbox,
+    pattern: Option<&str>,
+    cwd: &Path,
+    flags: &[&str],
+    answer: &str,
+) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("remove");
+    if let Some(pattern) = pattern {
+        cmd.arg(pattern);
+    }
+    for flag in flags {
+        cmd.arg(flag);
+    }
+    cmd.current_dir(cwd).write_stdin(answer);
+    run(&mut cmd)
+}
+
 fn missing_since_values(conn: &Connection) -> Vec<i64> {
     let mut statement = conn
         .prepare("SELECT COALESCE(missing_since, -1) FROM dirs ORDER BY path")
@@ -2938,6 +2957,204 @@ fn remove_dry_run_with_no_match_fails_like_a_real_remove() {
         "furet: no known directory matches 'nope*'\n"
     );
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one() {
+    let world = sandbox(&["gone", "back", "present"]);
+    for name in ["gone", "back", "present"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let gone = canonical_child(&world, "gone");
+    std::fs::remove_dir_all(world.child("gone")).expect("gone vanishes from disk");
+    missing_since_at(&world, &world.child("back"), 1_000);
+    let out = remove_missing(&world, None, world.tree.path(), &["--missing", "--yes"], "");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    assert_eq!(text(&out.stderr), format!("removed {gone}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 2);
+    let back_missing: Option<i64> = conn
+        .query_row(
+            "SELECT missing_since FROM dirs WHERE path = ?1",
+            params![canonical_child(&world, "back")],
+            |row| row.get(0),
+        )
+        .expect("back's row reads back");
+    assert_eq!(back_missing, None, "the stale marker is cleared");
+}
+
+#[test]
+fn remove_missing_asks_by_default_with_the_absence_date() {
+    let world = sandbox(&["gone"]);
+    assert!(
+        add(&world, &world.child("gone"), "session-1", None, None)
+            .status
+            .success()
+    );
+    missing_since_at(&world, &world.child("gone"), 1_700_000_000);
+    let gone = canonical_child(&world, "gone");
+    std::fs::remove_dir_all(world.child("gone")).expect("gone vanishes from disk");
+    let out = remove_missing(&world, None, world.tree.path(), &["--missing"], "y\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    let date = local_time(&db(&world), 1_700_000_000);
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {gone} (missing since {date})? [y/N/a/q] removed {gone}\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn remove_missing_confirm_is_accepted_and_still_asks() {
+    let world = sandbox(&["gone"]);
+    assert!(
+        add(&world, &world.child("gone"), "session-1", None, None)
+            .status
+            .success()
+    );
+    missing_since_at(&world, &world.child("gone"), 1_700_000_000);
+    let gone = canonical_child(&world, "gone");
+    std::fs::remove_dir_all(world.child("gone")).expect("gone vanishes from disk");
+    let out = remove_missing(
+        &world,
+        None,
+        world.tree.path(),
+        &["--missing", "--confirm"],
+        "n\n",
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    let date = local_time(&db(&world), 1_700_000_000);
+    assert_eq!(
+        text(&out.stderr),
+        format!("Remove {gone} (missing since {date})? [y/N/a/q] furet: nothing removed\n")
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_missing_with_a_pattern_keeps_other_missing_directories() {
+    let world = sandbox(&["gone-a", "gone-b"]);
+    for name in ["gone-a", "gone-b"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let gone_a = canonical_child(&world, "gone-a");
+    let gone_b = canonical_child(&world, "gone-b");
+    std::fs::remove_dir_all(world.child("gone-a")).expect("gone-a vanishes from disk");
+    std::fs::remove_dir_all(world.child("gone-b")).expect("gone-b vanishes from disk");
+    let out = remove_missing(
+        &world,
+        Some("gone-a"),
+        world.tree.path(),
+        &["--missing", "--yes"],
+        "",
+    );
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), format!("removed {gone_a}\n"));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 1);
+    let kept: Option<i64> = conn
+        .query_row(
+            "SELECT missing_since FROM dirs WHERE path = ?1",
+            params![gone_b],
+            |row| row.get(0),
+        )
+        .expect("gone-b's row reads back");
+    assert!(
+        kept.is_some(),
+        "gone-b stays, marked missing by the reconcile"
+    );
+}
+
+#[test]
+fn remove_missing_without_missing_directories_fails() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let plain = remove_missing(&world, None, world.tree.path(), &["--missing"], "");
+    assert_eq!(plain.status.code(), Some(1));
+    assert!(plain.stdout.is_empty());
+    assert_eq!(text(&plain.stderr), "furet: no missing known directory\n");
+    std::fs::remove_dir_all(world.child("tokio")).expect("tokio vanishes from disk");
+    let with_pattern = remove_missing(&world, Some("nope"), world.tree.path(), &["--missing"], "");
+    assert_eq!(with_pattern.status.code(), Some(1));
+    assert!(with_pattern.stdout.is_empty());
+    assert_eq!(
+        text(&with_pattern.stderr),
+        "furet: no missing known directory matches 'nope'\n"
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_missing_dry_run_changes_nothing() {
+    let world = sandbox(&["gone", "back"]);
+    for name in ["gone", "back"] {
+        assert!(
+            add(&world, &world.child(name), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let jumped = query(&world, "back", world.tree.path(), false);
+    assert!(jumped.status.success(), "stderr: {}", text(&jumped.stderr));
+    let gone = canonical_child(&world, "gone");
+    missing_since_at(&world, &world.child("back"), 1_000);
+    std::fs::remove_dir_all(world.child("gone")).expect("gone vanishes from disk");
+    let conn = db(&world);
+    let before = dry_run_state(&conn);
+    assert!(before.2 >= 1, "at least one queries row was journaled");
+    let out = remove_missing(
+        &world,
+        None,
+        world.tree.path(),
+        &["--missing", "--dry-run"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0));
+    assert!(out.stdout.is_empty(), "remove never writes to stdout");
+    assert_eq!(text(&out.stderr), format!("would remove {gone}\n"));
+    assert_eq!(dry_run_state(&conn), before);
+}
+
+#[test]
+fn remove_without_a_pattern_or_missing_is_refused() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    for flags in [&[] as &[&str], &["--yes"], &["--dry-run"]] {
+        let out = remove_missing(&world, None, world.tree.path(), flags, "");
+        assert_eq!(out.status.code(), Some(2), "flags: {flags:?}");
+        assert!(out.stdout.is_empty(), "flags: {flags:?}");
+    }
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 1);
+}
+
+#[test]
+fn remove_missing_with_an_empty_pattern_fails_like_a_plain_remove() {
+    let world = sandbox(&[]);
+    for pattern in ["", "   "] {
+        let out = remove_missing(&world, Some(pattern), world.tree.path(), &["--missing"], "");
+        assert_eq!(out.status.code(), Some(1), "pattern: {pattern:?}");
+        assert!(out.stdout.is_empty(), "pattern: {pattern:?}");
+        assert_eq!(text(&out.stderr), "furet: empty pattern\n");
+    }
 }
 
 #[test]
