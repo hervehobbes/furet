@@ -1,9 +1,8 @@
 ## 2026-09-27 — branch main — v0.1.1
-Done: lot 45 — both `fi` fzf calls gain `--preview "furet preview {}"` + `--preview-window "right,50%"`;
+Done: lot 45 — both `fi` fzf calls pass `--preview "furet preview {}"` + `--preview-window "right,50%"`;
 new `furet preview <path>`: SGR-stripped arg, dirs (`name\`) then files, case-insensitive sort with
-original-name tiebreak, 50 lines + `… +K more`, `(not a directory)` for missing/file, `(unreadable: …)`,
-exit 0, no DB, no config — 4th stdout exception in CONTRACTS. Pure src/preview.rs, disk access in main.rs.
-3 unit + 5 cli + 1 pwsh tests + preview help snapshot, red first.
+original tiebreak, 50 lines + `… +K more`, `(not a directory)` (missing/file) or `(unreadable: …)`; exit 0
+always, no DB, no config — 4th stdout exception. Pure src/preview.rs; 3 unit + 5 cli + 1 pwsh + help snapshot, red first.
 Manual check (fzf 0.74.2 on PATH): real fzf run in a minimized console; the preview pane listed the colored
 `C:\temp\furet lot45\x & y` line — `{}` quoting under cmd.exe and ANSI stripping confirmed.
 zoxide: takes the dedicated-preview-command idea; declines its unix-only `enable_preview` (no-op on
