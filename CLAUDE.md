@@ -31,6 +31,9 @@ The binary writes only the jump target path to `stdout`. Menus, errors, and
 logs go to `stderr`, the console, or the log file — never `stdout`.
 The accepted exceptions are listed in `CONTRACTS.md`; adding one is
 Hervé's decision.
+Enforced at compile time by `clippy::print_stdout` + `disallowed-methods`
+on `std::io::stdout` (`[lints]` in `Cargo.toml`, `clippy.toml`); the single
+funnel is `stdout_line` in `src/main.rs`.
 
 ## Comments — machine-enforced, not prose
 - No `//` line comments except a single-line `// WHY: ...`.
