@@ -1,4 +1,9 @@
 ## 2026-09-29 — branch main — v0.2.0
+Done: DATABASE.md sync test — one unit test in `src/storage.rs` migrates an in-memory connection and checks every table, column, index and `user_version` against DATABASE.md, and the reverse for tables and indexes. No production code change.
+Decisions: reuses the private `migrate` from the child test module; DATABASE.md is read with `include_str!` and plain string operations. Executor was a Claude subagent, not GLM (Hervé's routing change).
+Next: reviewer pass from a Claude Code session.
+
+## 2026-09-29 — branch main — v0.2.0
 Done: lot 40 — docs catch-up: README Status now covers lots 0-39, ARCHITECTURE names `remove` on the pure side,
 and the three stale `// WHY:` comments in `src/main.rs` now say stdout goes through `stdout_line`. No code change.
 Decisions: ROADMAP.md already had rows 22-39, so it is untouched; lot numbers 39 (twice) and 40 collide with

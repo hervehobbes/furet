@@ -668,6 +668,90 @@ mod tests {
         .expect("sqlite_master is readable")
     }
 
+    fn schema_names(conn: &Connection, kind: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
+            )
+            .expect("sqlite_master is queryable");
+        stmt.query_map([kind], |row| row.get::<_, String>(0))
+            .expect("sqlite_master rows read")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("sqlite_master names decode")
+    }
+
+    fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info(?1) ORDER BY cid")
+            .expect("pragma_table_info is queryable");
+        stmt.query_map([table], |row| row.get::<_, String>(0))
+            .expect("table_info rows read")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("table_info names decode")
+    }
+
+    fn section_of<'a>(doc: &'a str, table: &str) -> Option<&'a str> {
+        let heading = format!("### `{table}`");
+        let start = doc.lines().position(|l| l.starts_with(&heading))?;
+        let lines: Vec<&str> = doc.lines().collect();
+        let end = lines[start + 1..]
+            .iter()
+            .position(|l| l.starts_with("### ") || l.starts_with("## "))
+            .map_or(lines.len(), |n| start + 1 + n);
+        let begin = doc.lines().take(start).map(|l| l.len() + 1).sum::<usize>();
+        let len = lines[start..end].iter().map(|l| l.len() + 1).sum::<usize>();
+        Some(&doc[begin..(begin + len).min(doc.len())])
+    }
+
+    #[test]
+    fn database_md_documents_every_table_column_and_index() {
+        let mut conn = Connection::open_in_memory().expect("an in-memory database opens");
+        super::migrate(&mut conn).expect("the migrations apply in memory");
+        let doc = include_str!("../DATABASE.md").replace("\r\n", "\n");
+        let tables = schema_names(&conn, "table");
+        let indexes = schema_names(&conn, "index");
+
+        for table in &tables {
+            let section = section_of(&doc, table).unwrap_or_else(|| {
+                panic!("DATABASE.md lacks a `### `{table}`` heading; update DATABASE.md")
+            });
+            for column in table_columns(&conn, table) {
+                let row = format!("| `{column}` |");
+                assert!(
+                    section.lines().any(|l| l.starts_with(&row)),
+                    "DATABASE.md lacks the `{column}` column row in the `{table}` section; update DATABASE.md"
+                );
+            }
+        }
+        for index in &indexes {
+            let row = format!("| `{index}` |");
+            assert!(
+                doc.lines().any(|l| l.starts_with(&row)),
+                "DATABASE.md lacks the `{index}` index row; update DATABASE.md"
+            );
+        }
+        let version = user_version(&conn);
+        let pragma_row = format!("| `user_version` | `{version}` |");
+        assert!(
+            doc.lines().any(|l| l.starts_with(&pragma_row)),
+            "DATABASE.md does not show user_version {version} in its pragma table; update DATABASE.md"
+        );
+        for heading in doc.lines().filter_map(|l| l.strip_prefix("### `")) {
+            let name = heading.split('`').next().unwrap_or_default();
+            assert!(
+                tables.iter().any(|t| t == name),
+                "DATABASE.md documents table `{name}` that the schema does not have; update DATABASE.md"
+            );
+        }
+        for row in doc.lines().filter_map(|l| l.strip_prefix("| `idx_")) {
+            let name = format!("idx_{}", row.split('`').next().unwrap_or_default());
+            assert!(
+                indexes.contains(&name),
+                "DATABASE.md documents index `{name}` that the schema does not have; update DATABASE.md"
+            );
+        }
+    }
+
     #[test]
     fn fresh_database_creates_all_tables_and_reaches_user_version_3() {
         let (_dir, path) = temp_db();
