@@ -209,7 +209,11 @@ integration (`f`, `fi`) covered by executed pwsh tests, soft delete,
 in `--help`, daily-rotated file logging, `config.toml` overrides, the
 configurable `home`, stage-2's query-length rule, and importing zoxide's
 database (`furet import zoxide`). Lot 22 added a 42-case ranking scenario
-suite. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI
+suite. Lots 23 through 39 added a tab completer on the jump function's first
+argument, `furet list` (`--all`, `--paths`, ordered by path), `ts` indexes on
+`visits` and `queries` with the `retention_days` purge in `furet add`,
+`furet remove <pattern>`, the `exclude_dirs` config key, and a compile-time
+lint that keeps stdout reserved for the jump target. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI
 contracts.
 
 Version 0.2.0 completes `prompts/SPEC-v2.md`: completions for `furet`'s

@@ -1021,7 +1021,7 @@ fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
 fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
     debug!(failures, "queries");
     if !failures {
@@ -1061,7 +1061,7 @@ fn print_result(path: &str) {
     stdout_line(path);
 }
 
-// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
 fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
     debug!(all, paths, "list");
     let conn = storage::open()?;
@@ -1089,7 +1089,7 @@ fn list_command(all: bool, paths: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
 fn stats_command(top: usize) -> Result<(), Box<dyn Error>> {
     debug!(top, "stats");
     let clock = SystemClock::new();

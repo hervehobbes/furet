@@ -1,4 +1,11 @@
 ## 2026-09-29 — branch main — v0.2.0
+Done: lot 40 — docs catch-up: README Status now covers lots 0-39, ARCHITECTURE names `remove` on the pure side,
+and the three stale `// WHY:` comments in `src/main.rs` now say stdout goes through `stdout_line`. No code change.
+Decisions: ROADMAP.md already had rows 22-39, so it is untouched; lot numbers 39 (twice) and 40 collide with
+later JOURNAL entries, left for Hervé. Executor was a Claude subagent, not GLM (Hervé's routing change).
+Next: reviewer pass from a Claude Code session.
+
+## 2026-09-29 — branch main — v0.2.0
 Done: lot 39 — stdout discipline is compile-time. `[lints]` adds `unsafe_code`, `dbg_macro`, `todo`, `unimplemented`;
 `clippy.toml` disallows `std::io::stdout` with a reason; `stdout_line` in `src/main.rs` is the binary's only stdout
 writer and only `#[allow]` holder, replacing lot 0's two per-site allows. Lint proof: a temp `println!` in
