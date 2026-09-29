@@ -917,6 +917,8 @@ mod tests {
         );
     }
 
+    // WHY: edition 2024 makes env mutation unsafe; this test must set FURET_DATA_DIR.
+    #[allow(unsafe_code)]
     #[test]
     fn furet_data_dir_overrides_the_database_location() {
         let dir = tempfile::tempdir().expect("a fresh temporary directory");

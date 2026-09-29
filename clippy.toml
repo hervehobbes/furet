@@ -2,3 +2,10 @@
 # expect_used is denied in [lints.clippy] (Cargo.toml); this option exempts
 # test code per clippy's allow-in-tests convention.
 allow-expect-in-tests = true
+
+# CLAUDE.md stdout discipline: stdout carries only the jump target and the
+# documented exceptions. Every write funnels through stdout_line in
+# src/main.rs; print_stdout alone misses io::stdout() handles.
+disallowed-methods = [
+    { path = "std::io::stdout", reason = "stdout writes go through stdout_line in src/main.rs (CLAUDE.md stdout discipline)" },
+]

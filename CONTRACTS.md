@@ -293,7 +293,13 @@ Only jump targets reach stdout: `furet query`'s resolved match and its
 configured directory — plus `init pwsh`'s generated script. Everything
 else (menus, `--explain`, errors) goes to stderr, with four documented
 exceptions below. Every invocation also writes structured logs to
-`<data dir>/logs/` (SPEC §17) — never to stdout or stderr.
+`<data dir>/logs/` (SPEC §17) — never to stdout or stderr. The rule is
+compile-time enforced: `clippy::print_stdout` + `disallowed-methods` on
+`std::io::stdout` (`[lints]` in `Cargo.toml`, `clippy.toml`), with every
+write funnelled through `stdout_line` in `src/main.rs`, the only
+`#[allow]` holder. `unsafe_code` is `deny`, not `forbid`, because
+`storage.rs`'s `furet_data_dir_overrides_the_database_location` test
+needs edition-2024 `unsafe` env mutation (one fn-scoped allow).
 
 `furet --help`/`-h` ends with three runtime-resolved trailer lines —
 `Database file:`, `Config file: … (found | not found, defaults apply)`, and

@@ -1,3 +1,13 @@
+## 2026-09-29 — branch main — v0.2.0
+Done: lot 39 — stdout discipline is compile-time. `[lints]` adds `unsafe_code`, `dbg_macro`, `todo`, `unimplemented`;
+`clippy.toml` disallows `std::io::stdout` with a reason; `stdout_line` in `src/main.rs` is the binary's only stdout
+writer and only `#[allow]` holder, replacing lot 0's two per-site allows. Lint proof: a temp `println!` in
+`normalize.rs` and a temp `io::stdout()` in `main.rs` both fail clippy. No behavior change, no `.snap` touched.
+Decisions: Hervé chose `unsafe_code = "deny"` (not `forbid`) plus one fn-scoped `#[allow(unsafe_code)]` on the
+`FURET_DATA_DIR` storage test — edition 2024 needs `unsafe` env mutation and `forbid` cannot be allowed even in tests;
+noted in CONTRACTS.md. Steps 1–2 alone stayed green because lot 0 had already planted per-site allows.
+Next: reviewer pass from a Claude Code session.
+
 ## 2026-09-27 — branch main — v0.2.0
 Done: lot 49 — `config::parse`'s key match moved into `apply(key, value, settings, warnings)`; `explain::render`'s two
 candidate loops moved into `render_evaluated` and `render_eliminated`. Pure refactor: warnings and rendered bytes

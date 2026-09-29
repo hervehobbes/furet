@@ -1051,9 +1051,14 @@ fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[allow(clippy::print_stdout)]
+// WHY: the only stdout write in the binary (CLAUDE.md stdout discipline); every command funnels here.
+#[allow(clippy::print_stdout, clippy::disallowed_methods)]
+fn stdout_line(line: &str) {
+    println!("{line}");
+}
+
 fn print_result(path: &str) {
-    println!("{path}");
+    stdout_line(path);
 }
 
 // WHY: a standalone reporting tool, not the f/fi jump path, so it may use stdout freely.
@@ -1287,10 +1292,9 @@ fn ask(question: &str) -> Option<String> {
     Some(line)
 }
 
-#[allow(clippy::print_stdout)]
 fn print_lines(lines: &[String]) {
     for line in lines {
-        println!("{line}");
+        stdout_line(line);
     }
 }
 

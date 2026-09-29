@@ -39,8 +39,14 @@ tempfile = "3.27.0"
 lto = true
 strip = true
 
+[lints.rust]
+unsafe_code = "deny"
+
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
 print_stdout = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
 let_underscore_must_use = "deny"
