@@ -4719,3 +4719,83 @@ fn an_invalid_alias_prefix_keeps_bang() {
         );
     }
 }
+
+#[test]
+fn alias_complete_lists_matching_names_ignoring_case_in_key_order() {
+    let world = sandbox(&["ombi", "omnitool", "apps", "1"]);
+    for name in ["ombi", "OmniTool", "apps", "1"] {
+        assert!(
+            alias(&world, &["add", name, name], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let out = alias(&world, &["complete", "!OM"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!(
+            "!ombi\t{}\n!OmniTool\t{}\n",
+            canonical_child(&world, "ombi"),
+            canonical_child(&world, "omnitool")
+        )
+    );
+}
+
+#[test]
+fn alias_complete_on_the_bare_prefix_lists_every_alias() {
+    let world = sandbox(&["ombi", "omnitool", "apps", "1"]);
+    for name in ["ombi", "OmniTool", "apps", "1"] {
+        assert!(
+            alias(&world, &["add", name, name], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let out = alias(&world, &["complete", "!"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let names: Vec<&str> = stdout
+        .lines()
+        .map(|line| line.split('\t').next().unwrap_or_default())
+        .collect();
+    assert_eq!(names, ["!1", "!apps", "!ombi", "!OmniTool"]);
+}
+
+#[test]
+fn alias_complete_ignores_a_word_without_the_configured_prefix() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = alias(&world, &["complete", "om"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    write_config(&world, "alias_prefix = \"=\"");
+    let bang = alias(&world, &["complete", "!om"], world.tree.path());
+    assert!(bang.status.success(), "stderr: {}", text(&bang.stderr));
+    assert!(bang.stdout.is_empty());
+    let equals = alias(&world, &["complete", "=om"], world.tree.path());
+    assert!(equals.status.success(), "stderr: {}", text(&equals.stderr));
+    assert_eq!(
+        text(&equals.stdout),
+        format!("=ombi\t{}\n", canonical_child(&world, "ombi"))
+    );
+}
+
+#[test]
+fn alias_complete_writes_nothing() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = alias(&world, &["complete", "!om"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}

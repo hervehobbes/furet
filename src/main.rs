@@ -189,6 +189,13 @@ enum AliasAction {
         /// Name of the alias, case-insensitive.
         name: String,
     },
+    /// Print alias completions for the pwsh completer.
+    #[command(hide = true)]
+    Complete {
+        /// The word being completed, prefix included.
+        #[arg(default_value = "")]
+        word: String,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -1378,6 +1385,7 @@ fn alias_command(action: AliasAction) -> Result<(), Box<dyn Error>> {
         AliasAction::Add { name, path, force } => alias_add(&name, path.as_deref(), force),
         AliasAction::List => alias_list(),
         AliasAction::Remove { name } => alias_remove(&name),
+        AliasAction::Complete { word } => alias_complete(&word),
     }
 }
 
@@ -1426,6 +1434,24 @@ fn alias_remove(name: &str) -> Result<(), Box<dyn Error>> {
         return Err(format!("unknown alias '{name}'").into());
     }
     eprintln!("removed alias {name}");
+    Ok(())
+}
+
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
+fn alias_complete(word: &str) -> Result<(), Box<dyn Error>> {
+    debug!(word, "alias complete");
+    let prefix = load_settings().alias_prefix;
+    let Some(stripped) = word.strip_prefix(prefix) else {
+        return Ok(());
+    };
+    let wanted = stripped.to_ascii_lowercase();
+    let conn = storage::open()?;
+    let lines: Vec<String> = storage::alias_listing(&conn)?
+        .iter()
+        .filter(|row| row.name.to_ascii_lowercase().starts_with(&wanted))
+        .map(|row| format!("{}{}\t{}", prefix, row.name, row.path))
+        .collect();
+    print_lines(&lines);
     Ok(())
 }
 

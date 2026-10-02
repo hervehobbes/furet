@@ -145,7 +145,9 @@ extra profile line.
   fuzzy); a close-but-unknown name gets a `did you mean 'ombi'?` hint,
   and an alias to a deleted directory is an error. The prefix is the
   `alias_prefix` config key — `!` (default) or `=`; a directory literally
-  named `!ombi` in the current directory wins over the alias.
+  named `!ombi` in the current directory wins over the alias. In the jump
+  function, `f !<Tab>` lists every alias with its target path and inserts
+  only the name (`f !om<Tab>` proposes `!ombi`, `!omnitool`, …).
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -236,6 +238,8 @@ memory; lot 50 shows the binary's UTC build date as the last line of
 `furet --help`. Lot 51 adds the `aliases` table shared by aliases and
 marks (migration 4); lot 52 adds `furet alias add`, `list` and `remove`
 over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
-(`!`/`=`) and the `did you mean` hint.
+(`!`/`=`) and the `did you mean` hint; lot 54 completes alias words on
+Tab — `f !om<Tab>` lists every matching alias with its path and inserts
+the name.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

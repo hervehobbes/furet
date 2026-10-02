@@ -439,9 +439,7 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   before the query, so `f !ombi` with a `!ombi` directory in the current
   directory goes there
   (`f_existing_directory_named_like_the_alias_wins`); `src/pwsh.rs` is
-  unchanged. Known interim behavior until lot 54: Tab on an exact alias
-  word (`f !ombi<Tab>`) replaces it with the target path, and Tab on a
-  partial one (`f !om<Tab>`) proposes nothing.
+  unchanged.
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited
@@ -463,6 +461,12 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   the ranked `furet query --list` lines in order (an empty word completes the
   recency list; `-`/`--explain` and `.`/`..`/`...` words get nothing; paths
   with PowerShell metacharacters are emitted single-quoted, `'` doubled).
+  A word starting with the alias prefix — `!` or `=`, whichever; the
+  configured `alias_prefix` is decided by the binary — never falls through to
+  `query --list` (lot 54): the completer calls `furet alias complete` instead
+  and turns its `name<TAB>path` lines into completions that **insert only the
+  name** while the list shows `name  path`, so the user remembers what `!1`
+  is; after `-l`/`--local` an alias word proposes nothing.
   With `-l`/`--local` (SPEC §19), the jump function and `fi` jump only
   inside the project. `-l` is a declared switch — `param([Alias('l')]
   [switch] $Local, [Parameter(ValueFromRemainingArguments…)] $FuretArgs)` —
@@ -526,7 +530,9 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   the same reason, and `furet preview` below the fourth — its output is
   read by fzf's preview pane, never by `Set-Location` — and `furet alias
   list` below the fifth, same justification as `queries`: a reporting
-  tool whose output is never piped into `Set-Location`.
+  tool whose output is never piped into `Set-Location`, and `furet alias
+  complete` below the sixth, same justification as `preview`: its output
+  is read by the tab completer, never by `Set-Location`.
 - `furet list [--all] [--paths]` — prints one tab-separated line per known directory —
   `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
   ordered by path, ignoring case (the lowercased `key`);
@@ -677,6 +683,28 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `furet_remove_leaves_aliases_untouched`). Resolution is lot 53's: see the
   **Alias queries** paragraph in the `furet query` entry above (`f !<name>`,
   exact case-insensitive match, `did you mean` hint).
+  - `complete <word>` (lot 54) — prints one `name<TAB>path` line per
+    matching alias **to stdout** — the sixth accepted stdout exception,
+    same justification as `preview`: its output is read by the tab
+    completer, never piped into `Set-Location`. `<word>` is the word being
+    completed, prefix included, and defaults to empty. The word must start
+    with the configured `alias_prefix` (`!` by default, `=` otherwise) —
+    any other word, prefixless included, prints nothing, exit 0. The rest
+    of the word is lowercased and matched as a **strict case-insensitive
+    prefix on the stored names** — no fuzzy matching, no validation (a
+    word with an invalid character simply matches nothing) — over
+    `storage::alias_listing`, so the lines come out in the same
+    lowercased-`key` order as `alias list`, each as `{prefix}{name}` plus
+    the tab-separated target path. An empty word after the prefix (the
+    bare `!`) lists every alias. Nothing is written — no `visits` row, no
+    `queries` row (`alias_complete_writes_nothing`) — and exit is 0 even
+    when nothing matches. The subcommand is `#[command(hide = true)]`:
+    hidden from `--help` (the unchanged `alias --help` snapshot is the
+    proof), **but** `clap_complete` 4.6.11 still proposes it on
+    `furet alias <Tab>` — its PowerShell generator iterates the
+    subcommands without filtering hidden ones, a known limitation Hervé
+    accepted on 2026-10-02 (no workaround, no filtering of the generated
+    block).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);

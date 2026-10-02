@@ -226,6 +226,37 @@ fn completions(sandbox: &Sandbox, init_args: &str, line: &str) -> Vec<String> {
     completions_in(sandbox, init_args, sandbox.tree.path(), line)
 }
 
+// WHY: mirrors completions_in but returns all three completion fields per match.
+fn completion_items_in(
+    sandbox: &Sandbox,
+    init_args: &str,
+    start: &Path,
+    line: &str,
+) -> Vec<(String, String, String)> {
+    let body = format!(
+        "$completed = TabExpansion2 -inputScript {line} -cursorColumn {column}\n\
+         foreach ($match in $completed.CompletionMatches) {{\n\
+         Write-Output ('{marker}' + $match.CompletionText + \"`t\" + $match.ListItemText + \"`t\" + $match.ToolTip)\n\
+         }}",
+        line = pwsh_quote(line),
+        column = line.chars().count(),
+        marker = COMPLETION_MARKER,
+    );
+    let run = run_pwsh(sandbox, "", init_args, start, &body);
+    run.stdout
+        .lines()
+        .filter_map(|l| l.strip_prefix(COMPLETION_MARKER))
+        .map(|l| {
+            let mut fields = l.split('\t');
+            (
+                fields.next().unwrap_or_default().to_owned(),
+                fields.next().unwrap_or_default().to_owned(),
+                fields.next().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
 // WHY: the expectation calls furet itself, so the ordering claim rests on the real ranking.
 fn query_list_in(sandbox: &Sandbox, cwd: &Path, args: &[&str]) -> Vec<String> {
     let out = sandbox
@@ -745,6 +776,90 @@ fn tab_completing_special_forms_proposes_no_furet_candidate() {
             "{line:?} must not complete the furet candidate {candidate}: {got:?}"
         );
     }
+}
+
+#[test]
+fn tab_completing_a_bang_word_shows_paths_but_inserts_names() {
+    let world = sandbox(&["ombi", "omnitool"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    seed_alias(&world, "omnitool", &world.child("omnitool"));
+    let items = completion_items_in(&world, "", world.tree.path(), "f !om");
+    assert_eq!(
+        items,
+        vec![
+            (
+                "!ombi".to_owned(),
+                format!("!ombi  {}", canonical(&world.child("ombi"))),
+                canonical(&world.child("ombi")),
+            ),
+            (
+                "!omnitool".to_owned(),
+                format!("!omnitool  {}", canonical(&world.child("omnitool"))),
+                canonical(&world.child("omnitool")),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn tab_completing_the_bare_bang_lists_every_alias() {
+    let world = sandbox(&["ombi", "apps", "1"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    seed_alias(&world, "apps", &world.child("apps"));
+    seed_alias(&world, "1", &world.child("1"));
+    let items = completion_items_in(&world, "", world.tree.path(), "f !");
+    let names: Vec<&str> = items.iter().map(|(text, _, _)| text.as_str()).collect();
+    assert_eq!(names, ["!1", "!apps", "!ombi"]);
+}
+
+#[test]
+fn tab_completing_an_exact_alias_keeps_the_alias_word() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let items = completion_items_in(&world, "", world.tree.path(), "f !ombi");
+    let texts: Vec<&str> = items.iter().map(|(text, _, _)| text.as_str()).collect();
+    assert_eq!(texts, ["!ombi"]);
+}
+
+#[test]
+fn tab_completing_an_equals_word_under_the_equals_prefix() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    write_alias_prefix_config(&world, "=");
+    let equals = completion_items_in(&world, "", world.tree.path(), "f =om");
+    let texts: Vec<&str> = equals.iter().map(|(text, _, _)| text.as_str()).collect();
+    assert_eq!(texts, ["=ombi"]);
+    let bang = completion_items_in(&world, "", world.tree.path(), "f !om");
+    assert!(
+        bang.is_empty(),
+        "bang is not the configured prefix: {bang:?}"
+    );
+}
+
+#[test]
+fn tab_completing_an_alias_word_after_local_proposes_nothing() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("start");
+    std::fs::create_dir_all(&start).expect("the isolated start directory exists");
+    let items = completion_items_in(&world, "", &start, "f -l !om");
+    assert!(items.is_empty(), "no completion after -l: {items:?}");
+}
+
+#[test]
+fn tab_completing_an_alias_word_leaves_lastexitcode_untouched() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let body = "$global:LASTEXITCODE = 42\n\
+                [void] (TabExpansion2 -inputScript 'f !om' -cursorColumn 5)\n\
+                Write-Output ('FURET_TEST_EXIT=' + $global:LASTEXITCODE)";
+    let run = run_pwsh(&world, "", "", world.tree.path(), body);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_EXIT="),
+        "42",
+        "stderr: {}",
+        run.stderr
+    );
 }
 
 #[test]

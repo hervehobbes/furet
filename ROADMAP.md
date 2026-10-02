@@ -58,3 +58,4 @@
 | 51 | Schema: `aliases` table shared by aliases and marks (migration 4) |
 | 52 | `furet alias add / list / remove` (no resolution yet) |
 | 53 | Alias resolution: `f !name`, `alias_prefix` (`!`/`=`), `did you mean` hint |
+| 54 | Tab completion of alias words: strict prefix, path shown, name inserted |

@@ -1,4 +1,15 @@
 ## 2026-10-02 — branch main — v0.2.0
+Done: lot 54 — Tab completion of alias words: hidden `furet alias complete <word>` (`#[command(hide = true)]`,
+strict case-insensitive prefix on names over `alias_listing`, `name<TAB>path` lines, nothing written), plus a
+completer branch for `!`/`=` words — shows the path, inserts only the name, nothing after `-l`, never falls
+through to `query --list`. 4 CLI + 6 pwsh tests first (failing pre-change runs pasted in the report).
+Decisions: Hervé accepted (2026-10-02) that clap_complete 4.6.11 still proposes `complete` on `furet alias <Tab>`
+(its pwsh generator filters no hidden subcommand); the guard test was deleted, `hide = true` stays, no filtering
+of the generated block — the unchanged `alias --help` snapshot is the hidden-from-help proof.
+Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-02 — branch main — v0.2.0
 Done: lot 53b — the five alias tests that also passed without alias resolution now sandbox `ombi` and `zebra` with
 `alias add ombi zebra`, so fuzzy matching on `ombi` can never reach the asserted target: `query !OMBI`, `--list`,
 `=ombi`/`!ombi` under `alias_prefix = "="` (`!ombi` asserted on stdout, not stderr), the invalid `@` prefix, and the
