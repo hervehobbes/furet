@@ -279,7 +279,13 @@ fn main() {
 
 // WHY: the runtime file locations depend on the environment, so a static clap attribute cannot hold them.
 fn runtime_paths_help() -> String {
-    [database_help_line(), config_help_line(), logs_help_line()].join("\n")
+    [
+        database_help_line(),
+        config_help_line(),
+        logs_help_line(),
+        build_date_help_line(),
+    ]
+    .join("\n")
 }
 
 fn database_help_line() -> String {
@@ -310,6 +316,10 @@ fn logs_help_line() -> String {
         Ok(dir) => format!("Log directory: {}", dir.display()),
         Err(error) => format!("Log directory: unavailable: {error}"),
     }
+}
+
+fn build_date_help_line() -> String {
+    format!("Build date: {}", env!("FURET_BUILD_DATE"))
 }
 
 fn report(outcome: Result<(), Box<dyn Error>>) -> i32 {

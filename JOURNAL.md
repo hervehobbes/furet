@@ -1,3 +1,13 @@
+## 2026-10-02 — branch main — v0.2.0
+Done: lot 50 — `furet --help`/`-h` ends with `Build date: YYYYMMDD`, the UTC date of the binary's last compilation.
+A new `build.rs` (Hinnant's `civil_from_days`, no rerun directive) sets `FURET_BUILD_DATE` at compile time;
+`main.rs` gains `build_date_help_line`. Tests written first and shown failing: `help_ends_with_the_utc_build_date`
+plus the `Build date: <BUILD_DATE>` snapshot filter; the `.snap` diff is exactly one added line.
+Decisions: no `rerun-if-changed` on purpose — cargo reruns the script on any package change, so the date tracks the last
+real compilation and a no-op rebuild keeps the old date; `build.rs` holds the only `print_stdout` allow outside `src/`.
+Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
 ## 2026-09-29 — branch main — v0.2.0
 Done: DATABASE.md sync test — one unit test in `src/storage.rs` migrates an in-memory connection and checks every table, column, index and `user_version` against DATABASE.md, and the reverse for tables and indexes. No production code change.
 Decisions: reuses the private `migrate` from the child test module; DATABASE.md is read with `include_str!` and plain string operations. Executor was a Claude subagent, not GLM (Hervé's routing change).

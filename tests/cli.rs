@@ -2491,6 +2491,40 @@ fn help_prints_the_database_file_path_resolved_at_runtime() {
 }
 
 #[test]
+fn help_ends_with_the_utc_build_date() {
+    let world = sandbox(&[]);
+    let expected = format!("Build date: {}", env!("FURET_BUILD_DATE"));
+    for flag in ["-h", "--help"] {
+        let out = run(world.furet().arg(flag));
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        let help = text(&out.stdout);
+        let last = help.lines().rev().find(|line| !line.trim().is_empty());
+        assert_eq!(
+            last,
+            Some(expected.as_str()),
+            "the top-level {flag} output must end with the build date: {help}"
+        );
+    }
+    let digits = env!("FURET_BUILD_DATE");
+    assert!(
+        digits.len() == 8 && digits.bytes().all(|byte| byte.is_ascii_digit()),
+        "the build date must be 8 ASCII digits: {digits}"
+    );
+    let year: i32 = digits[0..4].parse().expect("the year parses");
+    let month: i32 = digits[4..6].parse().expect("the month parses");
+    let day: i32 = digits[6..8].parse().expect("the day parses");
+    assert!(year >= 2026, "the build year must be >= 2026: {digits}");
+    assert!(
+        (1..=12).contains(&month),
+        "the build month must be in 1..=12: {digits}"
+    );
+    assert!(
+        (1..=31).contains(&day),
+        "the build day must be in 1..=31: {digits}"
+    );
+}
+
+#[test]
 fn add_writes_a_log_file_under_the_data_dir() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");

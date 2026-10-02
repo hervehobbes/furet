@@ -28,3 +28,4 @@ Options:
 Database file: <DATA_DIR>\furet.db
 Config file: <DATA_DIR>\config.toml (not found, defaults apply)
 Log directory: <DATA_DIR>\logs
+Build date: <BUILD_DATE>

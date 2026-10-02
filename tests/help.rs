@@ -29,6 +29,7 @@ fn snapshot_help(name: &str, args: &[&str]) {
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(&regex::escape(&data.path().to_string_lossy()), "<DATA_DIR>");
     settings.add_filter(r"furet\.exe", "furet");
+    settings.add_filter(r"Build date: \d{8}", "Build date: <BUILD_DATE>");
     settings.bind(|| insta::assert_snapshot!(name, text));
 }
 

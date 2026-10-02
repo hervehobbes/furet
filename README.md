@@ -219,6 +219,7 @@ contracts.
 Version 0.2.0 completes `prompts/SPEC-v2.md`: completions for `furet`'s
 subcommands, `--local`, the opt-in `nucleo` engine, `furet remove`'s
 confirmation and `--missing`, `furet stats`, the `fi` preview, and query
-memory.
+memory; lot 50 shows the binary's UTC build date as the last line of
+`furet --help`.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

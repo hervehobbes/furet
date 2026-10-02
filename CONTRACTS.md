@@ -299,16 +299,26 @@ compile-time enforced: `clippy::print_stdout` + `disallowed-methods` on
 write funnelled through `stdout_line` in `src/main.rs`, the only
 `#[allow]` holder. `unsafe_code` is `deny`, not `forbid`, because
 `storage.rs`'s `furet_data_dir_overrides_the_database_location` test
-needs edition-2024 `unsafe` env mutation (one fn-scoped allow).
+needs edition-2024 `unsafe` env mutation (one fn-scoped allow). Outside
+the binary, `build.rs` holds the one other `print_stdout` allow —
+fn-scoped on its `main`, for the `cargo:rustc-env` directive a build
+script must print on stdout; it lives outside `src/`, and its output
+goes to cargo, never to furet's stdout.
 
-`furet --help`/`-h` ends with three runtime-resolved trailer lines —
+`furet --help`/`-h` ends with four trailer lines — three runtime-resolved,
 `Database file:`, `Config file: … (found | not found, defaults apply)`, and
-`Log directory:` — all built from `storage::data_dir()` (honors
+`Log directory:`, all built from `storage::data_dir()` (honors
 `FURET_DATA_DIR`); an unresolvable location prints `unavailable: <error>`
-instead of failing. `storage::config_path`/`storage::logs_dir` are the single
+instead of failing — plus `Build date: YYYYMMDD`, the UTC date of the
+binary's last compilation, set at compile time by `build.rs` through the
+`FURET_BUILD_DATE` rustc-env variable. The build script emits no rerun
+directive, so cargo reruns it whenever a package file changes and the date
+tracks the last real compilation; a no-op rebuild keeps the old date.
+`storage::config_path`/`storage::logs_dir` are the single
 source of truth for those locations (`load_settings` and `logging::init` call
-them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`
-and the `tests/help.rs` insta snapshots (data dir redacted to `<DATA_DIR>`).
+them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
+`help_ends_with_the_utc_build_date`, and the `tests/help.rs` insta snapshots
+(data dir redacted to `<DATA_DIR>`, build date to `<BUILD_DATE>`).
 
 - `furet add <path> --session <s> [--source <src>] [--from <dir>] [--query <text>]` — records
   one visit; `source` defaults to `hook`. A path matching `exclude_dirs` is
