@@ -29,6 +29,8 @@ pub struct Settings {
     pub engine: Engine,
     /// Whether `furet query` puts the directory last chosen for the same query first.
     pub query_memory: bool,
+    /// First char of a query that names an alias (`!` or `=`).
+    pub alias_prefix: char,
 }
 
 /// The `[fallback]` table of `config.toml`.
@@ -54,6 +56,7 @@ impl Default for Settings {
             exclude_dirs: Vec::new(),
             engine: Engine::Reference,
             query_memory: true,
+            alias_prefix: '!',
         }
     }
 }
@@ -121,6 +124,11 @@ fn apply(key: &str, value: &toml::Value, settings: &mut Settings, warnings: &mut
         "query_memory" => match value.as_bool() {
             Some(enabled) => settings.query_memory = enabled,
             None => warnings.push("query_memory must be a boolean; using true".to_owned()),
+        },
+        "alias_prefix" => match value.as_str() {
+            Some("!") => settings.alias_prefix = '!',
+            Some("=") => settings.alias_prefix = '=',
+            _ => warnings.push("alias_prefix must be '!' or '='; using '!'".to_owned()),
         },
         "ambiguity" | "keyboard_layout" => {
             warnings.push(format!("{key} is not supported yet; ignored"));
@@ -585,6 +593,42 @@ mod tests {
             assert_eq!(
                 warnings,
                 ["query_memory must be a boolean; using true"],
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn alias_prefix_defaults_to_bang() {
+        assert_eq!(Settings::default().alias_prefix, '!');
+        let (settings, warnings) = parse("");
+        assert_eq!(settings.alias_prefix, '!');
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn alias_prefix_accepts_bang_and_equals() {
+        let (settings, warnings) = parse("alias_prefix = '!'");
+        assert_eq!(settings.alias_prefix, '!');
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (settings, warnings) = parse("alias_prefix = '='");
+        assert_eq!(settings.alias_prefix, '=');
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn an_invalid_alias_prefix_warns_and_keeps_bang() {
+        for text in [
+            "alias_prefix = '@'",
+            "alias_prefix = '!!'",
+            "alias_prefix = ''",
+            "alias_prefix = 1",
+        ] {
+            let (settings, warnings) = parse(text);
+            assert_eq!(settings.alias_prefix, '!', "{text}");
+            assert_eq!(
+                warnings,
+                ["alias_prefix must be '!' or '='; using '!'"],
                 "{text}"
             );
         }

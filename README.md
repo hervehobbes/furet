@@ -141,7 +141,11 @@ extra profile line.
   existing name is refused unless `--force` replaces it. `furet alias
   list` prints `name`, path and creation date per line; `furet alias
   remove ombi` deletes one. Aliases survive `furet remove` and the
-  retention purge. Jumping with `f !ombi` arrives in a later lot.
+  retention purge. Jump with `f !ombi` (exact, case-insensitive, no
+  fuzzy); a close-but-unknown name gets a `did you mean 'ombi'?` hint,
+  and an alias to a deleted directory is an error. The prefix is the
+  `alias_prefix` config key — `!` (default) or `=`; a directory literally
+  named `!ombi` in the current directory wins over the alias.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -186,6 +190,7 @@ line naming the key. `furet query`, `furet home`, `furet add`, and
 | `retention_days` | integer | 365 | `>= 0`; `furet add` deletes `visits` and `queries` rows older than this many days, `0` keeps everything |
 | `engine` | string | `"reference"` | `"reference"` or `"nucleo"`; `furet query --engine` overrides it |
 | `query_memory` | bool | true | `false` stops sending a query back to the directory last chosen for it; choices are still journaled |
+| `alias_prefix` | string | `"!"` | `"!"` or `"="` only; the first character that marks a query as an alias jump (`f !ombi`) |
 | `exclude_dirs` | array of strings | empty | patterns in the `furet remove` syntax, e.g. `['node_modules', 'C:\Windows\*', '*\target\*']` |
 
 `fallback.exclude = []` disables every exclusion: the list replaces the
@@ -230,6 +235,7 @@ confirmation and `--missing`, `furet stats`, the `fi` preview, and query
 memory; lot 50 shows the binary's UTC build date as the last line of
 `furet --help`. Lot 51 adds the `aliases` table shared by aliases and
 marks (migration 4); lot 52 adds `furet alias add`, `list` and `remove`
-over it.
+over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
+(`!`/`=`) and the `did you mean` hint.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

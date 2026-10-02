@@ -213,6 +213,18 @@ disables query memory entirely — `furet query` does no lookup at all and
 being journaled. A non-boolean warns `query_memory must be a boolean; using
 true` and keeps `true` (`a_wrong_type_query_memory_warns_and_keeps_true`).
 
+`alias_prefix` (not in SPEC — scope extension decided by Hervé on
+2026-10-02, see the **Alias queries** paragraph of the `furet query` entry)
+is a one-character string naming the first character of an alias query:
+`"!"` (default) or `"="` — a whitelist, decided because `@` needs AltGr on
+an AZERTY keyboard and, worse, is **splatting** in PowerShell argument
+mode: `f @ombi` with no `$ombi` variable would send `f` no argument at all
+and silently jump home. Anything else — wrong type, the empty string,
+`"!!"`, `"@"` — warns `alias_prefix must be '!' or '='; using '!'` and
+keeps `!` (`an_invalid_alias_prefix_warns_and_keeps_bang`). Each allowed
+prefix is proven by a real pwsh test (`f_bang_alias_jumps_and_records_one_jump_visit`,
+`f_equals_alias_jumps_when_configured`).
+
 `exclude_dirs` (not in SPEC — scope extension decided by Hervé 2026-09-26,
 modelled on zoxide's `_ZO_EXCLUDE_DIRS`) is an array of non-empty strings,
 each resolved by `remove::exclusion_target` with the same pattern syntax as
@@ -396,6 +408,40 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   longer matches)` (remembered, but not among the ranked candidates, which
   includes every fallback report), or `memory: disabled`; nothing else in
   the report changes (`explain__memory_applied` snapshot).
+  **Alias queries** (scope extension beyond SPEC, decided by Hervé on
+  2026-10-02; lot 53): right after the settings load and before anything
+  else — current directory, project root, database — `main::alias_query`
+  inspects the query text. When its first whitespace token starts with the
+  configured `alias_prefix` (`!` by default, see the configuration
+  contract), the query is an alias query and the ranking path never runs:
+  exact, case-insensitive lookup in `aliases` (`alias::key` +
+  `storage::alias_by_key`), no fuzzy matching, no disk fallback, no
+  reconcile. A second token (`f !ombi src`) fails with `furet: an alias
+  takes no other token`, exit 1; `--local` combined with an alias fails
+  with `furet: --local cannot be combined with an alias`, exit 1, before
+  the git-repository check; a name outside `[A-Za-z0-9_-]` — including a
+  bare `!` or `!ombi\src` — fails with the `furet alias add` message
+  `furet: invalid alias name '<name>': use letters, digits, '_' and '-'`,
+  exit 1. An unknown name fails with `furet: unknown alias '<name>'`,
+  enriched to `furet: unknown alias '<name>'; did you mean '<near>'?`
+  when exactly one edit (optimal string alignment, `alias::suggestion`
+  over the stored names) separates it from a known one; a tie picks the
+  smallest lowercased name. An alias whose target is gone from disk fails
+  with `furet: alias '<name>' points to a missing directory: <path>`,
+  exit 1 — no fallback, no ranking. On success the resolved path is the
+  answer: plain and `--list !ombi` print it alone on stdout, and
+  `--explain !ombi` prints `alias: <name> -> <path>` on stderr and leaves
+  stdout empty; **no `queries` row and no visit are written** (D1 is
+  untouched — an alias jump bypasses ranking entirely; pwsh still records
+  the `jump` visit as for any jump,
+  `f_bang_alias_jumps_and_records_one_jump_visit`). A directory literally
+  named like the alias wins in `f`: the pwsh `Test-Path` branch runs
+  before the query, so `f !ombi` with a `!ombi` directory in the current
+  directory goes there
+  (`f_existing_directory_named_like_the_alias_wins`); `src/pwsh.rs` is
+  unchanged. Known interim behavior until lot 54: Tab on an exact alias
+  word (`f !ombi<Tab>`) replaces it with the target path, and Tab on a
+  partial one (`f !om<Tab>`) proposes nothing.
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited
@@ -628,10 +674,9 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   namespace, so `furet alias add 1` creates what the marks lot will treat
   as mark 1. `furet remove`, the retention purge and `exclude_dirs`
   never touch these rows (standalone `path`, no foreign key;
-  `furet_remove_leaves_aliases_untouched`). Resolution (`f !<name>`) is
-  **not implemented yet** — `f !ombi` and `furet query !ombi` behave
-  exactly as today; the `alias_prefix` config key and the `did you mean`
-  hint land with lot 53.
+  `furet_remove_leaves_aliases_untouched`). Resolution is lot 53's: see the
+  **Alias queries** paragraph in the `furet query` entry above (`f !<name>`,
+  exact case-insensitive match, `did you mean` hint).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);

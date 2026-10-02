@@ -1,4 +1,17 @@
 ## 2026-10-02 — branch main — v0.2.0
+Done: lot 53 — `furet query` resolves alias queries before anything else: first token starting with
+`alias_prefix` (default `!`, whitelist `!`/`=`, config key with warning), exact case-insensitive lookup,
+`did you mean` hint at OSA distance 1 (`stage2::optimal_string_alignment` now pub), missing-target and
+no-other-token/`--local` errors, no `queries` row, ranking untouched. `src/pwsh.rs` unchanged — Test-Path
+keeps winning for a literal `!ombi` directory. 13 CLI + 5 pwsh tests first; 4 CLI + 2 pwsh passed
+pre-change (stage-2 distance 1 made the fallback land on `ombi` or pinned unchanged dispatch).
+Decisions: none new — every rule was pinned by the lot prompt from `prompts/DESIGN-aliases-scopes-marks.md`
+§1.1/§1.4 (Hervé, 2026-10-02); the pinned `list` parameter of `alias_query` is bound `_list`, forced by
+`-D unused-variables` (step 6 ignores `--list` by design).
+Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-02 — branch main — v0.2.0
 Done: lot 52 — `furet alias add <name> [<path>] [--force] | list | remove <name>` over lot 51's table: pure
 `alias::key`, four storage helpers, nested clap subcommand. Tests first and shown failing (12 CLI + 4 help, all
 `unrecognized subcommand 'alias'`); `alias list` is the fifth stdout exception; four new help snapshots, top-level

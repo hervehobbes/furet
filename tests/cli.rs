@@ -4477,3 +4477,243 @@ fn alias_add_does_not_record_a_visit() {
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 0);
 }
+
+#[test]
+fn query_alias_prints_the_target_and_writes_nothing() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!ombi", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "ombi"))
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+}
+
+#[test]
+fn query_alias_ignores_case() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!OMBI", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "ombi"))
+    );
+}
+
+#[test]
+fn query_alias_bypasses_the_ranking() {
+    let world = sandbox(&["ombi", "apps"]);
+    assert!(
+        add(&world, &world.child("ombi"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        alias(&world, &["add", "ombi", "apps"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!ombi", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "apps"))
+    );
+}
+
+#[test]
+fn query_unknown_alias_hints_at_a_close_name() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!mbi", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).contains("furet: unknown alias 'mbi'; did you mean 'ombi'?"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn query_unknown_alias_far_from_every_name_has_no_hint() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!zzzz", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("furet: unknown alias 'zzzz'"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    assert!(!text(&out.stderr).contains("did you mean"));
+}
+
+#[test]
+fn query_alias_with_another_token_fails() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!ombi src", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("furet: an alias takes no other token"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn query_alias_with_local_fails() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query_with(&world, &["--local", "!ombi"], world.tree.path());
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("furet: --local cannot be combined with an alias"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    assert!(!text(&out.stderr).contains("not inside a git repository"));
+}
+
+#[test]
+fn query_alias_to_a_deleted_directory_fails() {
+    let world = sandbox(&["ombi"]);
+    let ombi = canonical_child(&world, "ombi");
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    std::fs::remove_dir_all(world.child("ombi")).expect("the aliased directory vanishes");
+    let out = query(&world, "!ombi", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains(&format!(
+            "furet: alias 'ombi' points to a missing directory: {ombi}"
+        )),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn query_invalid_alias_names_fail() {
+    let world = sandbox(&[]);
+    for name in ["!om.bi", "!"] {
+        let out = query(&world, name, world.tree.path(), false);
+        assert_eq!(out.status.code(), Some(1), "query '{name}' must fail");
+        assert!(
+            text(&out.stderr).contains("invalid alias name"),
+            "query '{name}' explains the refusal: {}",
+            text(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn query_list_of_an_alias_prints_the_target_alone() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query_with(&world, &["--list", "!ombi"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "ombi"))
+    );
+}
+
+#[test]
+fn query_explain_of_an_alias_prints_one_line_on_stderr() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query_with(&world, &["--explain", "!ombi"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).contains(&format!(
+            "alias: ombi -> {}",
+            canonical_child(&world, "ombi")
+        )),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn alias_prefix_equals_resolves_equals_and_leaves_bang_fuzzy() {
+    let world = sandbox(&["ombi"]);
+    write_config(&world, "alias_prefix = \"=\"");
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "=ombi", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "ombi"))
+    );
+    let fuzzy = query(&world, "!ombi", world.tree.path(), false);
+    assert!(
+        !text(&fuzzy.stderr).contains("alias"),
+        "stderr: {}",
+        text(&fuzzy.stderr)
+    );
+}
+
+#[test]
+fn an_invalid_alias_prefix_keeps_bang() {
+    let world = sandbox(&["ombi"]);
+    write_config(&world, "alias_prefix = \"@\"");
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!ombi", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "ombi"))
+    );
+}

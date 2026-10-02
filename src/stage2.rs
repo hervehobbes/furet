@@ -82,7 +82,9 @@ fn best_window_distance(query: &[char], candidate: &[char]) -> usize {
     best
 }
 
-fn optimal_string_alignment(left: &[char], right: &[char]) -> usize {
+/// Optimal string alignment distance between two char slices; the edit
+/// measure behind stage 2, also reused for the alias hint.
+pub fn optimal_string_alignment(left: &[char], right: &[char]) -> usize {
     if left.is_empty() {
         return right.len();
     }

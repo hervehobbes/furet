@@ -61,6 +61,22 @@ fn canonical(path: &Path) -> String {
         .path
 }
 
+fn seed_alias(sandbox: &Sandbox, name: &str, path: &Path) {
+    let out = sandbox
+        .furet()
+        .arg("alias")
+        .arg("add")
+        .arg(name)
+        .arg(path)
+        .output()
+        .expect("furet alias add runs");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 fn db(sandbox: &Sandbox) -> Connection {
     Connection::open(sandbox.data.path().join("furet.db")).expect("the recorded database opens")
 }
@@ -345,6 +361,14 @@ fn write_home_config(sandbox: &Sandbox, home: &Path) {
     std::fs::write(
         sandbox.data.path().join("config.toml"),
         format!("home = \"{forward}\""),
+    )
+    .expect("the config file is written");
+}
+
+fn write_alias_prefix_config(sandbox: &Sandbox, prefix: &str) {
+    std::fs::write(
+        sandbox.data.path().join("config.toml"),
+        format!("alias_prefix = \"{prefix}\""),
     )
     .expect("the config file is written");
 }
@@ -988,4 +1012,73 @@ fn tab_completing_after_long_local_proposes_project_candidates() {
         vec![canonical(&world.child("proj/clio"))],
         "`f --local cl<Tab>` must propose only the in-project candidate: {got:?}"
     );
+}
+
+#[test]
+fn f_bang_alias_jumps_and_records_one_jump_visit() {
+    let world = sandbox(&["ombi"]);
+    let target = world.child("ombi");
+    seed_alias(&world, "ombi", &target);
+    let start = world.child("start");
+    std::fs::create_dir_all(&start).expect("the isolated start directory exists");
+    let run = run_pwsh(&world, "", "", &start, "f !ombi");
+    assert_eq!(run.cwd, canonical(&target), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn f_equals_alias_jumps_when_configured() {
+    let world = sandbox(&["ombi"]);
+    let target = world.child("ombi");
+    seed_alias(&world, "ombi", &target);
+    write_alias_prefix_config(&world, "=");
+    let start = world.child("start");
+    std::fs::create_dir_all(&start).expect("the isolated start directory exists");
+    let run = run_pwsh(&world, "", "", &start, "f =ombi");
+    assert_eq!(run.cwd, canonical(&target), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn f_unknown_alias_stays_put_and_reports_on_stderr() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("start");
+    std::fs::create_dir_all(&start).expect("the isolated start directory exists");
+    let run = run_pwsh(&world, "", "", &start, "f !nope");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("unknown alias"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 0);
+}
+
+#[test]
+fn f_local_with_an_alias_stays_put() {
+    let world = sandbox(&["ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("start");
+    std::fs::create_dir_all(&start).expect("the isolated start directory exists");
+    let run = run_pwsh(&world, "", "", &start, "f -l !ombi");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 0);
+}
+
+#[test]
+fn f_existing_directory_named_like_the_alias_wins() {
+    let world = sandbox(&["ombi", "elsewhere"]);
+    seed_alias(&world, "ombi", &world.child("elsewhere"));
+    let start = world.child("start");
+    let literal = start.join("!ombi");
+    std::fs::create_dir_all(&literal).expect("the literal !ombi child exists");
+    let run = run_pwsh(&world, "", "", &start, "f !ombi");
+    assert_eq!(run.cwd, canonical(&literal), "stderr: {}", run.stderr);
 }

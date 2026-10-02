@@ -445,6 +445,9 @@ fn query_directories(
     );
     let settings = load_settings();
     debug!(?settings, "effective settings");
+    if let Some(outcome) = alias_query(query, list, explain, local, settings.alias_prefix) {
+        return outcome;
+    }
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
@@ -554,6 +557,58 @@ fn query_directories(
         stage: stage.as_deref(),
     };
     conclude(&journal, decision, is_fallback, &settings.exclude_dirs)
+}
+
+fn alias_query(
+    text: &str,
+    _list: bool,
+    explain: bool,
+    local: bool,
+    prefix: char,
+) -> Option<Result<(), Box<dyn Error>>> {
+    debug!(text, "alias query");
+    let mut tokens = text.split_whitespace();
+    let first = tokens.next()?;
+    let name = first.strip_prefix(prefix)?;
+    if tokens.next().is_some() {
+        return Some(Err("an alias takes no other token".into()));
+    }
+    if local {
+        return Some(Err("--local cannot be combined with an alias".into()));
+    }
+    let Some(key) = alias::key(name) else {
+        return Some(Err(format!(
+            "invalid alias name '{name}': use letters, digits, '_' and '-'"
+        )
+        .into()));
+    };
+    Some((|| {
+        let conn = storage::open()?;
+        let Some(alias) = storage::alias_by_key(&conn, &key)? else {
+            let names: Vec<String> = storage::alias_listing(&conn)?
+                .into_iter()
+                .map(|row| row.name)
+                .collect();
+            let message = match alias::suggestion(&key, &names) {
+                Some(near) => format!("unknown alias '{name}'; did you mean '{near}'?"),
+                None => format!("unknown alias '{name}'"),
+            };
+            return Err(message.into());
+        };
+        if !Path::new(&alias.path).is_dir() {
+            return Err(format!(
+                "alias '{}' points to a missing directory: {}",
+                alias.name, alias.path
+            )
+            .into());
+        }
+        if explain {
+            eprintln!("alias: {} -> {}", alias.name, alias.path);
+        } else {
+            print_result(&alias.path);
+        }
+        Ok(())
+    })())
 }
 
 fn local_root(current_path: &str, local: bool) -> Result<Option<String>, Box<dyn Error>> {
