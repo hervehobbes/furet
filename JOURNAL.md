@@ -1,4 +1,14 @@
 ## 2026-10-02 — branch main — v0.2.0
+Done: lot 51 — migration 4 adds the `aliases` table (`name`, unique lowercased `key`, `path`, `created`) and
+`idx_aliases_key`; no command reads or writes it yet. Tests first and shown failing: counters 3/3/5 → 4/4/6 with the
+three version tests renamed, new `a_version_3_database_migrates_to_version_4_keeping_its_rows` and
+`aliases_key_is_unique`; the DATABASE.md sync test then failed until the doc gained the `aliases` section.
+Decisions: none — the migration SQL and tests were pinned by the lot prompt (Hervé, 2026-10-02: standalone text path,
+no foreign key to `dirs`, one namespace for aliases and marks).
+Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-02 — branch main — v0.2.0
 Done: lot 50 — `furet --help`/`-h` ends with `Build date: YYYYMMDD`, the UTC date of the binary's last compilation.
 A new `build.rs` (Hinnant's `civil_from_days`, no rerun directive) sets `FURET_BUILD_DATE` at compile time;
 `main.rs` gains `build_date_help_line`. Tests written first and shown failing: `help_ends_with_the_utc_build_date`

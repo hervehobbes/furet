@@ -55,3 +55,4 @@
 | 48 | `query_directories` split into focused helpers (Sonar S3776), no behavior change |
 | 49 | `config::parse` and `explain::render` split (Sonar S3776), no behavior change |
 | 50 | Build date (UTC, `YYYYMMDD`) as the last line of `furet --help` |
+| 51 | Schema: `aliases` table shared by aliases and marks (migration 4) |

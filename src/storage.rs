@@ -68,6 +68,15 @@ const MIGRATIONS: &[&str] = &[
     // WHY: the retention purge deletes by age on every add, which must not scan either journal.
     "CREATE INDEX idx_visits_ts ON visits (ts);
     CREATE INDEX idx_queries_ts ON queries (ts);",
+    // WHY: aliases and marks keep a plain path, so remove, the purge and exclude_dirs never touch them.
+    "CREATE TABLE aliases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        key TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_aliases_key ON aliases (key);",
 ];
 
 /// Resolves the directory holding the database and the log files:
@@ -643,7 +652,7 @@ mod tests {
 
     fn managed_table_count(conn: &Connection) -> i64 {
         conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('dirs', 'visits', 'queries')",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('dirs', 'visits', 'queries', 'aliases')",
             [],
             |row| row.get(0),
         )
@@ -661,7 +670,7 @@ mod tests {
 
     fn managed_index_count(conn: &Connection) -> i64 {
         conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_dirs_key', 'idx_visits_dir_ts', 'idx_visits_session_ts', 'idx_visits_ts', 'idx_queries_ts')",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_dirs_key', 'idx_visits_dir_ts', 'idx_visits_session_ts', 'idx_visits_ts', 'idx_queries_ts', 'idx_aliases_key')",
             [],
             |row| row.get(0),
         )
@@ -753,12 +762,12 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_creates_all_tables_and_reaches_user_version_3() {
+    fn fresh_database_creates_all_tables_and_reaches_user_version_4() {
         let (_dir, path) = temp_db();
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 3);
-        assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 5);
+        assert_eq!(user_version(&conn), 4);
+        assert_eq!(managed_table_count(&conn), 4);
+        assert_eq!(managed_index_count(&conn), 6);
     }
 
     #[test]
@@ -766,9 +775,9 @@ mod tests {
         let (_dir, path) = temp_db();
         drop(opened(&path));
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 3);
-        assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 5);
+        assert_eq!(user_version(&conn), 4);
+        assert_eq!(managed_table_count(&conn), 4);
+        assert_eq!(managed_index_count(&conn), 6);
         let dirs_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
@@ -780,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_2_database_migrates_to_version_3_adding_the_ts_indexes() {
+    fn a_version_2_database_migrates_to_version_4() {
         let (_dir, path) = temp_db();
         {
             let old = Connection::open(&path).expect("the legacy database opens");
@@ -792,13 +801,36 @@ mod tests {
                 .expect("the legacy version is stamped");
         }
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 3);
-        assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 5);
+        assert_eq!(user_version(&conn), 4);
+        assert_eq!(managed_table_count(&conn), 4);
+        assert_eq!(managed_index_count(&conn), 6);
     }
 
     #[test]
-    fn a_version_1_database_migrates_to_version_3_adding_every_index() {
+    fn a_version_3_database_migrates_to_version_4_keeping_its_rows() {
+        let (_dir, path) = temp_db();
+        {
+            let old = Connection::open(&path).expect("the legacy database opens");
+            old.execute_batch(super::MIGRATIONS[0])
+                .expect("the version 1 schema applies");
+            old.execute_batch(super::MIGRATIONS[1])
+                .expect("the version 2 indexes apply");
+            old.execute_batch(super::MIGRATIONS[2])
+                .expect("the version 3 indexes apply");
+            old.execute_batch("PRAGMA user_version = 3;")
+                .expect("the legacy version is stamped");
+            insert_dir(&old, "C:\\legacy", "c:\\legacy");
+        }
+        let conn = opened(&path);
+        assert_eq!(user_version(&conn), 4);
+        assert_eq!(managed_table_count(&conn), 4);
+        assert_eq!(managed_index_count(&conn), 6);
+        assert_eq!(row_count(&conn, "dirs"), 1);
+        assert_eq!(row_count(&conn, "aliases"), 0);
+    }
+
+    #[test]
+    fn a_version_1_database_migrates_to_version_4() {
         let (_dir, path) = temp_db();
         {
             let old = Connection::open(&path).expect("the legacy database opens");
@@ -808,9 +840,9 @@ mod tests {
                 .expect("the legacy version is stamped");
         }
         let conn = opened(&path);
-        assert_eq!(user_version(&conn), 3);
-        assert_eq!(managed_table_count(&conn), 3);
-        assert_eq!(managed_index_count(&conn), 5);
+        assert_eq!(user_version(&conn), 4);
+        assert_eq!(managed_table_count(&conn), 4);
+        assert_eq!(managed_index_count(&conn), 6);
         let dirs_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dirs'",
@@ -1001,6 +1033,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn aliases_key_is_unique() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let inserted = conn.execute(
+            "INSERT INTO aliases (name, key, path, created) VALUES ('Ombi', 'ombi', 'C:\\apps\\ombi', 1_700_000_000)",
+            [],
+        );
+        assert!(inserted.is_ok(), "the first alias inserts");
+        let rejected = conn.execute(
+            "INSERT INTO aliases (name, key, path, created) VALUES ('OMBI', 'ombi', 'C:\\other', 1_700_000_001)",
+            [],
+        );
+        assert!(rejected.is_err(), "two aliases must never share a key");
+        let stored: String = conn
+            .query_row("SELECT path FROM aliases WHERE key = 'ombi'", [], |row| {
+                row.get(0)
+            })
+            .expect("the surviving alias reads back");
+        assert_eq!(stored, "C:\\apps\\ombi");
+    }
+
     // WHY: edition 2024 makes env mutation unsafe; this test must set FURET_DATA_DIR.
     #[allow(unsafe_code)]
     #[test]
@@ -1026,7 +1080,7 @@ mod tests {
             nested.join("logs")
         );
         let conn = connection.expect("open works under FURET_DATA_DIR");
-        assert_eq!(user_version(&conn), 3);
+        assert_eq!(user_version(&conn), 4);
         assert!(nested.join("furet.db").exists());
     }
 

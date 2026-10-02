@@ -24,7 +24,7 @@ Applied by `storage::open()` on every connection:
 | `foreign_keys` | `ON` | Per-connection in SQLite, never persisted, so re-applied on every open; the foreign keys below are enforced only because of this. |
 | `synchronous` | `NORMAL` | Per-connection. WAL's pairing value: durable across crashes, skips the per-commit `fsync` that `FULL` makes every `furet add` write pay. |
 | `busy_timeout` | `5000` ms | Per-connection, set via rusqlite's `busy_timeout`. Concurrent prompt-hook writers wait instead of failing instantly with `SQLITE_BUSY`. |
-| `user_version` | `3` | Counts how many `MIGRATIONS` scripts have been applied. `migrate()` reads it, then runs each script whose 1-based version exceeds it inside one transaction that also bumps the pragma. Current value is 3: script 1 creates the whole schema, script 2 adds the `visits` ranking indexes, script 3 the `ts` indexes of the retention purge. |
+| `user_version` | `4` | Counts how many `MIGRATIONS` scripts have been applied. `migrate()` reads it, then runs each script whose 1-based version exceeds it inside one transaction that also bumps the pragma. Current value is 4: script 1 creates the whole schema, script 2 adds the `visits` ranking indexes, script 3 the `ts` indexes of the retention purge, script 4 the `aliases` table. |
 
 ## Tables
 
@@ -94,6 +94,22 @@ two fixed values, both chosen distinct from any real session id so
 only when the chosen directory is excluded (`exclude_dirs`, lot 38's rule).
 `furet stats` counts it in `jumps`, and calibration treats it like `jump`.
 
+### `aliases` — one row per alias or mark
+
+Named aliases (`f !ombi`) and marks (`fm 1`, `f !1`) share this table and
+one namespace: a mark is a row whose `name` is a single digit `1`–`9`.
+The target is a plain path with no foreign key to `dirs`, so
+`furet remove`, the retention purge and `exclude_dirs` never touch these
+rows. No command writes the table yet (lot 51 adds only the schema).
+
+| Column | Type | Constraints | Holds |
+|---|---|---|---|
+| `id` | INTEGER | `PRIMARY KEY AUTOINCREMENT` | Surrogate row id. |
+| `name` | TEXT | `NOT NULL` | The name as the user typed it, shown in listings. |
+| `key` | TEXT | `NOT NULL`; unique via `idx_aliases_key` | The lowercased `name`; names are case-insensitive, so `Ombi` and `ombi` are one entry. |
+| `path` | TEXT | `NOT NULL` | Canonical, displayable path of the target directory. |
+| `created` | INTEGER | `NOT NULL` | Unix seconds when the entry was created or last overwritten. |
+
 ## Indexes
 
 | Index | Table (columns) | Unique | Purpose |
@@ -103,12 +119,15 @@ only when the chosen directory is excluded (`exclude_dirs`, lot 38's rule).
 | `idx_visits_session_ts` | `visits (session, ts)` | no | Migration 2. Serves `last_visited_dir`'s `WHERE session = ?` with `ORDER BY ts DESC` instead of a full scan plus sort. |
 | `idx_visits_ts` | `visits (ts)` | no | Migration 3. Lets the retention purge delete `visits` rows older than the cutoff without scanning the table. |
 | `idx_queries_ts` | `queries (ts)` | no | Migration 3. Same, for `queries` rows. |
+| `idx_aliases_key` | `aliases (key)` | yes | Migration 4. One entry per case-insensitive name; the lookup key of alias and mark resolution. |
 
 ## Foreign keys
 
 - `visits.dir_id` → `dirs.id` (required)
 - `visits.from_dir_id` → `dirs.id` (optional)
 - `queries.result_dir_id` → `dirs.id` (optional)
+
+`aliases` has no foreign key: its `path` is standalone text.
 
 No `ON DELETE` action is declared on any of them; enforcement relies on the
 `foreign_keys = ON` pragma above. `storage::remove_dirs` (`furet remove`)
