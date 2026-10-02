@@ -100,7 +100,8 @@ Named aliases (`f !ombi`) and marks (`fm 1`, `f !1`) share this table and
 one namespace: a mark is a row whose `name` is a single digit `1`–`9`.
 The target is a plain path with no foreign key to `dirs`, so
 `furet remove`, the retention purge and `exclude_dirs` never touch these
-rows. No command writes the table yet (lot 51 adds only the schema).
+rows. Written by `furet alias add` (`storage::upsert_alias`) and
+`furet alias remove` (`storage::remove_alias`).
 
 | Column | Type | Constraints | Holds |
 |---|---|---|---|

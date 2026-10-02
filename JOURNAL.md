@@ -1,4 +1,14 @@
 ## 2026-10-02 — branch main — v0.2.0
+Done: lot 52 — `furet alias add <name> [<path>] [--force] | list | remove <name>` over lot 51's table: pure
+`alias::key`, four storage helpers, nested clap subcommand. Tests first and shown failing (12 CLI + 4 help, all
+`unrecognized subcommand 'alias'`); `alias list` is the fifth stdout exception; four new help snapshots, top-level
+diff exactly one added line. No resolution yet — `f !name` is lot 53.
+Decisions: none new — every rule was pinned by the lot prompt from `prompts/DESIGN-aliases-scopes-marks.md` §1.2–1.3
+(Hervé, 2026-10-02); two tests prime the DB with a no-op `alias list` because the refusal paths never open it.
+Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-02 — branch main — v0.2.0
 Done: lot 51 — migration 4 adds the `aliases` table (`name`, unique lowercased `key`, `path`, `created`) and
 `idx_aliases_key`; no command reads or writes it yet. Tests first and shown failing: counters 3/3/5 → 4/4/6 with the
 three version tests renamed, new `a_version_3_database_migrates_to_version_4_keeping_its_rows` and

@@ -332,6 +332,16 @@ fn remove_missing(
     run(&mut cmd)
 }
 
+fn alias(sandbox: &Sandbox, args: &[&str], cwd: &Path) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("alias");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.current_dir(cwd);
+    run(&mut cmd)
+}
+
 fn missing_since_values(conn: &Connection) -> Vec<i64> {
     let mut statement = conn
         .prepare("SELECT COALESCE(missing_since, -1) FROM dirs ORDER BY path")
@@ -4268,4 +4278,202 @@ fn query_memory_never_applies_to_the_disk_fallback() {
         latest_query_row(&world),
         ("fallback".to_owned(), "menu".to_owned(), None)
     );
+}
+
+#[test]
+fn alias_add_defaults_to_the_current_directory() {
+    let world = sandbox(&["ombi"]);
+    let out = alias(&world, &["add", "Ombi"], &world.child("ombi"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let ombi = canonical_child(&world, "ombi");
+    assert_eq!(text(&out.stderr), format!("alias Ombi -> {ombi}\n"));
+    let listed = alias(&world, &["list"], world.tree.path());
+    assert!(listed.status.success(), "stderr: {}", text(&listed.stderr));
+    let stdout = text(&listed.stdout);
+    assert_eq!(stdout.lines().count(), 1);
+    let mut fields = stdout.trim_end().split('\t');
+    assert_eq!(fields.next(), Some("Ombi"));
+    assert_eq!(fields.next(), Some(ombi.as_str()));
+    let created = fields.next().expect("the created field exists");
+    let stamp = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+        .expect("the timestamp pattern compiles");
+    assert!(
+        stamp.is_match(created),
+        "created field '{created}' is not a local timestamp"
+    );
+    assert_eq!(fields.next(), None);
+}
+
+#[test]
+fn alias_add_canonicalizes_a_relative_path() {
+    let world = sandbox(&["ombi"]);
+    let out = alias(&world, &["add", "om", "ombi"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let listed = alias(&world, &["list"], world.tree.path());
+    let ombi = canonical_child(&world, "ombi");
+    let stdout = text(&listed.stdout);
+    assert_eq!(stdout.lines().count(), 1);
+    let mut fields = stdout.trim_end().split('\t');
+    assert_eq!(fields.next(), Some("om"));
+    assert_eq!(fields.next(), Some(ombi.as_str()));
+}
+
+#[test]
+fn alias_add_refuses_an_existing_name_ignoring_case() {
+    let world = sandbox(&["ombi", "other"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = alias(&world, &["add", "OMBI", "other"], world.tree.path());
+    assert_eq!(out.status.code(), Some(1));
+    let ombi = canonical_child(&world, "ombi");
+    assert_eq!(
+        text(&out.stderr),
+        format!("furet: alias 'ombi' already exists ({ombi}); use --force to replace it\n")
+    );
+    assert!(out.stdout.is_empty());
+    let listed = alias(&world, &["list"], world.tree.path());
+    let stdout = text(&listed.stdout);
+    assert_eq!(stdout.lines().count(), 1);
+    let mut fields = stdout.trim_end().split('\t');
+    assert_eq!(fields.next(), Some("ombi"));
+    assert_eq!(fields.next(), Some(ombi.as_str()));
+}
+
+#[test]
+fn alias_add_force_replaces_name_and_path() {
+    let world = sandbox(&["ombi", "other"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = alias(
+        &world,
+        &["add", "OMBI", "other", "--force"],
+        world.tree.path(),
+    );
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let other = canonical_child(&world, "other");
+    let listed = alias(&world, &["list"], world.tree.path());
+    let stdout = text(&listed.stdout);
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.starts_with(&format!("OMBI\t{other}\t")));
+}
+
+#[test]
+fn alias_add_rejects_invalid_names() {
+    let world = sandbox(&["ombi"]);
+    assert!(alias(&world, &["list"], world.tree.path()).status.success());
+    for name in ["!ombi", "=ombi", "om bi", "a/b", "a.b", "é", ""] {
+        let out = alias(&world, &["add", name, "ombi"], world.tree.path());
+        assert_eq!(out.status.code(), Some(1), "name '{name}' must be rejected");
+        assert!(
+            text(&out.stderr).contains("invalid alias name"),
+            "name '{name}' explains the refusal"
+        );
+    }
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 0);
+}
+
+#[test]
+fn alias_add_rejects_a_missing_path_and_a_file() {
+    let world = sandbox(&["ombi"]);
+    assert!(alias(&world, &["list"], world.tree.path()).status.success());
+    let file = world.tree.path().join("notes.txt");
+    std::fs::write(&file, b"content").expect("the sandbox file is written");
+    let missing = alias(&world, &["add", "m", "nope"], world.tree.path());
+    assert_eq!(missing.status.code(), Some(1));
+    let as_file = alias(&world, &["add", "f", "notes.txt"], world.tree.path());
+    assert_eq!(as_file.status.code(), Some(1));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 0);
+}
+
+#[test]
+fn alias_add_accepts_a_digit_name() {
+    let world = sandbox(&["ombi"]);
+    let out = alias(&world, &["add", "1", "ombi"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 1);
+}
+
+#[test]
+fn alias_list_is_empty_then_sorted_by_name_ignoring_case() {
+    let world = sandbox(&["ombi"]);
+    let empty = alias(&world, &["list"], world.tree.path());
+    assert!(empty.status.success(), "stderr: {}", text(&empty.stderr));
+    assert!(empty.stdout.is_empty());
+    for name in ["zz", "1", "Ab"] {
+        assert!(
+            alias(&world, &["add", name, "ombi"], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let listed = alias(&world, &["list"], world.tree.path());
+    let stdout = text(&listed.stdout);
+    let names: Vec<&str> = stdout
+        .lines()
+        .map(|line| line.split('\t').next().unwrap_or_default())
+        .collect();
+    assert_eq!(names, ["1", "Ab", "zz"]);
+}
+
+#[test]
+fn alias_remove_ignores_case() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = alias(&world, &["remove", "OMBI"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("removed alias OMBI"));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 0);
+}
+
+#[test]
+fn alias_remove_of_an_unknown_name_fails() {
+    let world = sandbox(&["ombi"]);
+    let out = alias(&world, &["remove", "nope"], world.tree.path());
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stderr), "furet: unknown alias 'nope'\n");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn furet_remove_leaves_aliases_untouched() {
+    let world = sandbox(&["ombi"]);
+    assert!(
+        add(&world, &world.child("ombi"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = remove(&world, "ombi", world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+    let ombi = canonical_child(&world, "ombi");
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 1);
+    let stored: String = db(&world)
+        .query_row("SELECT path FROM aliases", [], |row| row.get(0))
+        .expect("the surviving alias reads back");
+    assert_eq!(stored, ombi);
+}
+
+#[test]
+fn alias_add_does_not_record_a_visit() {
+    let world = sandbox(&["ombi"]);
+    let out = alias(&world, &["add", "ombi", "ombi"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 0);
 }

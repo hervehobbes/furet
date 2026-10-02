@@ -478,7 +478,9 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   nothing pipes its output into `Set-Location`. `furet list` below is the
   second accepted stdout exception, `furet stats` below the third, for
   the same reason, and `furet preview` below the fourth — its output is
-  read by fzf's preview pane, never by `Set-Location`.
+  read by fzf's preview pane, never by `Set-Location` — and `furet alias
+  list` below the fifth, same justification as `queries`: a reporting
+  tool whose output is never piped into `Set-Location`.
 - `furet list [--all] [--paths]` — prints one tab-separated line per known directory —
   `path`, `visits` (count of `visits` rows), `last_visit`, `first_seen` —
   ordered by path, ignoring case (the lowercased `key`);
@@ -595,6 +597,41 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `--missing`) are lot 42's. The pattern is optional only with `--missing`
   (`required_unless_present = "missing"`): a bare `furet remove` is
   refused by clap, exit 2. stdout stays empty throughout.
+- `furet alias add <name> [<path>] [--force] | list | remove <name>` —
+  manages the `aliases` table (scope extension beyond SPEC, decided by
+  Hervé on 2026-10-02; lot 52, storage from lot 51). `add` validates the
+  name first (`alias::key`, `src/alias.rs`): non-empty, ASCII letters,
+  digits, `_` and `-` only, no length limit; anything else fails with
+  `furet: invalid alias name '<name>': use letters, digits, '_' and '-'`,
+  exit 1, nothing written. Names are case-insensitive — `Ombi` and
+  `ombi` are one entry, the stored lowercased `key`. `<path>` defaults to
+  the current directory and is canonicalized through `paths::canonical`
+  (directories only; a relative path resolves against the process's
+  current directory); its error propagates unchanged, exit 1, nothing
+  written. An existing name is refused — `furet: alias '<stored name>'
+  already exists (<stored path>); use --force to replace it`, exit 1 —
+  unless `--force` replaces the name, path and `created` in place
+  (`storage::upsert_alias`). Success prints `alias <name> -> <path>` on
+  stderr, exit 0, and records **no visit** — `dirs` and `visits` stay
+  untouched (`alias_add_does_not_record_a_visit`). `list` prints one
+  `name<TAB>path<TAB>created` line per row **to stdout** — the fifth
+  accepted stdout exception, same justification as `list`/`stats`: a
+  reporting tool whose output is never piped into `Set-Location` —
+  ordered by the lowercased `key` (case-insensitive alphabetical), with
+  `created` in the same SQLite local-time format as `furet list`; an
+  empty table prints nothing, exit 0 (`storage::alias_listing`). `remove
+  <name>` lowercases the name without validation (an invalid name cannot
+  exist) and deletes the row (`storage::remove_alias`); success prints
+  `removed alias <name>` on stderr, exit 0; no such key → `furet:
+  unknown alias '<name>'`, exit 1. A single-digit name is allowed: it is
+  the future mark of the same digit — aliases and marks share one
+  namespace, so `furet alias add 1` creates what the marks lot will treat
+  as mark 1. `furet remove`, the retention purge and `exclude_dirs`
+  never touch these rows (standalone `path`, no foreign key;
+  `furet_remove_leaves_aliases_untouched`). Resolution (`f !<name>`) is
+  **not implemented yet** — `f !ombi` and `furet query !ombi` behave
+  exactly as today; the `alias_prefix` config key and the `did you mean`
+  hint land with lot 53.
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -662,6 +699,9 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `stats [--top <n>]` | always, even with an empty database (`stats_on_an_empty_database_prints_zeros_and_no_top_line`) | a DB error |
 | `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
+| `alias add <name> [<path>] [--force]` | the name is valid, the target canonicalizes to a directory, and the name is new — or `--force` was given (`alias_add_defaults_to_the_current_directory`, `alias_add_force_replaces_name_and_path`, `alias_add_accepts_a_digit_name`) | invalid name (`alias_add_rejects_invalid_names`), a target that is missing or a file (`alias_add_rejects_a_missing_path_and_a_file`), an existing name without `--force` (`alias_add_refuses_an_existing_name_ignoring_case`), or a DB error |
+| `alias list` | always, even with an empty table (`alias_list_is_empty_then_sorted_by_name_ignoring_case`) | a DB error |
+| `alias remove <name>` | the name matches a stored key, ignoring case (`alias_remove_ignores_case`) | no alias matches (`alias_remove_of_an_unknown_name_fails`), or a DB error |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 | `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 

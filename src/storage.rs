@@ -323,6 +323,84 @@ pub fn remove_dirs(conn: &Connection, ids: &[i64]) -> Result<usize, StorageError
     Ok(removed)
 }
 
+/// One `aliases` row, looked up by its case-insensitive key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Alias {
+    /// The name as the user typed it, shown in listings.
+    pub name: String,
+    /// Canonical displayable path of the target directory.
+    pub path: String,
+}
+
+/// One `aliases` row flattened for `furet alias list`, its `created` already
+/// formatted in local time by SQLite itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasListing {
+    /// The name as the user typed it, shown in listings.
+    pub name: String,
+    /// Canonical displayable path of the target directory.
+    pub path: String,
+    /// When the entry was created or last overwritten, in local time.
+    pub created: String,
+}
+
+/// The `aliases` row matching `key`, or `None` when no such row exists.
+pub fn alias_by_key(conn: &Connection, key: &str) -> Result<Option<Alias>, StorageError> {
+    let mut stmt = conn.prepare("SELECT name, path FROM aliases WHERE key = ?1")?;
+    let mut rows = stmt.query(params![key])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(Alias {
+            name: row.get(0)?,
+            path: row.get(1)?,
+        })),
+        None => Ok(None),
+    }
+}
+
+/// Inserts or replaces the `aliases` row for `key`, refreshing `name`,
+/// `path`, and `created`.
+pub fn upsert_alias(
+    conn: &Connection,
+    name: &str,
+    key: &str,
+    path: &str,
+    created: Timestamp,
+) -> Result<(), StorageError> {
+    conn.prepare_cached(
+        "INSERT INTO aliases (name, key, path, created) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (key) DO UPDATE SET name = excluded.name, path = excluded.path,
+         created = excluded.created",
+    )?
+    .execute(params![name, key, path, created.unix_seconds()])?;
+    Ok(())
+}
+
+/// Lists every alias for `furet alias list`, ordered by `key` ascending.
+pub fn alias_listing(conn: &Connection) -> Result<Vec<AliasListing>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT name, path, strftime('%Y-%m-%dT%H:%M:%S', created, 'unixepoch', 'localtime')
+         FROM aliases ORDER BY key ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(AliasListing {
+                name: row.get(0)?,
+                path: row.get(1)?,
+                created: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Deletes the `aliases` row matching `key`; `true` when exactly one row went.
+pub fn remove_alias(conn: &Connection, key: &str) -> Result<bool, StorageError> {
+    let removed = conn
+        .prepare_cached("DELETE FROM aliases WHERE key = ?1")?
+        .execute(params![key])?;
+    Ok(removed == 1)
+}
+
 /// One `dirs` row flattened for `furet list`, its timestamps already
 /// formatted in local time by SQLite itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -621,10 +699,11 @@ pub fn top_dirs(conn: &Connection, limit: usize) -> Result<Vec<(i64, String)>, S
 #[cfg(test)]
 mod tests {
     use super::{
-        config_path, db_path, dir_entries, dir_id_by_key, dir_listing, dir_path_by_id,
-        format_local_time, insert_query, insert_visit, known_keys, last_visited_dir, logs_dir,
-        missing_since_by_id, open, open_at, purge_before, query_log, recall, remove_dirs,
-        resolve_data_dir, set_missing_since, stats_counts, top_dirs, upsert_dir, visit_log,
+        alias_by_key, alias_listing, config_path, db_path, dir_entries, dir_id_by_key, dir_listing,
+        dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
+        last_visited_dir, logs_dir, missing_since_by_id, open, open_at, purge_before, query_log,
+        recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, stats_counts,
+        top_dirs, upsert_alias, upsert_dir, visit_log,
     };
     use crate::clock::Timestamp;
     use crate::memory::{self, Recall};
@@ -1053,6 +1132,67 @@ mod tests {
             })
             .expect("the surviving alias reads back");
         assert_eq!(stored, "C:\\apps\\ombi");
+    }
+
+    #[test]
+    fn upsert_alias_inserts_then_replaces_by_key() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        upsert_alias(&conn, "Ombi", "ombi", "C:\\apps\\ombi", at(100))
+            .expect("the first alias upserts");
+        upsert_alias(&conn, "OMBI", "ombi", "C:\\other", at(200))
+            .expect("the second alias upserts");
+        assert_eq!(row_count(&conn, "aliases"), 1);
+        let (name, stored_path, created): (String, String, i64) = conn
+            .query_row("SELECT name, path, created FROM aliases", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .expect("the single aliases row reads back");
+        assert_eq!(name, "OMBI");
+        assert_eq!(stored_path, "C:\\other");
+        assert_eq!(created, at(200).unix_seconds());
+    }
+
+    #[test]
+    fn alias_by_key_misses_an_unknown_key() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        upsert_alias(&conn, "Ombi", "ombi", "C:\\apps\\ombi", at(100))
+            .expect("the fixture alias upserts");
+        assert_eq!(
+            alias_by_key(&conn, "ombi").expect("the known lookup runs"),
+            Some(super::Alias {
+                name: "Ombi".to_owned(),
+                path: "C:\\apps\\ombi".to_owned()
+            })
+        );
+        assert_eq!(
+            alias_by_key(&conn, "nope").expect("the unknown lookup runs"),
+            None
+        );
+    }
+
+    #[test]
+    fn alias_listing_orders_by_key() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        upsert_alias(&conn, "zz", "zz", "C:\\zz", at(100)).expect("the zz alias upserts");
+        upsert_alias(&conn, "1", "1", "C:\\one", at(100)).expect("the 1 alias upserts");
+        upsert_alias(&conn, "Ab", "ab", "C:\\ab", at(100)).expect("the Ab alias upserts");
+        let rows = alias_listing(&conn).expect("the listing reads");
+        let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, ["1", "Ab", "zz"]);
+    }
+
+    #[test]
+    fn remove_alias_reports_whether_a_row_went() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        upsert_alias(&conn, "ombi", "ombi", "C:\\apps\\ombi", at(100))
+            .expect("the fixture alias upserts");
+        assert!(remove_alias(&conn, "ombi").expect("the first remove runs"));
+        assert!(!remove_alias(&conn, "ombi").expect("the second remove runs"));
+        assert_eq!(row_count(&conn, "aliases"), 0);
     }
 
     // WHY: edition 2024 makes env mutation unsafe; this test must set FURET_DATA_DIR.

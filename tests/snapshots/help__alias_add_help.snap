@@ -1,0 +1,15 @@
+---
+source: tests/help.rs
+expression: text
+---
+Create an alias to a directory, the current one by default
+
+Usage: furet alias add [OPTIONS] <NAME> [PATH]
+
+Arguments:
+  <NAME>  Letters, digits, `_` and `-`; case-insensitive
+  [PATH]  Target directory; defaults to the current directory
+
+Options:
+      --force  Replace an existing alias with the same name
+  -h, --help   Print help

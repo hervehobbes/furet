@@ -1,0 +1,10 @@
+---
+source: tests/help.rs
+expression: text
+---
+List aliases as tab-separated lines
+
+Usage: furet alias list
+
+Options:
+  -h, --help  Print help

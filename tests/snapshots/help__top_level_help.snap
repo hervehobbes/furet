@@ -16,6 +16,7 @@ Commands:
   list     List known directories as tab-separated lines
   stats    Print database statistics as tab-separated lines
   remove   Forget known directories matching a name or path pattern
+  alias    Manage named directory aliases
   home     Print the configured home directory, or nothing when unset or invalid
   import   Import directories recorded by another tool, read from stdin
   preview  List a directory's contents for the fzf preview pane

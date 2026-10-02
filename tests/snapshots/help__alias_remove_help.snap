@@ -1,0 +1,13 @@
+---
+source: tests/help.rs
+expression: text
+---
+Delete an alias
+
+Usage: furet alias remove <NAME>
+
+Arguments:
+  <NAME>  Name of the alias, case-insensitive
+
+Options:
+  -h, --help  Print help

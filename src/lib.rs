@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod calibration;
 pub mod clock;
 pub mod config;

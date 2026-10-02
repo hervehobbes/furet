@@ -8,6 +8,7 @@ use std::process;
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::generate;
 use clap_complete::shells::PowerShell;
+use furet::alias;
 use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock, Timestamp};
 use furet::config::{self, Settings};
@@ -140,6 +141,11 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Manage named directory aliases.
+    Alias {
+        #[command(subcommand)]
+        action: AliasAction,
+    },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
     /// Import directories recorded by another tool, read from stdin.
@@ -161,6 +167,27 @@ enum InitShell {
         /// Name of the generated jump function; the interactive `fi` keeps its name.
         #[arg(long, default_value = "f")]
         cmd: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AliasAction {
+    /// Create an alias to a directory, the current one by default.
+    Add {
+        /// Letters, digits, `_` and `-`; case-insensitive.
+        name: String,
+        /// Target directory; defaults to the current directory.
+        path: Option<String>,
+        /// Replace an existing alias with the same name.
+        #[arg(long)]
+        force: bool,
+    },
+    /// List aliases as tab-separated lines.
+    List,
+    /// Delete an alias.
+    Remove {
+        /// Name of the alias, case-insensitive.
+        name: String,
     },
 }
 
@@ -266,6 +293,7 @@ fn main() {
             yes,
             dry_run,
         )),
+        Command::Alias { action } => report(alias_command(action)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -1288,6 +1316,62 @@ fn remove_target(pattern: &str, base: &Path) -> remove::Target {
         Ok(dir) => remove::Target::Key(dir.key),
         Err(_) => remove::Target::Key(paths::absolute_key(pattern, base)),
     }
+}
+
+fn alias_command(action: AliasAction) -> Result<(), Box<dyn Error>> {
+    match action {
+        AliasAction::Add { name, path, force } => alias_add(&name, path.as_deref(), force),
+        AliasAction::List => alias_list(),
+        AliasAction::Remove { name } => alias_remove(&name),
+    }
+}
+
+fn alias_add(name: &str, path: Option<&str>, force: bool) -> Result<(), Box<dyn Error>> {
+    debug!(name, ?path, force, "alias add");
+    let Some(key) = alias::key(name) else {
+        return Err(
+            format!("invalid alias name '{name}': use letters, digits, '_' and '-'").into(),
+        );
+    };
+    let dir = match path {
+        Some(input) => paths::canonical(Path::new(input))?,
+        None => paths::canonical(&env::current_dir()?)?,
+    };
+    let conn = storage::open()?;
+    if let Some(existing) = storage::alias_by_key(&conn, &key)?
+        && !force
+    {
+        return Err(format!(
+            "alias '{}' already exists ({}); use --force to replace it",
+            existing.name, existing.path
+        )
+        .into());
+    }
+    storage::upsert_alias(&conn, name, &key, &dir.path, SystemClock::new().now())?;
+    eprintln!("alias {name} -> {}", dir.path);
+    Ok(())
+}
+
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
+fn alias_list() -> Result<(), Box<dyn Error>> {
+    debug!("alias list");
+    let conn = storage::open()?;
+    let lines: Vec<String> = storage::alias_listing(&conn)?
+        .iter()
+        .map(|row| format!("{}\t{}\t{}", row.name, row.path, row.created))
+        .collect();
+    print_lines(&lines);
+    Ok(())
+}
+
+fn alias_remove(name: &str) -> Result<(), Box<dyn Error>> {
+    debug!(name, "alias remove");
+    let conn = storage::open()?;
+    if !storage::remove_alias(&conn, &name.to_ascii_lowercase())? {
+        return Err(format!("unknown alias '{name}'").into());
+    }
+    eprintln!("removed alias {name}");
+    Ok(())
 }
 
 fn ask(question: &str) -> Option<String> {

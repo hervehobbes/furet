@@ -134,6 +134,14 @@ extra profile line.
   stays in memory — no marker is written or cleared. Without a pattern and
   without `--missing`, clap refuses the command (exit 2).
   Quote the pattern under bash (`'ombi*'`); PowerShell passes it as is.
+- `furet alias add <name> [<path>] [--force]` — create a named shortcut
+  to a directory (`furet alias add ombi C:\apps\ombi`; without a path,
+  the current directory). The name uses letters, digits, `_` and `-` and
+  is case-insensitive; the path must be an existing directory. An
+  existing name is refused unless `--force` replaces it. `furet alias
+  list` prints `name`, path and creation date per line; `furet alias
+  remove ombi` deletes one. Aliases survive `furet remove` and the
+  retention purge. Jumping with `f !ombi` arrives in a later lot.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -221,6 +229,7 @@ subcommands, `--local`, the opt-in `nucleo` engine, `furet remove`'s
 confirmation and `--missing`, `furet stats`, the `fi` preview, and query
 memory; lot 50 shows the binary's UTC build date as the last line of
 `furet --help`. Lot 51 adds the `aliases` table shared by aliases and
-marks (migration 4).
+marks (migration 4); lot 52 adds `furet alias add`, `list` and `remove`
+over it.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

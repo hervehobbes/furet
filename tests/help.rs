@@ -89,6 +89,26 @@ fn remove_help_is_pinned() {
 }
 
 #[test]
+fn alias_help_is_pinned() {
+    snapshot_help("alias_help", &["alias", "--help"]);
+}
+
+#[test]
+fn alias_add_help_is_pinned() {
+    snapshot_help("alias_add_help", &["alias", "add", "--help"]);
+}
+
+#[test]
+fn alias_list_help_is_pinned() {
+    snapshot_help("alias_list_help", &["alias", "list", "--help"]);
+}
+
+#[test]
+fn alias_remove_help_is_pinned() {
+    snapshot_help("alias_remove_help", &["alias", "remove", "--help"]);
+}
+
+#[test]
 fn home_help_is_pinned() {
     snapshot_help("home_help", &["home", "--help"]);
 }

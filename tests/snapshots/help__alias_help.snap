@@ -1,0 +1,16 @@
+---
+source: tests/help.rs
+expression: text
+---
+Manage named directory aliases
+
+Usage: furet alias <COMMAND>
+
+Commands:
+  add     Create an alias to a directory, the current one by default
+  list    List aliases as tab-separated lines
+  remove  Delete an alias
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
