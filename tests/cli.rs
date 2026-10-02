@@ -4499,9 +4499,9 @@ fn query_alias_prints_the_target_and_writes_nothing() {
 
 #[test]
 fn query_alias_ignores_case() {
-    let world = sandbox(&["ombi"]);
+    let world = sandbox(&["ombi", "zebra"]);
     assert!(
-        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+        alias(&world, &["add", "ombi", "zebra"], world.tree.path())
             .status
             .success()
     );
@@ -4509,7 +4509,7 @@ fn query_alias_ignores_case() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stdout),
-        format!("{}\n", canonical_child(&world, "ombi"))
+        format!("{}\n", canonical_child(&world, "zebra"))
     );
 }
 
@@ -4642,9 +4642,9 @@ fn query_invalid_alias_names_fail() {
 
 #[test]
 fn query_list_of_an_alias_prints_the_target_alone() {
-    let world = sandbox(&["ombi"]);
+    let world = sandbox(&["ombi", "zebra"]);
     assert!(
-        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+        alias(&world, &["add", "ombi", "zebra"], world.tree.path())
             .status
             .success()
     );
@@ -4652,7 +4652,7 @@ fn query_list_of_an_alias_prints_the_target_alone() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stdout),
-        format!("{}\n", canonical_child(&world, "ombi"))
+        format!("{}\n", canonical_child(&world, "zebra"))
     );
 }
 
@@ -4680,10 +4680,10 @@ fn query_explain_of_an_alias_prints_one_line_on_stderr() {
 
 #[test]
 fn alias_prefix_equals_resolves_equals_and_leaves_bang_fuzzy() {
-    let world = sandbox(&["ombi"]);
+    let world = sandbox(&["ombi", "zebra"]);
     write_config(&world, "alias_prefix = \"=\"");
     assert!(
-        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+        alias(&world, &["add", "ombi", "zebra"], world.tree.path())
             .status
             .success()
     );
@@ -4691,29 +4691,31 @@ fn alias_prefix_equals_resolves_equals_and_leaves_bang_fuzzy() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(
         text(&out.stdout),
-        format!("{}\n", canonical_child(&world, "ombi"))
+        format!("{}\n", canonical_child(&world, "zebra"))
     );
     let fuzzy = query(&world, "!ombi", world.tree.path(), false);
     assert!(
-        !text(&fuzzy.stderr).contains("alias"),
-        "stderr: {}",
-        text(&fuzzy.stderr)
+        !text(&fuzzy.stdout).contains(&canonical_child(&world, "zebra")),
+        "stdout: {}",
+        text(&fuzzy.stdout)
     );
 }
 
 #[test]
 fn an_invalid_alias_prefix_keeps_bang() {
-    let world = sandbox(&["ombi"]);
+    let world = sandbox(&["ombi", "zebra"]);
     write_config(&world, "alias_prefix = \"@\"");
     assert!(
-        alias(&world, &["add", "ombi", "ombi"], world.tree.path())
+        alias(&world, &["add", "ombi", "zebra"], world.tree.path())
             .status
             .success()
     );
-    let out = query(&world, "!ombi", world.tree.path(), false);
-    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
-    assert_eq!(
-        text(&out.stdout),
-        format!("{}\n", canonical_child(&world, "ombi"))
-    );
+    for token in ["!ombi", "!OMBI"] {
+        let out = query(&world, token, world.tree.path(), false);
+        assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+        assert_eq!(
+            text(&out.stdout),
+            format!("{}\n", canonical_child(&world, "zebra"))
+        );
+    }
 }

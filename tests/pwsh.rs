@@ -1063,12 +1063,18 @@ fn f_unknown_alias_stays_put_and_reports_on_stderr() {
 
 #[test]
 fn f_local_with_an_alias_stays_put() {
-    let world = sandbox(&["ombi"]);
-    seed_alias(&world, "ombi", &world.child("ombi"));
+    let world = sandbox(&["ombi", "zebra"]);
+    seed_alias(&world, "ombi", &world.child("zebra"));
     let start = world.child("start");
     std::fs::create_dir_all(&start).expect("the isolated start directory exists");
     let run = run_pwsh(&world, "", "", &start, "f -l !ombi");
     assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("--local cannot be combined with an alias"),
+        "stderr: {}",
+        run.stderr
+    );
     assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 0);
 }
 
