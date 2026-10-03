@@ -59,6 +59,11 @@ fn back_help_is_pinned() {
 }
 
 #[test]
+fn history_help_is_pinned() {
+    snapshot_help("history_help", &["history", "--help"]);
+}
+
+#[test]
 fn init_help_is_pinned() {
     snapshot_help("init_help", &["init", "--help"]);
 }

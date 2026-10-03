@@ -303,7 +303,7 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 Only jump targets reach stdout: `furet query`'s resolved match and its
 `--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
 configured directory — plus `init pwsh`'s generated script. Everything
-else (menus, `--explain`, errors) goes to stderr, with four documented
+else (menus, `--explain`, errors) goes to stderr, with eight documented
 exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr. The rule is
 compile-time enforced: `clippy::print_stdout` + `disallowed-methods` on
@@ -683,6 +683,27 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `failure_rate` `0.0%`, no `top` line, exit 0. Pure renderer:
   `stats::render` (`src/stats.rs`), fed by `storage::stats_counts` /
   `storage::top_dirs` (no schema change).
+- `furet history (--session <id> | --all) [-n <limit>]` — prints the visit
+  history as tab-separated lines **to stdout** — the **eighth** accepted
+  stdout exception (Hervé, 2026-10-03), same justification as `list`: a
+  reporting tool whose output is never piped into `Set-Location`. With
+  `--session <id>` the lines are `<N><TAB><time><TAB><source><TAB><path>`,
+  `N` counting from 0: line 0 is the current directory and line `N` is
+  where `f -N` (`furet back --steps N`) goes, because the order is
+  `ts DESC, id DESC` — the same walk as `furet back`'s
+  (`storage::visited_dir_back`) — over the session's **raw** history,
+  duplicates kept. With `--all` every session's visits are listed without
+  the numbers, as `<time><TAB><source><TAB><path>`. One of `--session` or
+  `--all` is required and both are refused together (clap exits 2). The
+  `time` column is the visit's `ts` in the same SQLite local-time format as
+  `furet list` (`strftime('%Y-%m-%dT%H:%M:%S', …, 'unixepoch',
+  'localtime')`), the `source` column is the visit's
+  `hook | jump | back | up | fallback | import` tag. `--limit` (`-n`,
+  default 20) caps the number of lines; `0` prints them all. Read-only: no
+  reconcile and no write of any kind, a missing directory is listed as
+  stored, and an empty result (unknown session, empty database) prints
+  nothing and exits 0 (`src/storage.rs`, `visit_history`;
+  `main::history_command`).
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` — forgets known directories matching
   `<pattern>`, **hard-deleting** their `dirs` row (no `missing_since` reuse,
   no `removed_at` column, no schema change; not in SPEC — scope extension
@@ -963,6 +984,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
 | `stats [--top <n>]` | always, even with an empty database (`stats_on_an_empty_database_prints_zeros_and_no_top_line`) | a DB error |
+| `history (--session <id> \| --all) [-n <n>]` | always, even with an unknown session or an empty database (`history_of_an_unknown_session_or_an_empty_database_prints_nothing`) | a DB error; a bare `furet history` and `--session` with `--all` are refused by clap, exit 2 (`history_needs_a_session_or_all_but_not_both`) |
 | `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `alias add <name> [<path>] [--force]` | the name is valid, the target canonicalizes to a directory, and the name is new — or `--force` was given (`alias_add_defaults_to_the_current_directory`, `alias_add_force_replaces_name_and_path`, `alias_add_accepts_a_digit_name`) | invalid name (`alias_add_rejects_invalid_names`), a target that is missing or a file (`alias_add_rejects_a_missing_path_and_a_file`), an existing name without `--force` (`alias_add_refuses_an_existing_name_ignoring_case`), or a DB error |

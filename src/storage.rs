@@ -477,6 +477,49 @@ pub fn visited_dir_back(
     }
 }
 
+/// One visit as listed by `furet history`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryRow {
+    /// Visit time in local time, `YYYY-MM-DDTHH:MM:SS`.
+    pub time: String,
+    /// What triggered the visit (`hook`, `jump`, ...).
+    pub source: String,
+    /// Canonical displayable path of the visited directory.
+    pub path: String,
+}
+
+/// The newest `limit` visits of `session` (every session when `None`),
+/// newest first; `limit = 0` returns them all.
+pub fn visit_history(
+    conn: &Connection,
+    session: Option<&str>,
+    limit: u32,
+) -> Result<Vec<HistoryRow>, StorageError> {
+    // WHY: the order stays `ts DESC, id DESC`, the same as `visited_dir_back`, so line N is `f -N`'s target.
+    let mut stmt = conn.prepare(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%S', visits.ts, 'unixepoch', 'localtime'),
+                visits.source,
+                dirs.path
+         FROM visits
+         JOIN dirs ON dirs.id = visits.dir_id
+         WHERE ?1 IS NULL OR visits.session = ?1
+         ORDER BY visits.ts DESC, visits.id DESC
+         LIMIT ?2",
+    )?;
+    // WHY: SQLite treats a negative LIMIT as no limit, so 0 maps to -1.
+    let bound = if limit == 0 { -1_i64 } else { i64::from(limit) };
+    let rows = stmt
+        .query_map(params![session, bound], |row| {
+            Ok(HistoryRow {
+                time: row.get(0)?,
+                source: row.get(1)?,
+                path: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Inserts one `queries` row, journaling a real query decision (SPEC section 15).
 pub fn insert_query(
     conn: &Connection,
@@ -713,7 +756,7 @@ mod tests {
         dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
         last_visited_dir, logs_dir, missing_since_by_id, open, open_at, purge_before, query_log,
         recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, stats_counts,
-        top_dirs, upsert_alias, upsert_dir, visit_log, visited_dir_back,
+        top_dirs, upsert_alias, upsert_dir, visit_history, visit_log, visited_dir_back,
     };
     use crate::clock::Timestamp;
     use crate::memory::{self, Recall};
@@ -1540,6 +1583,50 @@ mod tests {
         assert_eq!(three, Some("c:\\dev\\a".to_owned()));
         let four = visited_dir_back(&conn, "s1", 4).expect("the past-the-end lookup runs");
         assert_eq!(four, None);
+    }
+
+    #[test]
+    fn visit_history_lists_newest_first_per_session_or_all() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\dev\\a", "c:\\dev\\a", at(100)).expect("the a dir upserts");
+        let b = upsert_dir(&conn, "c:\\dev\\b", "c:\\dev\\b", at(100)).expect("the b dir upserts");
+        let c = upsert_dir(&conn, "c:\\dev\\c", "c:\\dev\\c", at(100)).expect("the c dir upserts");
+        let d = upsert_dir(&conn, "c:\\dev\\d", "c:\\dev\\d", at(100)).expect("the d dir upserts");
+        let x = upsert_dir(&conn, "c:\\dev\\x", "c:\\dev\\x", at(100)).expect("the x dir upserts");
+        insert_visit(&conn, a, at(110), "jump", "s1", None).expect("the first visit inserts");
+        insert_visit(&conn, b, at(120), "jump", "s1", None).expect("the second visit inserts");
+        insert_visit(&conn, x, at(125), "jump", "s2", None).expect("the decoy visit inserts");
+        insert_visit(&conn, c, at(130), "jump", "s1", None).expect("the third visit inserts");
+        insert_visit(&conn, d, at(140), "jump", "s1", None).expect("the fourth visit inserts");
+        fn paths(rows: &[super::HistoryRow]) -> Vec<&str> {
+            rows.iter().map(|row| row.path.as_str()).collect()
+        }
+        let session = visit_history(&conn, Some("s1"), 0).expect("the session history reads");
+        assert_eq!(
+            paths(&session),
+            ["c:\\dev\\d", "c:\\dev\\c", "c:\\dev\\b", "c:\\dev\\a"]
+        );
+        let limited = visit_history(&conn, Some("s1"), 2).expect("the limited history reads");
+        assert_eq!(paths(&limited), ["c:\\dev\\d", "c:\\dev\\c"]);
+        let every = visit_history(&conn, None, 0).expect("the whole history reads");
+        assert_eq!(
+            paths(&every),
+            [
+                "c:\\dev\\d",
+                "c:\\dev\\c",
+                "c:\\dev\\x",
+                "c:\\dev\\b",
+                "c:\\dev\\a"
+            ]
+        );
+        let unknown = visit_history(&conn, Some("nope"), 0).expect("the unknown session reads");
+        assert_eq!(unknown, vec![]);
+        assert_eq!(session[0].source, "jump");
+        assert_eq!(
+            session[0].time,
+            format_local_time(&conn, at(140)).expect("the newest visit formats")
+        );
     }
 
     #[test]

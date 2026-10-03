@@ -1,0 +1,13 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the visit history, newest first, as tab-separated lines
+
+Usage: furet history [OPTIONS]
+
+Options:
+      --session <SESSION>  Terminal session to list, numbered like `f -N` (0 = current)
+  -a, --all                List every session's visits, without numbers
+  -n, --limit <LIMIT>      Maximum number of lines; 0 prints them all [default: 20]
+  -h, --help               Print help

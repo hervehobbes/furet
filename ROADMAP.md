@@ -69,3 +69,4 @@
 | 62 | Release 0.3.0: aliases, home scope, marks (design cycle, lots 51-61) |
 | 63 | `f -N`: go N directories back in the session (`furet back --steps`) |
 | 64 | `furet import pwsh-history` seeds the database from PSReadLine history |
+| 65 | `furet history`: visit history numbered like `f -N` |

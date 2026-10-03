@@ -1,4 +1,12 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 65 — `furet history`: `storage::visit_history` + `HistoryRow` (order `ts DESC, id DESC`,
+the same walk as `visited_dir_back`, so line N is `f -N`'s target; LIMIT -1 for `--limit 0` = all)
+and `furet history --session <id> | --all -n <limit>` (default 20; numbers only per session).
+8 cli + 1 help + 1 unit tests written first (cli tests failed on clap's unknown subcommand).
+Decisions: Hervé 2026-10-03 — one numbered session by default, `--all` without numbers, eighth
+accepted stdout exception, the `fh` wrapper is lot 66. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; `fh` (lot 66).
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 64b — one cli test, `import_pwsh_history_keeps_the_line_order_without_repeats`
 (repeat-free fixture `cd a; cd b`), pinning the line order itself: mutation B `-(index)` is
 now caught by it while test 5 (latest occurrence wins) stays green.

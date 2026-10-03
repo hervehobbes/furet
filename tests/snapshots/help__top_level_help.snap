@@ -11,6 +11,7 @@ Commands:
   query    Rank recorded directories and print the best match, falling back to a disk walk (SPEC section 11) when nothing matches
   up       Print the ancestor `n` levels above the current directory
   back     Print the second-to-last directory visited in this session
+  history  Print the visit history, newest first, as tab-separated lines
   init     Print shell integration code for the requested shell
   queries  Inspect the query journal (SPEC section 15)
   list     List known directories as tab-separated lines

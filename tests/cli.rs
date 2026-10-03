@@ -172,6 +172,15 @@ fn import_zoxide(sandbox: &Sandbox, stdin: &str) -> Output {
     run(&mut cmd)
 }
 
+fn history(sandbox: &Sandbox, extra: &[&str]) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("history");
+    for arg in extra {
+        cmd.arg(arg);
+    }
+    run(&mut cmd)
+}
+
 fn import_history(sandbox: &Sandbox, stdin: &str) -> Output {
     let mut cmd = sandbox.furet();
     cmd.arg("import")
@@ -1292,6 +1301,264 @@ fn back_steps_zero_is_rejected() {
         .arg("0"));
     assert_eq!(out.status.code(), Some(2));
     assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn history_numbers_the_session_visits_newest_first() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = history(&world, &["--session", "session-1"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 4, "stdout: {stdout}");
+    let expected = [("0", "d"), ("1", "c"), ("2", "b"), ("3", "a")];
+    for (line, (index, name)) in lines.iter().zip(expected.iter()) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 4, "line: {line}");
+        assert_eq!(fields[0], *index, "line: {line}");
+        assert_eq!(fields[2], "hook", "line: {line}");
+        let canonical = paths::canonical(&world.child(name))
+            .expect("the expected directory canonicalizes")
+            .path;
+        assert_eq!(fields[3], canonical, "line: {line}");
+        let time = fields[1];
+        assert_eq!(time.len(), 19, "time: {time}");
+        for (position, byte) in time.bytes().enumerate() {
+            let separator = position == 4
+                || position == 7
+                || position == 10
+                || position == 13
+                || position == 16;
+            if !separator {
+                assert!(byte.is_ascii_digit(), "time: {time}");
+            }
+        }
+        assert_eq!(&time[4..5], "-", "time: {time}");
+        assert_eq!(&time[7..8], "-", "time: {time}");
+        assert_eq!(&time[10..11], "T", "time: {time}");
+        assert_eq!(&time[13..14], ":", "time: {time}");
+        assert_eq!(&time[16..17], ":", "time: {time}");
+    }
+}
+
+#[test]
+fn history_line_n_is_where_back_steps_n_goes() {
+    let world = sandbox(&["a", "b", "c", "d", "x"]);
+    assert!(
+        add(&world, &world.child("a"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &world.child("b"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &world.child("x"), "session-2", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &world.child("c"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(&world, &world.child("d"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = history(&world, &["--session", "session-1"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 4, "stdout: {stdout}");
+    let x_path = paths::canonical(&world.child("x"))
+        .expect("the decoy directory canonicalizes")
+        .path;
+    for line in &lines {
+        assert!(!line.contains(&x_path), "the decoy leaked into: {line}");
+    }
+    for n in 1..=3u32 {
+        let back = run(world
+            .furet()
+            .arg("back")
+            .arg("--session")
+            .arg("session-1")
+            .arg("--steps")
+            .arg(n.to_string()));
+        assert!(back.status.success(), "stderr: {}", text(&back.stderr));
+        let fields: Vec<&str> = lines[n as usize].split('\t').collect();
+        assert_eq!(fields[3], text(&back.stdout).trim(), "N = {n}");
+    }
+}
+
+#[test]
+fn history_limit_caps_the_lines_and_zero_prints_all() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let capped = history(&world, &["--session", "session-1", "--limit", "2"]);
+    assert!(capped.status.success(), "stderr: {}", text(&capped.stderr));
+    let capped_stdout = text(&capped.stdout);
+    let lines: Vec<&str> = capped_stdout.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0].split('\t').next(), Some("0"));
+    assert_eq!(lines[1].split('\t').next(), Some("1"));
+    let zero = history(&world, &["--session", "session-1", "-n", "0"]);
+    assert!(zero.status.success(), "stderr: {}", text(&zero.stderr));
+    assert_eq!(text(&zero.stdout).lines().count(), 4);
+    for dir in [
+        "a", "b", "a", "b", "a", "b", "a", "b", "a", "b", "a", "b", "a", "b", "a", "b", "a", "b",
+        "a", "b", "a",
+    ] {
+        assert!(
+            add(&world, &world.child(dir), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let default = history(&world, &["--session", "session-1"]);
+    assert!(
+        default.status.success(),
+        "stderr: {}",
+        text(&default.stderr)
+    );
+    assert_eq!(text(&default.stdout).lines().count(), 20);
+}
+
+#[test]
+fn history_all_lists_every_session_without_numbers() {
+    let world = sandbox(&["a", "b", "c", "d", "x"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    assert!(
+        add(&world, &world.child("x"), "session-2", None, None)
+            .status
+            .success()
+    );
+    let out = history(&world, &["--all"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 5, "stdout: {stdout}");
+    for line in &lines {
+        assert_eq!(line.split('\t').count(), 3, "line: {line}");
+    }
+    let x_path = paths::canonical(&world.child("x"))
+        .expect("the decoy directory canonicalizes")
+        .path;
+    let fields: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(fields[2], x_path, "the newest visit is x's: {}", lines[0]);
+    assert_eq!(fields[1], "hook");
+    let one = history(&world, &["-a", "-n", "1"]);
+    assert!(one.status.success(), "stderr: {}", text(&one.stderr));
+    let one_stdout = text(&one.stdout);
+    let one_lines: Vec<&str> = one_stdout.lines().collect();
+    assert_eq!(one_lines, [lines[0]]);
+}
+
+#[test]
+fn history_time_is_the_local_time_of_the_visit() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let expected: String = {
+        let conn = db(&world);
+        conn.execute("UPDATE visits SET ts = 1700000000 + id", [])
+            .expect("the fixture timestamps are rewritten");
+        conn.query_row(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%S', MAX(ts), 'unixepoch', 'localtime') FROM visits",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the expected timestamp formats")
+    };
+    let out = history(&world, &["--session", "session-1"]);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 4);
+    let fields: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(fields[1], expected);
+}
+
+#[test]
+fn history_needs_a_session_or_all_but_not_both() {
+    let world = sandbox(&[]);
+    let bare = history(&world, &[]);
+    assert_eq!(bare.status.code(), Some(2));
+    assert!(bare.stdout.is_empty());
+    let both = history(&world, &["--session", "s", "--all"]);
+    assert_eq!(both.status.code(), Some(2));
+    assert!(both.stdout.is_empty());
+}
+
+#[test]
+fn history_of_an_unknown_session_or_an_empty_database_prints_nothing() {
+    let world = sandbox(&[]);
+    let all = history(&world, &["--all"]);
+    assert_eq!(all.status.code(), Some(0));
+    assert!(all.stdout.is_empty());
+    assert!(all.stderr.is_empty());
+    let nope = history(&world, &["--session", "nope"]);
+    assert_eq!(nope.status.code(), Some(0));
+    assert!(nope.stdout.is_empty());
+    assert!(nope.stderr.is_empty());
+}
+
+#[test]
+fn history_writes_nothing() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let (visits, queries) = {
+        let conn = db(&world);
+        (
+            scalar(&conn, "SELECT COUNT(*) FROM visits"),
+            scalar(&conn, "SELECT COUNT(*) FROM queries"),
+        )
+    };
+    let session = history(&world, &["--session", "session-1"]);
+    assert!(
+        session.status.success(),
+        "stderr: {}",
+        text(&session.stderr)
+    );
+    let all = history(&world, &["--all"]);
+    assert!(all.status.success(), "stderr: {}", text(&all.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), visits);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), queries);
 }
 
 #[test]

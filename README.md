@@ -115,6 +115,14 @@ extra profile line.
   (`n` defaults to 10; `0` lists none). Read-only, like `furet list`: the
   stored `missing_since` flags are taken as is, nothing is reconciled or
   written.
+- `furet history (--session <id> | --all) [-n <limit>]` — print the visit
+  history, newest first. With `--session <id>` every line is
+  `<N><TAB><time><TAB><source><TAB><path>`, numbered so that line `N` is
+  exactly where `f -N` goes (line 0 is the current directory); with
+  `--all`, every session's visits are listed without the numbers.
+  `--limit` (`-n`, default 20) caps the number of lines, `0` prints them
+  all. Read-only, like `furet list`; the `fh` wrapper for interactive use
+  comes in the next lot.
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` —
   forget known directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
@@ -320,6 +328,9 @@ session's raw visit history (duplicates kept, `f -1` equal to `f -`),
 recorded as a `back` visit — the binary side is `furet back --steps <N>`.
 Lot 64 adds `furet import pwsh-history`: seed the database from PSReadLine
 history — `cd`-like lines with one absolute path (`~` expands to the user
-profile), later lines more recent, re-running it a no-op.
+profile), later lines more recent, re-running it a no-op. Lot 65 adds
+`furet history`: the visit history, newest first, numbered like `f -N`
+per session (`--session <id>`) or listed across every session without
+numbers (`--all`); the `fh` pwsh wrapper is the next lot.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

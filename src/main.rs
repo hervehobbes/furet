@@ -104,6 +104,18 @@ enum Command {
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
         steps: u32,
     },
+    /// Print the visit history, newest first, as tab-separated lines.
+    History {
+        /// Terminal session to list, numbered like `f -N` (0 = current).
+        #[arg(long, required_unless_present = "all", conflicts_with = "all")]
+        session: Option<String>,
+        /// List every session's visits, without numbers.
+        #[arg(short, long)]
+        all: bool,
+        /// Maximum number of lines; 0 prints them all.
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: u32,
+    },
     /// Print shell integration code for the requested shell.
     Init {
         #[command(subcommand)]
@@ -322,6 +334,11 @@ fn main() {
         )),
         Command::Up { n } => report(up(n)),
         Command::Back { session, steps } => report(back(&session, steps)),
+        Command::History {
+            session,
+            all: _,
+            limit,
+        } => report(history_command(session.as_deref(), limit)),
         Command::Init { shell } => match shell {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
@@ -1051,6 +1068,22 @@ fn back(session: &str, steps: u32) -> Result<(), Box<dyn Error>> {
         }
     })?;
     print_result(&previous);
+    Ok(())
+}
+
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
+fn history_command(session: Option<&str>, limit: u32) -> Result<(), Box<dyn Error>> {
+    debug!(session, limit, "history");
+    let conn = storage::open()?;
+    let lines: Vec<String> = storage::visit_history(&conn, session, limit)?
+        .iter()
+        .enumerate()
+        .map(|(index, row)| match session {
+            Some(_) => format!("{index}\t{}\t{}\t{}", row.time, row.source, row.path),
+            None => format!("{}\t{}\t{}", row.time, row.source, row.path),
+        })
+        .collect();
+    print_lines(&lines);
     Ok(())
 }
 
