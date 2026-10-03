@@ -1,0 +1,14 @@
+---
+source: tests/help.rs
+expression: text
+---
+Set a mark on a directory, overwriting it silently
+
+Usage: furet mark set <DIGIT> [PATH]
+
+Arguments:
+  <DIGIT>  Mark digit, 1 to 9
+  [PATH]   Directory to mark; defaults to the current directory
+
+Options:
+  -h, --help  Print help

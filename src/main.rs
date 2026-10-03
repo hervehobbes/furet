@@ -149,6 +149,11 @@ enum Command {
         #[command(subcommand)]
         action: AliasAction,
     },
+    /// Manage numbered marks (aliases named 1-9).
+    Mark {
+        #[command(subcommand)]
+        action: MarkAction,
+    },
     /// Print the configured home directory, or nothing when unset or invalid.
     Home,
     /// Import directories recorded by another tool, read from stdin.
@@ -198,6 +203,27 @@ enum AliasAction {
         /// The word being completed, prefix included.
         #[arg(default_value = "")]
         word: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MarkAction {
+    /// Set a mark on a directory, overwriting it silently.
+    Set {
+        /// Mark digit, 1 to 9.
+        digit: String,
+        /// Directory to mark; defaults to the current directory.
+        path: Option<String>,
+    },
+    /// List marks as tab-separated lines, by digit.
+    List,
+    /// Delete a mark or a range of marks (2 or 2-4); silent on unset marks.
+    Delete {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        spec: Option<String>,
+        /// Delete every mark (1-9); named aliases are kept.
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -306,6 +332,7 @@ fn main() {
             dry_run,
         )),
         Command::Alias { action } => report(alias_command(action)),
+        Command::Mark { action } => report(mark_command(action)),
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
@@ -616,7 +643,11 @@ fn alias_query(
     };
     Some((|| {
         let conn = storage::open()?;
+        let is_mark = alias::mark_digit(name).is_some();
         let Some(alias) = storage::alias_by_key(&conn, &key)? else {
+            if is_mark {
+                return Err(format!("mark {name} not set").into());
+            }
             let names: Vec<String> = storage::alias_listing(&conn)?
                 .into_iter()
                 .map(|row| row.name)
@@ -628,6 +659,11 @@ fn alias_query(
             return Err(message.into());
         };
         if !Path::new(&alias.path).is_dir() {
+            if is_mark {
+                return Err(
+                    format!("mark {name} points to a missing directory: {}", alias.path).into(),
+                );
+            }
             return Err(format!(
                 "alias '{}' points to a missing directory: {}",
                 alias.name, alias.path
@@ -1497,6 +1533,65 @@ fn alias_complete(word: &str) -> Result<(), Box<dyn Error>> {
         .map(|row| format!("{}{}\t{}", prefix, row.name, row.path))
         .collect();
     print_lines(&lines);
+    Ok(())
+}
+
+fn mark_command(action: MarkAction) -> Result<(), Box<dyn Error>> {
+    match action {
+        MarkAction::Set { digit, path } => mark_set(&digit, path.as_deref()),
+        MarkAction::List => mark_list(),
+        MarkAction::Delete { spec, all } => mark_delete(spec.as_deref(), all),
+    }
+}
+
+fn mark_set(digit: &str, path: Option<&str>) -> Result<(), Box<dyn Error>> {
+    debug!(digit, ?path, "mark set");
+    if alias::mark_digit(digit).is_none() {
+        return Err(format!("invalid mark '{digit}': use a digit from 1 to 9").into());
+    }
+    let dir = match path {
+        Some(input) => paths::canonical(Path::new(input))?,
+        None => paths::canonical(&env::current_dir()?)?,
+    };
+    let conn = storage::open()?;
+    // WHY: no existence check, so overwriting a mark is silent (Vim's m1).
+    storage::upsert_alias(&conn, digit, digit, &dir.path, SystemClock::new().now())?;
+    eprintln!("mark {digit} -> {}", dir.path);
+    Ok(())
+}
+
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
+fn mark_list() -> Result<(), Box<dyn Error>> {
+    debug!("mark list");
+    let conn = storage::open()?;
+    let lines: Vec<String> = storage::alias_listing(&conn)?
+        .iter()
+        .filter(|row| alias::mark_digit(&row.name).is_some())
+        .map(|row| format!("{}\t{}", row.name, row.path))
+        .collect();
+    print_lines(&lines);
+    Ok(())
+}
+
+fn mark_delete(spec: Option<&str>, all: bool) -> Result<(), Box<dyn Error>> {
+    debug!(?spec, all, "mark delete");
+    let digits = if all {
+        1..=9
+    } else {
+        let spec = spec.unwrap_or_default();
+        let Some(range) = alias::mark_range(spec) else {
+            return Err(
+                format!("invalid mark range '{spec}': use a digit or a range like 2-4").into(),
+            );
+        };
+        range
+    };
+    let conn = storage::open()?;
+    for digit in digits {
+        if storage::remove_alias(&conn, &digit.to_string())? {
+            eprintln!("removed mark {digit}");
+        }
+    }
     Ok(())
 }
 

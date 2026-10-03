@@ -1,4 +1,15 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 57 — marks in the binary: `furet mark set/list/delete` over the shared `aliases` table
+(`alias::mark_digit`/`mark_range`, silent overwrite via a check-free `upsert_alias`, `--all` deletes
+1-9 only, never a named alias) plus the two mark messages in `alias_query` (`mark 3 not set` without
+a hint, `mark 1 points to a missing directory`). 13 cli + 4 help tests written first, all failing;
+4 new help snapshots and one `mark` line in the top-level one. Docs: CONTRACTS (CLI entry, seventh
+stdout exception, exit rows, Vim `'0`-`'9` divergence), README bullet + Status, ROADMAP 57,
+example.md in French.
+Decisions: none beyond the prompt (design §3/§12, Hervé 2026-10-02/03). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session; lot 58 is `mark next`/`mark prev`.
+
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 56b — docs-only: the lot 55 and lot 56 JOURNAL entries cut to 9 lines each; two stale
 CONTRACTS.md lines fixed (the `--home` scope note now reads "lots 55-56; the pwsh side is `f -h`, see
 `init pwsh`" and the alias-queries paragraph drops its obsolete "`src/pwsh.rs` is unchanged" clause);

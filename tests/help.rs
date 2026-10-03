@@ -109,6 +109,26 @@ fn alias_remove_help_is_pinned() {
 }
 
 #[test]
+fn mark_help_is_pinned() {
+    snapshot_help("mark_help", &["mark", "--help"]);
+}
+
+#[test]
+fn mark_set_help_is_pinned() {
+    snapshot_help("mark_set_help", &["mark", "set", "--help"]);
+}
+
+#[test]
+fn mark_list_help_is_pinned() {
+    snapshot_help("mark_list_help", &["mark", "list", "--help"]);
+}
+
+#[test]
+fn mark_delete_help_is_pinned() {
+    snapshot_help("mark_delete_help", &["mark", "delete", "--help"]);
+}
+
+#[test]
 fn home_help_is_pinned() {
     snapshot_help("home_help", &["home", "--help"]);
 }

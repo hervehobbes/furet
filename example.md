@@ -638,3 +638,51 @@ C:\dev
 PS C:\dev\furet> furet back --session $PID
 C:\dev\clypher
 ```
+
+### Gérer les marques sans le hook
+
+Une marque est un raccourci numéroté (`1` à `9`) posé à la volée, dans
+l'esprit de Vim ; elle partage la table et l'espace de noms des alias :
+
+```powershell
+PS C:\dev\furet> furet mark set 1
+mark 1 -> C:\dev\furet
+
+PS C:\dev\furet> furet mark set 2 C:\dev\ombi
+mark 2 -> C:\dev\ombi
+
+PS C:\dev\furet> furet mark list
+1	C:\dev\furet
+2	C:\dev\ombi
+```
+
+Sans chemin, `mark set` prend le répertoire courant. Reposer une marque
+existante la remplace **silencieusement** (comme le `m1` de Vim), là où
+`furet alias add 1` refuserait un nom déjà pris sans `--force`. `mark
+list` écrit sur `stdout` comme `alias list` (exception documentée), un
+`chiffre<TAB>chemin` par ligne. Le saut se fait avec le même préfixe `!`
+que les alias :
+
+```powershell
+PS C:\dev\ombi> f !1
+PS C:\dev\furet>
+
+PS C:\dev\furet> f !3
+furet: mark 3 not set
+```
+
+Une marque non posée n'a jamais de suggestion `did you mean`. La
+suppression suit `:delm` — un chiffre ou une plage, muette sur les
+marques non posées, et `--all` ne touche que `1`-`9`, jamais un alias
+nommé :
+
+```powershell
+PS C:\dev\furet> furet mark delete 2-4
+removed mark 2
+
+PS C:\dev\furet> furet mark delete --all
+removed mark 1
+```
+
+La fonction `fm`, qui encapsule ces commandes côté pwsh, arrive dans un
+lot ultérieur.

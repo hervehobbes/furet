@@ -449,7 +449,13 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   enriched to `furet: unknown alias '<name>'; did you mean '<near>'?`
   when exactly one edit (optimal string alignment, `alias::suggestion`
   over the stored names) separates it from a known one; a tie picks the
-  smallest lowercased name. An alias whose target is gone from disk fails
+  smallest lowercased name. A name that is a single digit `1`-`9` — a mark,
+  `alias::mark_digit` (lot 57) — gets mark messages instead: an unset mark
+  fails with `furet: mark <name> not set`, **never** a `did you mean` hint
+  even when a close mark exists (`query_unset_mark_says_not_set_without_a_hint`),
+  and a mark whose target is gone from disk fails with `furet: mark <name>
+  points to a missing directory: <path>`; `!0` and named aliases keep the
+  messages above. An alias whose target is gone from disk fails
   with `furet: alias '<name>' points to a missing directory: <path>`,
   exit 1 — no fallback, no ranking. On success the resolved path is the
   answer: plain and `--list !ombi` print it alone on stdout, and
@@ -743,6 +749,37 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
     subcommands without filtering hidden ones, a known limitation Hervé
     accepted on 2026-10-02 (no workaround, no filtering of the generated
     block).
+- `furet mark set <digit> [<path>] | list | delete <spec> | delete --all` —
+  manages the marks (scope extension beyond SPEC, decided by Hervé on
+  2026-10-02 and 2026-10-03; lot 57, design doc §3 and §12). A mark is an
+  `aliases` row whose name is a single digit `1`-`9` (`alias::mark_digit`);
+  marks and aliases share one namespace, with **no schema change** — `set`
+  and `delete` write through `storage::upsert_alias` /
+  `storage::remove_alias` like the `alias` commands. The policy difference
+  with `alias add`: setting a mark **overwrites silently** (Vim's `m1`, no
+  existence check), while `furet alias add 1` refuses an existing name
+  unless `--force`. `set` validates the digit first — anything but exactly
+  one char `1`-`9` fails with `furet: invalid mark '<digit>': use a digit
+  from 1 to 9`, exit 1 — then resolves `<path>` exactly as `alias add` does
+  (`paths::canonical` of the given path, or of the cwd when none is given;
+  same errors for a missing path or a file), and prints `mark <digit> ->
+  <path>` on stderr, exit 0. `list` walks `storage::alias_listing` in key
+  order and keeps the names that pass `mark_digit`, printing one
+  `digit<TAB>path` line per mark **to stdout** — the **seventh** accepted
+  stdout exception, same justification as `furet alias list`: a reporting
+  tool whose output is never piped into `Set-Location`; no mark set prints
+  nothing, exit 0. `delete <spec>` parses the spec with
+  `alias::mark_range` — one digit `d` or an ascending range `a-b`, both
+  ends `1`-`9` (`4-2`, `2-`, `-2`, `2-10`, `0`, `10`, `a`, `""` and
+  anything with spaces are invalid) — and fails with `furet: invalid mark
+  range '<spec>': use a digit or a range like 2-4`, exit 1; each set digit
+  is then removed in ascending order (`storage::remove_alias`), printing
+  `removed mark <d>` on stderr, unset digits staying silent, exit 0. A
+  bare `furet mark delete` — no spec, no `--all` — and `<spec> --all`
+  together are refused by clap, exit 2. `delete --all` removes the names
+  `1`-`9` only — never a named alias, `0` included — with no confirmation.
+  No `visits` and no `queries` row is ever written
+  (`mark_commands_write_no_visit_and_no_query`).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -816,11 +853,19 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `alias add <name> [<path>] [--force]` | the name is valid, the target canonicalizes to a directory, and the name is new — or `--force` was given (`alias_add_defaults_to_the_current_directory`, `alias_add_force_replaces_name_and_path`, `alias_add_accepts_a_digit_name`) | invalid name (`alias_add_rejects_invalid_names`), a target that is missing or a file (`alias_add_rejects_a_missing_path_and_a_file`), an existing name without `--force` (`alias_add_refuses_an_existing_name_ignoring_case`), or a DB error |
 | `alias list` | always, even with an empty table (`alias_list_is_empty_then_sorted_by_name_ignoring_case`) | a DB error |
 | `alias remove <name>` | the name matches a stored key, ignoring case (`alias_remove_ignores_case`) | no alias matches (`alias_remove_of_an_unknown_name_fails`), or a DB error |
+| `mark set <digit> [<path>]` | the digit is `1`-`9` and the target canonicalizes to a directory; an existing mark is overwritten silently (`mark_set_defaults_to_the_cwd_and_overwrites_silently`, `mark_set_takes_an_explicit_path`) | the digit is not one char `1`-`9` (`mark_set_rejects_anything_but_one_to_nine`), the target is missing or a file (`mark_set_rejects_a_missing_path_and_a_file`), or a DB error |
+| `mark list` | always, even with no mark set (`mark_list_prints_only_marks_in_digit_order`) | a DB error |
+| `mark delete <spec> / --all` | a valid spec or `--all`; unset digits are silent, named aliases are kept (`mark_delete_one_and_a_range_and_stays_silent_on_unset`, `mark_delete_all_keeps_named_aliases`) | an invalid spec (`mark_delete_rejects_invalid_specs`) or a DB error; a bare `mark delete` and `<spec> --all` are refused by clap, exit 2 (`mark_delete_needs_a_spec_or_all_but_not_both`) |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 | `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 
 ### Accepted spec discrepancies
 
+- **Marks `'0`-`'9` (design §3.5, lot 57)** — in Vim, the marks `'0`-`'9`
+  are not set by the user: Vim fills them from viminfo/shada with the last
+  exit positions. furet borrows only the syntax — user-set marks named
+  `1`-`9` that overwrite silently — not that semantics. Accepted
+  divergence, Hervé, 2026-10-03.
 - **Menu input (SPEC §9)** — accepts a bare digit line only; there is no
   raw-keypress capture, so arrow keys are not read at all, and Esc is not
   literally trapped in the no-fzf branch. Today the menu is cancelled by

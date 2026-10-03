@@ -1,0 +1,14 @@
+---
+source: tests/help.rs
+expression: text
+---
+Delete a mark or a range of marks (2 or 2-4); silent on unset marks
+
+Usage: furet mark delete [OPTIONS] [SPEC]
+
+Arguments:
+  [SPEC]  
+
+Options:
+      --all   Delete every mark (1-9); named aliases are kept
+  -h, --help  Print help

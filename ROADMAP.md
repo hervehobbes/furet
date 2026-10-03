@@ -61,3 +61,4 @@
 | 54 | Tab completion of alias words: strict prefix, path shown, name inserted |
 | 55 | Home scope in the binary: `furet query --home` |
 | 56 | Home scope in pwsh: `f -h`, `fi -h`, Tab after `-h` |
+| 57 | Marks in the binary: `furet mark set/list/delete`, `mark N not set` |

@@ -34,9 +34,32 @@ pub fn suggestion<'a>(key: &str, names: &'a [String]) -> Option<&'a str> {
     best.map(|(name, _)| name)
 }
 
+/// The mark digit `1`-`9` that `name` denotes, if it is one.
+pub fn mark_digit(name: &str) -> Option<u8> {
+    let mut chars = name.chars();
+    let digit = chars.next()?;
+    if chars.next().is_some() || !matches!(digit, '1'..='9') {
+        return None;
+    }
+    Some(digit as u8 - b'0')
+}
+
+/// The marks a `furet mark delete` spec covers: one digit or an ascending
+/// range `a-b`, both ends `1`-`9`.
+pub fn mark_range(spec: &str) -> Option<std::ops::RangeInclusive<u8>> {
+    let (start, end) = match spec.split_once('-') {
+        None => (spec, spec),
+        Some(("", _)) | Some((_, "")) => return None,
+        Some((start, end)) => (start, end),
+    };
+    let start = mark_digit(start)?;
+    let end = mark_digit(end)?;
+    (start <= end).then_some(start..=end)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{key, suggestion};
+    use super::{key, mark_digit, mark_range, suggestion};
 
     #[test]
     fn key_lowercases_valid_names_ignoring_case() {
@@ -70,5 +93,28 @@ mod tests {
     fn suggestion_breaks_a_tie_on_the_smallest_lowercase_name() {
         let names = ["xb".to_owned(), "ac".to_owned()];
         assert_eq!(suggestion("ab", &names), Some("ac"));
+    }
+
+    #[test]
+    fn mark_digit_accepts_only_one_char_from_one_to_nine() {
+        assert_eq!(mark_digit("1"), Some(1));
+        assert_eq!(mark_digit("9"), Some(9));
+        for name in ["0", "10", "a", ""] {
+            assert_eq!(mark_digit(name), None, "name '{name}' is not a mark");
+        }
+    }
+
+    #[test]
+    fn mark_range_accepts_a_digit_and_an_ascending_range() {
+        assert_eq!(mark_range("3"), Some(3..=3));
+        assert_eq!(mark_range("2-4"), Some(2..=4));
+        assert_eq!(mark_range("5-5"), Some(5..=5));
+    }
+
+    #[test]
+    fn mark_range_rejects_every_invalid_spec() {
+        for spec in ["0", "10", "4-2", "2-", "-2", "2-10", "a", "", "2 - 4"] {
+            assert_eq!(mark_range(spec), None, "spec '{spec}' is not a mark range");
+        }
     }
 }

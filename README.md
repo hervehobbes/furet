@@ -152,6 +152,17 @@ extra profile line.
   named `!ombi` in the current directory wins over the alias. In the jump
   function, `f !<Tab>` lists every alias with its target path and inserts
   only the name (`f !om<Tab>` proposes `!ombi`, `!omnitool`, …).
+- `furet mark set <digit> [<path>]` — set a numbered mark (`1` to `9`) on a
+  directory (`furet mark set 1 C:\dev\ombi`; without a path, the current
+  directory). Setting a mark again overwrites it silently, like Vim's `m1`
+  — unlike `furet alias add 1`, which refuses an existing name unless
+  `--force`. `furet mark list` prints one `digit<TAB>path` line per mark,
+  in digit order; `furet mark delete 2` removes one mark,
+  `furet mark delete 2-4` a range, `furet mark delete --all` every mark
+  (`1`-`9` only — named aliases survive), all silent on unset digits and
+  without confirmation. Marks share the aliases' namespace and table.
+  Jump with `f !1`; an unset mark fails with `mark 3 not set` (no
+  `did you mean` hint), and a mark to a deleted directory is an error.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -246,6 +257,9 @@ over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
 Tab — `f !om<Tab>` lists every matching alias with its path and inserts
 the name. Lot 55 scopes `furet query --home` to the home root (the
 `home` key, else the user profile), from anywhere; lot 56 wires it into
-pwsh — `f -h`, `fi -h`, and Tab after `-h` all scope to the home.
+pwsh — `f -h`, `fi -h`, and Tab after `-h` all scope to the home. Lot 57
+adds numbered marks in the binary — `furet mark set`, `list` and
+`delete` over the shared `aliases` table, with the mark messages in
+alias jumps (`mark 3 not set`).
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

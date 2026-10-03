@@ -342,6 +342,16 @@ fn alias(sandbox: &Sandbox, args: &[&str], cwd: &Path) -> Output {
     run(&mut cmd)
 }
 
+fn mark(sandbox: &Sandbox, args: &[&str], cwd: &Path) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("mark");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.current_dir(cwd);
+    run(&mut cmd)
+}
+
 fn missing_since_values(conn: &Connection) -> Vec<i64> {
     let mut statement = conn
         .prepare("SELECT COALESCE(missing_since, -1) FROM dirs ORDER BY path")
@@ -5036,6 +5046,287 @@ fn alias_complete_writes_nothing() {
     );
     let out = alias(&world, &["complete", "!om"], world.tree.path());
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn mark_set_defaults_to_the_cwd_and_overwrites_silently() {
+    let world = sandbox(&["a", "b"]);
+    let first = mark(&world, &["set", "1"], &world.child("a"));
+    assert!(first.status.success(), "stderr: {}", text(&first.stderr));
+    assert!(first.stdout.is_empty());
+    assert_eq!(
+        text(&first.stderr),
+        format!("mark 1 -> {}\n", canonical_child(&world, "a"))
+    );
+    let second = mark(&world, &["set", "1"], &world.child("b"));
+    assert!(second.status.success(), "stderr: {}", text(&second.stderr));
+    assert_eq!(
+        text(&second.stderr),
+        format!("mark 1 -> {}\n", canonical_child(&world, "b"))
+    );
+    assert!(
+        !text(&second.stderr).contains("already exists"),
+        "overwriting a mark is silent"
+    );
+    let listed = mark(&world, &["list"], world.tree.path());
+    assert!(listed.status.success(), "stderr: {}", text(&listed.stderr));
+    assert_eq!(
+        text(&listed.stdout),
+        format!("1\t{}\n", canonical_child(&world, "b"))
+    );
+}
+
+#[test]
+fn mark_set_takes_an_explicit_path() {
+    let world = sandbox(&["a"]);
+    let out = mark(&world, &["set", "2", "a"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let listed = mark(&world, &["list"], world.tree.path());
+    assert_eq!(
+        text(&listed.stdout),
+        format!("2\t{}\n", canonical_child(&world, "a"))
+    );
+}
+
+#[test]
+fn mark_set_rejects_anything_but_one_to_nine() {
+    let world = sandbox(&["a"]);
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    for digit in ["0", "10", "a"] {
+        let out = mark(&world, &["set", digit, "a"], world.tree.path());
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "digit '{digit}' must be rejected"
+        );
+        assert!(
+            text(&out.stderr).contains(&format!("invalid mark '{digit}': use a digit from 1 to 9")),
+            "digit '{digit}' explains the refusal: {}",
+            text(&out.stderr)
+        );
+    }
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 0);
+}
+
+#[test]
+fn mark_set_rejects_a_missing_path_and_a_file() {
+    let world = sandbox(&["a"]);
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    let file = world.tree.path().join("notes.txt");
+    std::fs::write(&file, b"content").expect("the sandbox file is written");
+    let missing = mark(&world, &["set", "1", "nope"], world.tree.path());
+    assert_eq!(missing.status.code(), Some(1));
+    let as_file = mark(&world, &["set", "1", "notes.txt"], world.tree.path());
+    assert_eq!(as_file.status.code(), Some(1));
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM aliases"), 0);
+}
+
+#[test]
+fn mark_list_prints_only_marks_in_digit_order() {
+    let world = sandbox(&["a", "b", "c"]);
+    let empty = mark(&world, &["list"], world.tree.path());
+    assert!(empty.status.success(), "stderr: {}", text(&empty.stderr));
+    assert!(empty.stdout.is_empty());
+    for name in ["ombi", "0"] {
+        assert!(
+            alias(&world, &["add", name, "a"], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    assert!(
+        mark(&world, &["set", "3", "b"], world.tree.path())
+            .status
+            .success()
+    );
+    assert!(
+        mark(&world, &["set", "1", "c"], world.tree.path())
+            .status
+            .success()
+    );
+    let listed = mark(&world, &["list"], world.tree.path());
+    assert!(listed.status.success(), "stderr: {}", text(&listed.stderr));
+    assert_eq!(
+        text(&listed.stdout),
+        format!(
+            "1\t{}\n3\t{}\n",
+            canonical_child(&world, "c"),
+            canonical_child(&world, "b")
+        )
+    );
+}
+
+#[test]
+fn mark_delete_one_and_a_range_and_stays_silent_on_unset() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for (digit, child) in [("1", "a"), ("2", "b"), ("4", "c"), ("5", "d")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let ranged = mark(&world, &["delete", "2-4"], world.tree.path());
+    assert!(ranged.status.success(), "stderr: {}", text(&ranged.stderr));
+    assert_eq!(text(&ranged.stderr), "removed mark 2\nremoved mark 4\n");
+    let listed = mark(&world, &["list"], world.tree.path());
+    assert_eq!(
+        text(&listed.stdout),
+        format!(
+            "1\t{}\n5\t{}\n",
+            canonical_child(&world, "a"),
+            canonical_child(&world, "d")
+        )
+    );
+    let unset = mark(&world, &["delete", "3"], world.tree.path());
+    assert!(unset.status.success(), "stderr: {}", text(&unset.stderr));
+    assert!(unset.stderr.is_empty());
+}
+
+#[test]
+fn mark_delete_rejects_invalid_specs() {
+    let world = sandbox(&["a"]);
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    for spec in ["0", "4-2", "2-", "2-10", "a"] {
+        let out = mark(&world, &["delete", spec], world.tree.path());
+        assert_eq!(out.status.code(), Some(1), "spec '{spec}' must be rejected");
+        assert!(
+            text(&out.stderr).contains("invalid mark range"),
+            "spec '{spec}' explains the refusal: {}",
+            text(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn mark_delete_all_keeps_named_aliases() {
+    let world = sandbox(&["a", "b"]);
+    for name in ["ombi", "0"] {
+        assert!(
+            alias(&world, &["add", name, "a"], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    assert!(
+        mark(&world, &["set", "1", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    assert!(
+        mark(&world, &["set", "9", "b"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = mark(&world, &["delete", "--all"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stderr), "removed mark 1\nremoved mark 9\n");
+    let listed = mark(&world, &["list"], world.tree.path());
+    assert!(listed.status.success(), "stderr: {}", text(&listed.stderr));
+    assert!(listed.stdout.is_empty());
+    let aliases = alias(&world, &["list"], world.tree.path());
+    let listing = text(&aliases.stdout);
+    let names: Vec<&str> = listing
+        .lines()
+        .map(|line| line.split('\t').next().unwrap_or_default())
+        .collect();
+    assert_eq!(names, ["0", "ombi"]);
+}
+
+#[test]
+fn mark_delete_needs_a_spec_or_all_but_not_both() {
+    let world = sandbox(&["a"]);
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    let bare = mark(&world, &["delete"], world.tree.path());
+    assert_eq!(bare.status.code(), Some(2));
+    let both = mark(&world, &["delete", "2", "--all"], world.tree.path());
+    assert_eq!(both.status.code(), Some(2));
+}
+
+#[test]
+fn query_unset_mark_says_not_set_without_a_hint() {
+    let world = sandbox(&["a"]);
+    assert!(
+        mark(&world, &["set", "2", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!3", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).contains("furet: mark 3 not set"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    assert!(
+        !text(&out.stderr).contains("did you mean"),
+        "an unset mark gets no suggestion"
+    );
+    let zero = query(&world, "!0", world.tree.path(), false);
+    assert_eq!(zero.status.code(), Some(1));
+    assert!(
+        text(&zero.stderr).contains("unknown alias '0'"),
+        "stderr: {}",
+        text(&zero.stderr)
+    );
+}
+
+#[test]
+fn query_mark_to_a_missing_directory_fails() {
+    let world = sandbox(&["gone"]);
+    assert!(
+        mark(&world, &["set", "1", "gone"], world.tree.path())
+            .status
+            .success()
+    );
+    let gone = canonical_child(&world, "gone");
+    std::fs::remove_dir_all(world.child("gone")).expect("the marked directory vanishes");
+    let out = query(&world, "!1", world.tree.path(), false);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains(&format!(
+            "furet: mark 1 points to a missing directory: {gone}"
+        )),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn query_mark_jumps_to_its_target() {
+    let world = sandbox(&["zebra"]);
+    assert!(
+        mark(&world, &["set", "1", "zebra"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query(&world, "!1", world.tree.path(), false);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        format!("{}\n", canonical_child(&world, "zebra"))
+    );
+}
+
+#[test]
+fn mark_commands_write_no_visit_and_no_query() {
+    let world = sandbox(&["a"]);
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    assert!(
+        mark(&world, &["set", "1", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    assert!(mark(&world, &["list"], world.tree.path()).status.success());
+    assert!(
+        mark(&world, &["delete", "1"], world.tree.path())
+            .status
+            .success()
+    );
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);

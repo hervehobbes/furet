@@ -1,0 +1,10 @@
+---
+source: tests/help.rs
+expression: text
+---
+List marks as tab-separated lines, by digit
+
+Usage: furet mark list
+
+Options:
+  -h, --help  Print help
