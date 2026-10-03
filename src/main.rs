@@ -254,6 +254,8 @@ impl EngineArg {
 enum ImportSource {
     /// Import from `zoxide query -ls` on stdin.
     Zoxide,
+    /// Import cd-like lines from a PSReadLine history on stdin.
+    PwshHistory,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -344,6 +346,7 @@ fn main() {
         Command::Home => report(home_command()),
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
+            ImportSource::PwshHistory => import_pwsh_history(),
         }),
         Command::Preview { path } => report(preview_command(&path)),
     };
@@ -1087,6 +1090,40 @@ fn home_root(settings: &Settings) -> Result<String, Box<dyn Error>> {
 
 const IMPORT_SOURCE: &str = "import";
 
+struct ImportCounts {
+    imported: usize,
+    known: usize,
+    duplicate: usize,
+}
+
+fn record_import(
+    candidates: Vec<(f64, paths::CanonicalDir)>,
+    now: Timestamp,
+) -> Result<ImportCounts, Box<dyn Error>> {
+    let (deduped, duplicate) = import::dedupe_by_key(candidates);
+
+    let mut conn = storage::open()?;
+    let known_keys = storage::known_keys(&conn)?;
+    let known = deduped
+        .iter()
+        .filter(|(_, dir)| known_keys.contains(&dir.key))
+        .count();
+    let planned = import::plan(deduped, &known_keys, now);
+
+    let tx = conn.transaction()?;
+    for entry in &planned {
+        let dir_id = storage::upsert_dir(&tx, &entry.path, &entry.key, entry.ts)?;
+        storage::insert_visit(&tx, dir_id, entry.ts, IMPORT_SOURCE, IMPORT_SOURCE, None)?;
+    }
+    tx.commit()?;
+
+    Ok(ImportCounts {
+        imported: planned.len(),
+        known,
+        duplicate,
+    })
+}
+
 fn import_zoxide() -> Result<(), Box<dyn Error>> {
     debug!("import zoxide");
     let settings = load_settings();
@@ -1129,24 +1166,11 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let (deduped, duplicate) = import::dedupe_by_key(candidates);
-
-    let mut conn = storage::open()?;
-    let known_keys = storage::known_keys(&conn)?;
-    let known = deduped
-        .iter()
-        .filter(|(_, dir)| known_keys.contains(&dir.key))
-        .count();
-    let planned = import::plan(deduped, &known_keys, now);
-
-    let tx = conn.transaction()?;
-    for entry in &planned {
-        let dir_id = storage::upsert_dir(&tx, &entry.path, &entry.key, entry.ts)?;
-        storage::insert_visit(&tx, dir_id, entry.ts, IMPORT_SOURCE, IMPORT_SOURCE, None)?;
-    }
-    tx.commit()?;
-
-    let imported = planned.len();
+    let ImportCounts {
+        imported,
+        known,
+        duplicate,
+    } = record_import(candidates, now)?;
     let skipped = malformed + not_a_directory + known + duplicate + excluded;
     info!(
         imported,
@@ -1154,6 +1178,64 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
     );
     eprintln!(
         "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate}, excluded {excluded})"
+    );
+    Ok(())
+}
+
+fn import_pwsh_history() -> Result<(), Box<dyn Error>> {
+    debug!("import pwsh-history");
+    let settings = load_settings();
+    let mut raw = Vec::new();
+    io::stdin().read_to_end(&mut raw)?;
+    let clock = SystemClock::new();
+    let now = clock.now();
+    let home = dirs::home_dir().unwrap_or_default();
+
+    let mut relative = 0usize;
+    let mut not_a_directory = 0usize;
+    let mut excluded = 0usize;
+    let mut candidates = Vec::new();
+    for (index, line) in stdin_lines(&raw).into_iter().enumerate() {
+        let text = match std::str::from_utf8(strip_cr(line)) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
+        let arg = match import::parse_history_line(text) {
+            Some(arg) => arg,
+            None => continue,
+        };
+        let path = import::expand_home(&arg, &home);
+        if !path.is_absolute() {
+            relative += 1;
+            continue;
+        }
+        match paths::canonical(&path) {
+            Ok(dir) => {
+                if is_excluded(&settings.exclude_dirs, &dir.path) {
+                    excluded += 1;
+                } else {
+                    candidates.push((index as f64, dir));
+                }
+            }
+            Err(error) => {
+                warn!(%error, path = %path.display(), "import pwsh-history: not a directory");
+                not_a_directory += 1;
+            }
+        }
+    }
+
+    let ImportCounts {
+        imported,
+        known,
+        duplicate,
+    } = record_import(candidates, now)?;
+    let skipped = known + not_a_directory + relative + duplicate + excluded;
+    info!(
+        imported,
+        skipped, known, not_a_directory, relative, duplicate, excluded, "import pwsh-history"
+    );
+    eprintln!(
+        "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, relative {relative}, duplicate {duplicate}, excluded {excluded})"
     );
     Ok(())
 }

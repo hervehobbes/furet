@@ -737,6 +737,25 @@ PS C:\dev\furet> zoxide query -ls | furet import zoxide
 Les répertoires déjà connus sont ignorés ; relancer la commande ne fait
 donc rien de plus (idempotent).
 
+### Importer l'historique PowerShell
+
+Pour remplir la base depuis l'historique PSReadLine :
+
+```powershell
+PS C:\dev\furet> Get-Content (Get-PSReadLineOption).HistorySavePath | furet import pwsh-history
+imported 42, skipped 7 (known 3, not a directory 1, relative 2, duplicate 1, excluded 0)
+```
+
+Seules comptent les lignes qui sont exactement une commande de changement
+de répertoire (`cd`, `chdir`, `sl`, `Set-Location`, `pushd`,
+`Push-Location`) suivie d'un seul chemin littéral ; tout le reste (autres
+commandes, tubes, variables `$`) est ignoré sans être compté. Les chemins
+relatifs sont écartés : l'historique ne garde pas trace du répertoire
+courant de chaque commande, donc un chemin relatif ne peut pas être résolu
+de façon fiable. Un `~` initial désigne le profil utilisateur (pas le
+`home` configuré). Relancer l'import n'ajoute rien : les répertoires déjà
+connus sont ignorés.
+
 ### Remonter ou revenir en arrière sans le hook
 
 ```powershell

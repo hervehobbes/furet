@@ -182,7 +182,7 @@ distance, else opens a `Menu` of the leading run of tied stage-2 candidates
 `<data dir>/config.toml` (`storage::data_dir()`, same as the database and the
 logs) overrides `config::Settings::default()`; loaded by `furet query`,
 `furet home`, `furet add` (`retention_days`, `exclude_dirs`), and
-`furet import zoxide` (`exclude_dirs`).
+`furet import zoxide` / `furet import pwsh-history` (`exclude_dirs`).
 `config::parse(text) -> (Settings, Vec<String>)` is pure — no filesystem, no `tracing` — and never fails the caller.
 
 Fallback is per key, not per file, except malformed TOML:
@@ -892,6 +892,31 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   the one with the highest score before the known-keys filter; an excluded
   directory (`exclude_dirs`) is counted in `excluded` before dedupe, so it
   is never counted as `known` or `duplicate`. No `queries` journal entry.
+- `furet import pwsh-history` — reads PSReadLine history lines from stdin
+  (as produced by `Get-Content (Get-PSReadLineOption).HistorySavePath`),
+  and keeps only the lines that are exactly one `cd`-like command with one
+  literal path: `cd`, `chdir`, `sl`, `Set-Location`, `pushd`,
+  `Push-Location` (ASCII-case-insensitive), with an optional
+  `-Path`/`-LiteralPath` flag and pwsh quoting (`'…''…'` doubles a quote,
+  `"…"` forbids one inside); any line containing `$`, `;`, `|` or a
+  backtick (also PSReadLine's continuation mark) is dropped, and so is an
+  unquoted argument containing whitespace. Arguments must be **absolute**
+  (Hervé 2026-10-03, narrowing the SPEC: the history does not record each
+  command's working directory, so a relative path cannot be resolved
+  reliably); a leading `~` — alone or before `\` or `/` — expands to the
+  user profile (`dirs::home_dir()`), never the configured `home`. The line
+  index plays zoxide's score role (`import::dedupe_by_key` and
+  `import::plan` unchanged): a later line is more recent. Each
+  canonicalized directory goes through the same tables and code path as
+  `furet import zoxide` (`source = 'import'`, `session = 'import'`, shared
+  `main::record_import`; `import::parse_history_line`,
+  `import::expand_home`, `main::import_pwsh_history`), so directories
+  already in the database are skipped and re-running adds nothing. Lines
+  that are not a recognized `cd` command are ignored **and not counted** —
+  a history file is mostly other commands. stdout stays empty; the summary
+  line (`imported N, skipped M (known K, not a directory D, relative R,
+  duplicate Y, excluded E)`) goes to stderr; one transaction for the whole
+  import; no `queries` journal entry.
 - `furet preview <path>` — lists a directory's contents for fzf's preview
   pane (SPEC-v2 §23) **to stdout** — the fourth accepted stdout exception:
   unlike the three reporting exceptions above it is called by `fi`, but
@@ -948,6 +973,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `mark delete <spec> / --all` | a valid spec or `--all`; unset digits are silent, named aliases are kept (`mark_delete_one_and_a_range_and_stays_silent_on_unset`, `mark_delete_all_keeps_named_aliases`) | an invalid spec (`mark_delete_rejects_invalid_specs`) or a DB error; a bare `mark delete` and `<spec> --all` are refused by clap, exit 2 (`mark_delete_needs_a_spec_or_all_but_not_both`) |
 | `mark next` / `mark prev` | an eligible mark exists and its path is printed (`mark_next_and_prev_follow_the_digits_skipping_holes`, `mark_next_and_prev_wrap_around`, `mark_cycling_from_an_unmarked_directory_starts_at_an_end`, `mark_cycling_to_a_single_mark_from_elsewhere`) | no mark set (`mark_cycling_without_any_mark_fails`), no eligible mark — missing marks skipped with `furet: skipped mark <d>: missing directory` (`mark_cycling_skips_a_missing_directory_with_a_stderr_line`, `mark_cycling_with_nothing_eligible_fails`), or a DB error |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
+| `import pwsh-history` | always once stdin is read and the transaction commits, including empty input or everything skipped (`import_pwsh_history_of_empty_stdin_imports_nothing`, `import_pwsh_history_counts_relative_and_missing_paths`) | a stdin read error or a DB error |
 | `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 
 ### Accepted spec discrepancies

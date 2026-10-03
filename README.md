@@ -210,12 +210,29 @@ only the list of directories matters, SPEC §3). Already-known directories
 are skipped, so running it again is a no-op. furet never runs zoxide or
 reads its binary database directly.
 
+## Importing from PowerShell history
+
+Seed the database from PSReadLine's own history file:
+
+```powershell
+Get-Content (Get-PSReadLineOption).HistorySavePath | furet import pwsh-history
+```
+
+Counts every line that is exactly one `cd`-like command (`cd`, `chdir`,
+`sl`, `Set-Location`, `pushd`, `Push-Location`) followed by one literal
+path, quoted or not. Everything else — other commands, pipes, `$`
+variables — is ignored without being counted. Paths must be absolute: the
+history does not record the working directory each command ran in, so a
+relative path cannot be resolved reliably; a leading `~` means the user
+profile. Already-known directories are skipped, so re-running it is a
+no-op.
+
 ## Configuration
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
 is normal, and any invalid key falls back to its default with a `WARN` log
-line naming the key. `furet query`, `furet home`, `furet add`, and
-`furet import zoxide` read it.
+line naming the key. `furet query`, `furet home`, `furet add`,
+`furet import zoxide`, and `furet import pwsh-history` read it.
 
 | Key | Type | Default | Valid |
 |---|---|---|---|
@@ -301,5 +318,8 @@ cycling, and Ctrl+Alt+→/←. French usage examples live in [example.md](exampl
 Lot 63 generalizes `f -` into `f -N`: go `N` directories back in the
 session's raw visit history (duplicates kept, `f -1` equal to `f -`),
 recorded as a `back` visit — the binary side is `furet back --steps <N>`.
+Lot 64 adds `furet import pwsh-history`: seed the database from PSReadLine
+history — `cd`-like lines with one absolute path (`~` expands to the user
+profile), later lines more recent, re-running it a no-op.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

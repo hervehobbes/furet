@@ -68,3 +68,4 @@
 | 61 | Letter-free sandbox names end the folder-bonus test flake |
 | 62 | Release 0.3.0: aliases, home scope, marks (design cycle, lots 51-61) |
 | 63 | `f -N`: go N directories back in the session (`furet back --steps`) |
+| 64 | `furet import pwsh-history` seeds the database from PSReadLine history |

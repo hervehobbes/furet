@@ -172,6 +172,15 @@ fn import_zoxide(sandbox: &Sandbox, stdin: &str) -> Output {
     run(&mut cmd)
 }
 
+fn import_history(sandbox: &Sandbox, stdin: &str) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("import")
+        .arg("pwsh-history")
+        .current_dir(sandbox.tree.path())
+        .write_stdin(stdin);
+    run(&mut cmd)
+}
+
 fn write_config(sandbox: &Sandbox, contents: &str) {
     std::fs::write(sandbox.data.path().join("config.toml"), contents)
         .expect("the config file is written");
@@ -3151,6 +3160,153 @@ fn an_imported_directory_is_reachable_by_query() {
         .expect("the imported directory canonicalizes")
         .path;
     assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn import_pwsh_history_records_cd_targets_and_ignores_other_lines() {
+    let world = sandbox(&["alpha", "beta"]);
+    let alpha = world.child("alpha");
+    let beta = world.child("beta");
+    let stdin = format!(
+        "git status\r\ncd '{}'\r\nSet-Location -Path '{}'\r\ncd $env:TEMP\r\nls\r\n",
+        alpha.to_string_lossy(),
+        beta.to_string_lossy()
+    );
+    let out = import_history(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "imported 2, skipped 0 (known 0, not a directory 0, relative 0, duplicate 0, excluded 0)\n"
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 2);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 2);
+    assert_eq!(
+        scalar(
+            &conn,
+            "SELECT COUNT(*) FROM visits WHERE source = 'import' AND session = 'import'"
+        ),
+        2
+    );
+}
+
+#[test]
+fn import_pwsh_history_makes_a_later_line_more_recent() {
+    let world = sandbox(&["a", "b"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let stdin = format!(
+        "cd '{}'\ncd '{}'\ncd '{}'\n",
+        a.to_string_lossy(),
+        b.to_string_lossy(),
+        a.to_string_lossy()
+    );
+    let out = import_history(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).starts_with(
+            "imported 2, skipped 1 (known 0, not a directory 0, relative 0, duplicate 1"
+        ),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    let conn = db(&world);
+    let ts = |path: &Path| -> i64 {
+        let canonical = paths::canonical(path)
+            .expect("the recorded directory canonicalizes")
+            .path;
+        conn.query_row(
+            "SELECT visits.ts FROM visits JOIN dirs ON dirs.id = visits.dir_id
+             WHERE dirs.path = ?1",
+            params![canonical],
+            |row| row.get(0),
+        )
+        .expect("the visit reads back")
+    };
+    assert!(ts(&a) > ts(&b));
+}
+
+#[test]
+fn import_pwsh_history_counts_relative_and_missing_paths() {
+    let world = sandbox(&[]);
+    let missing = world.tree.path().join("nope");
+    let file = world.tree.path().join("scratch.txt");
+    std::fs::write(&file, b"content").expect("the scratch file is written");
+    let stdin = format!(
+        "cd ..\ncd src\ncd '{}'\ncd '{}'\n",
+        missing.to_string_lossy(),
+        file.to_string_lossy()
+    );
+    let out = import_history(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 0, skipped 4 (known 0, not a directory 2, relative 2, duplicate 0, excluded 0)\n"
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM dirs"), 0);
+}
+
+#[test]
+fn import_pwsh_history_skips_known_and_excluded_directories() {
+    let world = sandbox(&["alpha", "beta"]);
+    write_config(&world, "exclude_dirs = ['beta']");
+    let alpha = world.child("alpha");
+    let beta = world.child("beta");
+    assert!(
+        add(&world, &alpha, "session-1", None, None)
+            .status
+            .success()
+    );
+    let stdin = format!(
+        "cd '{}'\ncd '{}'\n",
+        alpha.to_string_lossy(),
+        beta.to_string_lossy()
+    );
+    let out = import_history(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 0, skipped 2 (known 1, not a directory 0, relative 0, duplicate 0, excluded 1)\n"
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    let source: String = conn
+        .query_row("SELECT source FROM visits", [], |row| row.get(0))
+        .expect("the untouched visit reads back");
+    assert_eq!(source, "hook");
+}
+
+#[test]
+fn import_pwsh_history_of_empty_stdin_imports_nothing() {
+    let world = sandbox(&[]);
+    let out = import_history(&world, "");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "imported 0, skipped 0 (known 0, not a directory 0, relative 0, duplicate 0, excluded 0)\n"
+    );
+}
+
+#[test]
+fn import_pwsh_history_expands_a_leading_tilde_to_the_user_profile() {
+    let world = sandbox(&[]);
+    let out = import_history(&world, "cd ~\n");
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).starts_with("imported 1, skipped 0"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    let conn = db(&world);
+    let path: String = conn
+        .query_row("SELECT path FROM dirs", [], |row| row.get(0))
+        .expect("the imported dir row reads back");
+    let expected = paths::canonical(&dirs::home_dir().expect("a user profile"))
+        .expect("the profile canonicalizes")
+        .path;
+    assert_eq!(path, expected);
 }
 
 #[test]

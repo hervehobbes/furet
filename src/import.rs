@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::clock::Timestamp;
 use crate::paths::CanonicalDir;
@@ -30,6 +31,89 @@ pub fn parse_line(line: &str) -> Option<Entry> {
         score,
         path: path.to_owned(),
     })
+}
+
+/// The literal path argument of a `cd`-like PSReadLine history line, unquoted;
+/// `None` when the line is not exactly one such command with one literal path.
+pub fn parse_history_line(line: &str) -> Option<String> {
+    if line.contains(['$', ';', '|', '`']) {
+        return None;
+    }
+    let trimmed = line.trim();
+    let (word, rest) = match trimmed.split_once(char::is_whitespace) {
+        Some((word, rest)) => (word, rest.trim()),
+        None => (trimmed, ""),
+    };
+    if !matches!(
+        word.to_ascii_lowercase().as_str(),
+        "cd" | "chdir" | "sl" | "set-location" | "pushd" | "push-location"
+    ) {
+        return None;
+    }
+    let rest = match rest.strip_prefix('-') {
+        Some(after_dash) => {
+            let (flag, tail) = after_dash.split_once(char::is_whitespace)?;
+            match flag.to_ascii_lowercase().as_str() {
+                "path" | "literalpath" => tail.trim_start(),
+                _ => return None,
+            }
+        }
+        None => rest,
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    let path_text = if rest.starts_with('\'') {
+        if rest.len() < 2 || !rest.ends_with('\'') {
+            return None;
+        }
+        unquote_single(&rest[1..rest.len() - 1])?
+    } else if rest.starts_with('"') {
+        if rest.len() < 2 || !rest.ends_with('"') {
+            return None;
+        }
+        let inner = &rest[1..rest.len() - 1];
+        if inner.contains('"') {
+            return None;
+        }
+        inner.to_owned()
+    } else {
+        if rest.chars().any(char::is_whitespace) {
+            return None;
+        }
+        rest.to_owned()
+    };
+    if path_text.is_empty() {
+        return None;
+    }
+    Some(path_text)
+}
+
+fn unquote_single(inner: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c == '\'' {
+            if chars.next() != Some('\'') {
+                return None;
+            }
+            out.push('\'');
+        } else {
+            out.push(c);
+        }
+    }
+    Some(out)
+}
+
+/// `arg` with a leading `~` (alone, or followed by `\` or `/`) replaced by `home`.
+pub fn expand_home(arg: &str, home: &Path) -> PathBuf {
+    if arg == "~" {
+        return home.to_path_buf();
+    }
+    if let Some(rest) = arg.strip_prefix("~\\").or_else(|| arg.strip_prefix("~/")) {
+        return home.join(rest);
+    }
+    PathBuf::from(arg)
 }
 
 /// One directory ready to import, with its synthetic recency timestamp.
@@ -91,10 +175,11 @@ pub fn plan(
 
 #[cfg(test)]
 mod tests {
-    use super::{Entry, dedupe_by_key, parse_line, plan};
+    use super::{Entry, dedupe_by_key, expand_home, parse_history_line, parse_line, plan};
     use crate::clock::Timestamp;
     use crate::paths::CanonicalDir;
     use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
 
     fn dir(path: &str) -> CanonicalDir {
         CanonicalDir {
@@ -238,5 +323,76 @@ mod tests {
         let planned = plan(candidates, &known, Timestamp::from_unix_seconds(1_000));
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].path, "c:\\dev\\a");
+    }
+
+    #[test]
+    fn history_lines_with_a_cd_like_command_yield_their_path() {
+        assert_eq!(parse_history_line("cd C:\\dev"), Some("C:\\dev".to_owned()));
+        assert_eq!(
+            parse_history_line("  CD   C:\\dev  "),
+            Some("C:\\dev".to_owned())
+        );
+        for line in ["chdir C:\\dev", "sl C:\\dev", "Push-Location C:\\dev"] {
+            assert_eq!(parse_history_line(line), Some("C:\\dev".to_owned()));
+        }
+        assert_eq!(
+            parse_history_line("Set-Location -Path C:\\dev"),
+            Some("C:\\dev".to_owned())
+        );
+        assert_eq!(
+            parse_history_line("set-location -LITERALPATH C:\\dev"),
+            Some("C:\\dev".to_owned())
+        );
+        assert_eq!(
+            parse_history_line("pushd \"C:\\a b\""),
+            Some("C:\\a b".to_owned())
+        );
+        assert_eq!(
+            parse_history_line("sl -LiteralPath 'C:\\it''s'"),
+            Some("C:\\it's".to_owned())
+        );
+        assert_eq!(parse_history_line("cd .."), Some("..".to_owned()));
+        assert_eq!(parse_history_line("cd ~\\src"), Some("~\\src".to_owned()));
+    }
+
+    #[test]
+    fn history_lines_that_are_not_one_literal_cd_are_ignored() {
+        for line in [
+            "ls C:\\dev",
+            "cdx C:\\dev",
+            "cd..",
+            "cd",
+            "cd -",
+            "cd -Path",
+            "cd -Path:C:\\dev",
+            "pushd -StackName s C:\\dev",
+            "cd $HOME",
+            "cd C:\\dev; ls",
+            "cd C:\\dev | Out-Null",
+            "cd C:\\dev `",
+            "cd C:\\Program Files",
+            "cd 'C:\\dev",
+            "cd 'a' 'b'",
+            "cd \"a\"b\"",
+            "cd ''",
+        ] {
+            assert_eq!(parse_history_line(line), None, "line: {line:?}");
+        }
+    }
+
+    #[test]
+    fn expand_home_replaces_a_leading_tilde_only() {
+        let home = Path::new("C:\\Users\\u");
+        assert_eq!(expand_home("~", home), PathBuf::from("C:\\Users\\u"));
+        assert_eq!(
+            expand_home("~\\src", home),
+            PathBuf::from("C:\\Users\\u\\src")
+        );
+        assert_eq!(
+            expand_home("~/src", home),
+            PathBuf::from("C:\\Users\\u\\src")
+        );
+        assert_eq!(expand_home("~x", home), PathBuf::from("~x"));
+        assert_eq!(expand_home("C:\\dev", home), PathBuf::from("C:\\dev"));
     }
 }

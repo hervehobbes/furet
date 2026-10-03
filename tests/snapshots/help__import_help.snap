@@ -11,7 +11,8 @@ Arguments:
           Tool to import from
 
           Possible values:
-          - zoxide: Import from `zoxide query -ls` on stdin
+          - zoxide:       Import from `zoxide query -ls` on stdin
+          - pwsh-history: Import cd-like lines from a PSReadLine history on stdin
 
 Options:
   -h, --help

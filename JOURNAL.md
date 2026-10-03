@@ -1,4 +1,13 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 64 — `furet import pwsh-history`: `import::parse_history_line` + `import::expand_home`
+(six cd-like commands, one literal path, `-Path`/`-LiteralPath`, pwsh quoting, `$ ; |` backtick
+dropped, absolute only), `record_import` extracted from `import_zoxide` (its tests stay green
+unchanged), `ImportSource::PwshHistory` + `import_pwsh_history` (line index as recency, `~` = user
+profile). 3 unit + 6 cli + 1 pwsh tests written first (cli/pwsh failed on clap's unknown value).
+Decisions: Hervé 2026-10-03 — absolute paths only, `~` = profile not `home`. Mutation B `-(index)`
+does NOT fail test 5 (dedupe flips too, `a` stays most recent) — reported, awaiting Hervé.
+Executor: GLM 5.3 Flash. Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 63 — `f -N`: `visited_dir_back(conn, session, steps)` in storage (`last_visited_dir`
 delegates to it with steps = 1), `furet back --steps N` (default 1, clap range 1.., exit 2 on 0)
 and the `^-[0-9]+$` branch in pwsh `f` recording a `back` visit, skipped under `-l`/`-h`.
