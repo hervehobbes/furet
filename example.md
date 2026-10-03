@@ -127,6 +127,32 @@ la racine. Côté binaire, le drapeau s'appelle `--local` et se combine avec
 les autres : `furet query --local --list`, `furet query --list --color
 --local`, etc.
 
+### Rester sous la maison
+
+`f -h` applique la même restriction, mais autour de la **maison** : la clé
+`home` de `config.toml` (validée comme par `furet home`), sinon `$HOME`.
+Contrairement à `-l`, la portée ne dépend pas du répertoire courant : `f -h`
+fonctionne de n'importe où, y compris depuis l'extérieur de la maison.
+Avec `home = "C:\\dev"` :
+
+```powershell
+PS C:\Users\thouz> f -h mcp
+PS C:\dev\CodeGroups\CodeGroups.Mcp>
+
+PS C:\Users\thouz> f -h
+PS C:\dev>
+```
+
+Le repli disque suit la portée : depuis un répertoire **dans** la maison,
+il part du répertoire courant et ne remonte jamais au-dessus de la maison ;
+depuis l'extérieur, il parcourt les enfants de la maison elle-même, sans
+monter. `fi -h` restreint le choix interactif, `f -h mcp<Tab>` ne propose
+que des répertoires sous la maison, et `f -h mcp --explain` affiche une
+ligne `home root: C:\dev` là où `-l` affiche `project root:`. Combiner les
+deux (`f -l -h mcp`) est refusé : le shell affiche l'erreur de `furet
+query` (`cannot be used with`) et ne bouge pas. Côté binaire, le drapeau
+s'appelle `--home` : `furet query --home mcp --list`, etc.
+
 ### Chemin direct
 
 Si l'argument est un chemin qui existe tel quel, `f` y saute directement
@@ -166,7 +192,9 @@ PS C:\Users\thouz>
 ```
 
 La cible peut être personnalisée avec la clé `home` de `config.toml` (chemin
-absolu, `/` accepté) ; sans elle, `f` sans argument va vers `$HOME`.
+absolu, `/` accepté) ; sans elle, `f` sans argument va vers `$HOME`. Sans
+argument, `f -h` mène au même endroit, via la requête restreinte à la
+maison plutôt que par `furet home`.
 
 ### Ne jamais enregistrer certains répertoires
 
@@ -250,6 +278,75 @@ Pour la désactiver, dans `config.toml` :
 ```toml
 query_memory = false
 ```
+
+## Les alias
+
+Un alias est un nom court pointant vers un répertoire précis ; il court-
+circuite le classement (pas de score, pas de repli disque). Ils se gèrent
+avec `furet alias` :
+
+```powershell
+PS C:\dev\furet> furet alias add ombi C:\apps\ombi
+alias ombi -> C:\apps\ombi
+
+PS C:\apps\ombi> furet alias add outils
+alias outils -> C:\apps\ombi\outils
+
+PS C:\dev\furet> furet alias list
+ombi	C:\apps\ombi	2026-10-02T09:14:31
+
+PS C:\dev\furet> furet alias remove ombi
+removed alias ombi
+```
+
+Sans chemin, `alias add` prend le répertoire courant. Un nom existe déjà
+refuse (`alias 'ombi' already exists (C:\apps\ombi); use --force to
+replace it`) ; `--force` remplace nom et chemin. Les noms acceptés sont
+les lettres, chiffres, `_` et `-` — les marques (style Vim) partageront la
+même table. `alias list` écrit sur `stdout` (une exception documentée),
+`nom<TAB>chemin<TAB>date de création` par ligne.
+
+Le saut se fait avec le préfixe `!` :
+
+```powershell
+PS C:\dev\furet> f !ombi
+PS C:\apps\ombi>
+
+PS C:\dev\furet> f !OMBI
+PS C:\apps\ombi>
+```
+
+La recherche est exacte, sans tenir compte de la casse — pas de flou. Un
+saut par alias n'écrit **aucune** ligne de mémoire des requêtes (D1 reste
+intact) ; le hook enregistre en revanche la visite `jump` comme pour tout
+saut. Les erreurs sont explicites :
+
+```text
+furet: unknown alias 'omb'; did you mean 'ombi'?
+furet: alias 'ombi' points to a missing directory: C:\apps\ombi
+furet: an alias takes no other token
+furet: --local cannot be combined with an alias
+furet: --home cannot be combined with an alias
+```
+
+Le `did you mean` ne suggère un nom qu'à une édition près (une
+transposition compte pour une). Un répertoire littéralement nommé `!ombi`
+dans le répertoire courant gagne sur l'alias (`f !ombi` y va). Le préfixe
+se configure avec la clé `alias_prefix` : `"!"` (défaut) ou `"="`. Le `@`
+est exclu : il demande AltGr sur un clavier AZERTY et, surtout, c'est
+l'opérateur de *splatting* PowerShell — `f @ombi` sans variable `$ombi`
+n'enverrait aucun argument à `f`, qui sauterait silencieusement à la
+maison.
+
+La complétion Tab propose les alias par préfixe strict : `f !<Tab>` liste
+tous les alias, `f !om<Tab>` ceux commençant par `om`. La liste affiche le
+chemin visé, mais la touche Entrée n'insère que le nom (`!ombi`) :
+
+```powershell
+PS C:\dev\furet> f !om<Tab>   # propose !ombi  C:\apps\ombi, insère !ombi
+```
+
+Après `-l` ou `-h`, un mot d'alias ne propose rien.
 
 ## Commandes `furet` directes (sans le hook pwsh)
 

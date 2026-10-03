@@ -488,16 +488,22 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `query --list` (lot 54): the completer calls `furet alias complete` instead
   and turns its `name<TAB>path` lines into completions that **insert only the
   name** while the list shows `name  path`, so the user remembers what `!1`
-  is; after `-l`/`--local` an alias word proposes nothing.
-  With `-l`/`--local` (SPEC §19), the jump function and `fi` jump only
-  inside the project. `-l` is a declared switch — `param([Alias('l')]
-  [switch] $Local, [Parameter(ValueFromRemainingArguments…)] $FuretArgs)` —
-  so pwsh's own binder takes it wherever it appears (`f -l cl` and
-  `f cl -l` alike); `--local` does not bind that parameter and is still
-  stripped by hand from `$FuretArgs` (`$scoped = $Local.IsPresent -or
-  ($FuretArgs -contains '--local')`); a literal `-l` can only reach
+  is; after `-l`/`--local` or `-h`/`--home` an alias word proposes nothing.
+  With `-l`/`--local` (SPEC §19) or `-h`/`--home` (Hervé 2026-10-03, lot
+  56), the jump function and `fi` jump only inside the scope — the git
+  project for `-l`, the home root (lot 55's `--home`) for `-h`. Both are
+  declared switches — `param([Alias('l')] [switch] $Local, [Alias('h')]
+  [switch] $HomeScope, [Parameter(ValueFromRemainingArguments…)]
+  $FuretArgs)` — the home one named `$HomeScope` because `$Home` is a
+  read-only automatic variable and pwsh throws on it — so pwsh's own
+  binder takes them wherever they appear (`f -l cl` and `f cl -l` alike);
+  `--local` and `--home` do not bind those parameters and are still
+  stripped by hand from `$FuretArgs`; a literal `-l` or `-h` can only reach
   `$FuretArgs` through `f -- -l`, where it is query text and is not
-  stripped. pwsh's parameter-name abbreviation applies (accepted by Hervé,
+  stripped. Each flag contributes to a `$scope`
+  array (`--local`, `--home`) that every query call splats as `@scope`
+  (lot 56; `$scoped = $scope.Count -gt 0`). pwsh's parameter-name
+  abbreviation applies (accepted by Hervé,
   2026-09-26, verified on pwsh 7.6.6): any case-insensitive prefix of
   `-Local` (`-L`, `-lo`, `-local`) turns the switch on instead of being
   query text, and since both functions are advanced functions, `-F…` binds
@@ -506,21 +512,26 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `-p` fail as ambiguous) — the common-parameter and `-F…` cases already
   held before lot 40b. `f -- <token>` passes any such token as query text.
   Tokens matching no parameter (`-x`, `-dev`) stay query text. With a query
-  the scoped branch calls `furet query --local --
-  $query`, without one it calls `furet query --local` and jumps to the
-  project root, recording the landing
+  the scoped branch calls `furet query @scope -- $query`, without one it
+  calls `furet query @scope` and jumps to the scope root — the project
+  root under `-l`, the home root under `-h` — recording the landing
   as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, direct-path,
-  and home branches are never reached. `f -l <query> --explain` forwards the
-  scope (`furet query --explain --local -- $query`, decision 2, Hervé
-  2026-09-26). `fi -l` scopes the whole interactive flow: the fzf initial
-  list and every reload (`furet query --list --color --local [ {q}]`) and
-  the console menu (`furet query --list --local $query`). The fzf branch
-  of `fi` — both calls, local and non-local — passes `--preview "furet
+  and home branches are never reached. `-l -h` (both switches bound) is
+  forwarded as both flags and rejected by clap (exit 2, `cannot be used
+  with`); the `$LASTEXITCODE` check returns without moving. `f <scope>
+  <query> --explain` forwards the scope (`furet query --explain @scope --
+  $query`, one call, decision 2, Hervé 2026-09-26). `fi -l`/`fi -h` scope
+  the whole interactive flow: one initial list `furet query --list --color
+  @scope` whose fzf reload binding is `change:reload:furet query --list
+  --color $($scope -join ' ') {q}` (with an empty scope the double space
+  is harmless), and the console menu (`furet query --list @scope $query`).
+  The fzf branch
+  of `fi` — a single call pair since lot 56's merge — passes `--preview "furet
   preview {}"` and `--preview-window "right,50%"` (SPEC-v2 §23), so a
   right-hand pane lists the highlighted directory through the `furet
   preview` subcommand; fzf quotes `{}` correctly under cmd.exe (a path
   with a space and a `&` verified against fzf 0.74.2, lot 45). Lot 46
-  (SPEC-v2 §24) adds `--print-query` to both calls and captures the output
+  (SPEC-v2 §24) adds `--print-query` and captures the output
   as an array: `lines[0]` is fzf's final query (an empty query line comes
   back as an empty element, so `lines[1]` is the selection) and fewer than
   two lines — abort or no selection — returns without moving; the selection
@@ -533,12 +544,17 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `--query $query` before `-- $target`, so a choice journals exactly one
   `pick` row (none for an empty query), and every 3-argument call (all of
   `f`'s) behaves exactly as before. One completer —
-  the `FuretArgs` registration above — handles every line, `-l` included:
-  the declared switch keeps pwsh's completion binder on the normal path
+  the `FuretArgs` registration above — handles every line, `-l` and `-h`
+  included:
+  the declared switches keep pwsh's completion binder on the normal path
   (lot 40b, Hervé 2026-09-26, replacing a `-Native` fallback that relied on
-  undocumented pwsh behavior), so after `-l`/`--local` as the first
-  argument it completes the second argument token — `f -l <Tab>` and
-  `f -l cl<Tab>` run `furet query --list --local -- $word` — while
+  undocumented pwsh behavior). The completer derives a `$scope` string
+  from the first argument token — `--local` after `-l`/`--local`,
+  `--home` after `-h`/`--home`, `$null` otherwise — so after either flag
+  as the first
+  argument it completes the second argument token — `f -h <Tab>` and
+  `f -h cl<Tab>` run `furet query --list --home -- $word` exactly as
+  `f -l cl<Tab>` runs `furet query --list --local -- $word` — while
   `f -l cl <Tab>` returns nothing. The generated script is covered by
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.

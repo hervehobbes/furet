@@ -39,32 +39,35 @@ function global:prompt {
 }
 
 function global:__FURET_CMD__ {
-    param([Alias('l')] [switch] $Local, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
+    param([Alias('l')] [switch] $Local, [Alias('h')] [switch] $HomeScope, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
 
-    $scoped = $Local.IsPresent -or ($FuretArgs -contains '--local')
-    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' })
+    $scope = @()
+    if ($Local.IsPresent -or ($FuretArgs -contains '--local')) {
+        $scope += '--local'
+    }
+    if ($HomeScope.IsPresent -or ($FuretArgs -contains '--home')) {
+        $scope += '--home'
+    }
+    $scoped = $scope.Count -gt 0
+    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' -and $_ -ne '--home' })
 
     # WHY: --explain is answered before every other dispatch, so even a bare
     # `f --explain` reports on the pool instead of jumping home.
     if ($FuretArgs -contains '--explain') {
         $query = (($FuretArgs | Where-Object { $_ -ne '--explain' }) -join ' ') -replace '/', '\'
-        if ($scoped) {
-            furet query --explain --local -- $query
-            return
-        }
-        furet query --explain -- $query
+        furet query --explain @scope -- $query
         return
     }
 
-    # WHY: with -l every special form is skipped, so the jump always goes
-    # through the project-scoped query — including its empty-query root.
+    # WHY: with -l or -h every special form is skipped, so the jump always
+    # goes through the scoped query — including its empty-query root.
     if ($scoped) {
         $query = ($FuretArgs -join ' ') -replace '/', '\'
         $from = (Get-Location).Path
         if ([string]::IsNullOrEmpty($query)) {
-            $target = furet query --local
+            $target = furet query @scope
         } else {
-            $target = furet query --local -- $query
+            $target = furet query @scope -- $query
         }
         if ($LASTEXITCODE -ne 0) {
             return
@@ -127,10 +130,17 @@ function global:__FURET_CMD__ {
 }
 
 function global:fi {
-    param([Alias('l')] [switch] $Local, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
+    param([Alias('l')] [switch] $Local, [Alias('h')] [switch] $HomeScope, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $FuretArgs)
 
-    $scoped = $Local.IsPresent -or ($FuretArgs -contains '--local')
-    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' })
+    $scope = @()
+    if ($Local.IsPresent -or ($FuretArgs -contains '--local')) {
+        $scope += '--local'
+    }
+    if ($HomeScope.IsPresent -or ($FuretArgs -contains '--home')) {
+        $scope += '--home'
+    }
+    $scoped = $scope.Count -gt 0
+    $FuretArgs = @($FuretArgs | Where-Object { $_ -ne '--local' -and $_ -ne '--home' })
 
     $query = ($FuretArgs -join ' ') -replace '/', '\'
     $from = (Get-Location).Path
@@ -139,13 +149,8 @@ function global:fi {
         # WHY: the print-query flag makes fzf prepend the final query line (empty
         # query included), so lines[0] is the query and lines[1] the selection;
         # under two lines fzf was aborted or selected nothing.
-        if ($scoped) {
-            $initial = furet query --list --color --local
-            $lines = @($initial | fzf --disabled --ansi --print-query --preview "furet preview {}" --preview-window "right,50%" --bind "change:reload:furet query --list --color --local {q}")
-        } else {
-            $initial = furet query --list --color
-            $lines = @($initial | fzf --disabled --ansi --print-query --preview "furet preview {}" --preview-window "right,50%" --bind "change:reload:furet query --list --color {q}")
-        }
+        $initial = furet query --list --color @scope
+        $lines = @($initial | fzf --disabled --ansi --print-query --preview "furet preview {}" --preview-window "right,50%" --bind "change:reload:furet query --list --color $($scope -join ' ') {q}")
         if ($lines.Count -lt 2) {
             return
         }
@@ -157,11 +162,7 @@ function global:fi {
         return
     }
 
-    if ($scoped) {
-        $candidates = @(furet query --list --local $query | Select-Object -First 9)
-    } else {
-        $candidates = @(furet query --list $query | Select-Object -First 9)
-    }
+    $candidates = @(furet query --list @scope $query | Select-Object -First 9)
     if ($candidates.Count -eq 0) {
         return
     }
@@ -194,10 +195,14 @@ Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -
         return
     }
     $arguments = $commandAst.CommandElements.Count - 1
-    $local = $commandAst.CommandElements.Count -gt 1 -and (
-        $commandAst.CommandElements[1].Extent.Text -eq '-l' -or
-        $commandAst.CommandElements[1].Extent.Text -eq '--local')
-    if ($local) {
+    $scope = $null
+    $first = if ($commandAst.CommandElements.Count -gt 1) { $commandAst.CommandElements[1].Extent.Text } else { $null }
+    if ($first -eq '-l' -or $first -eq '--local') {
+        $scope = '--local'
+    } elseif ($first -eq '-h' -or $first -eq '--home') {
+        $scope = '--home'
+    }
+    if ($scope) {
         if ($arguments -gt 2 -or ($arguments -eq 2 -and [string]::IsNullOrEmpty($wordToComplete))) {
             return
         }
@@ -217,7 +222,7 @@ Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -
     try {
         # WHY: alias words complete by strict prefix via `furet alias complete`, never the query list.
         if ($wordToComplete.StartsWith('!') -or $wordToComplete.StartsWith('=')) {
-            if ($local) {
+            if ($scope) {
                 return
             }
             foreach ($line in @(furet alias complete -- $wordToComplete 2>$null)) {
@@ -227,8 +232,8 @@ Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -
             return
         }
         $word = $wordToComplete.Replace('/', '\')
-        $lines = if ($local) {
-            @(furet query --list --local -- $word 2>$null)
+        $lines = if ($scope) {
+            @(furet query --list $scope -- $word 2>$null)
         } else {
             @(furet query --list -- $word 2>$null)
         }

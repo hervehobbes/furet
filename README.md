@@ -77,8 +77,9 @@ extra profile line.
   fails with `furet: not inside a git repository` (exit 1); an empty query
   without `--list`/`--explain` prints the project root.
 - `furet query --home <query>` — the same scoping around the home root
-  (the `home` key, else the user profile), from anywhere; `f -h` arrives
-  in the next lot.
+  (the `home` key, else the user profile), from anywhere; in pwsh it is
+  `f -h <query>` (also `f --home` / `f <query> -h`), `f -h` alone jumps
+  to the home root, and `fi -h` / `f -h <Tab>` follow the same scope.
 - `furet query <query> --explain` — print the scoring report for `<query>`
   on stderr without jumping.
 - `furet query <query> --engine <reference|nucleo>` — pick the stage-1
@@ -244,6 +245,7 @@ over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
 (`!`/`=`) and the `did you mean` hint; lot 54 completes alias words on
 Tab — `f !om<Tab>` lists every matching alias with its path and inserts
 the name. Lot 55 scopes `furet query --home` to the home root (the
-`home` key, else the user profile), from anywhere.
+`home` key, else the user profile), from anywhere; lot 56 wires it into
+pwsh — `f -h`, `fi -h`, and Tab after `-h` all scope to the home.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

@@ -659,8 +659,8 @@ fn fi_fzf_branch_passes_print_query() {
     let script = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         script.matches("--print-query").count(),
-        2,
-        "both fzf calls must pass --print-query: {script}"
+        1,
+        "the fzf call must pass --print-query: {script}"
     );
 }
 
@@ -681,13 +681,13 @@ fn fi_fzf_branch_passes_the_preview_options() {
     let script = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         script.matches("--preview \"furet preview {}\"").count(),
-        2,
-        "both fzf calls must pass the preview command: {script}"
+        1,
+        "the fzf call must pass the preview command: {script}"
     );
     assert_eq!(
         script.matches("--preview-window \"right,50%\"").count(),
-        2,
-        "both fzf calls must pass the preview window: {script}"
+        1,
+        "the fzf call must pass the preview window: {script}"
     );
 }
 
@@ -1144,6 +1144,197 @@ fn tab_completing_after_long_local_proposes_project_candidates() {
         vec![canonical(&world.child("proj/clio"))],
         "`f --local cl<Tab>` must propose only the in-project candidate: {got:?}"
     );
+}
+
+// WHY: seeds home/tokio before elsewhere/tokio, so the global winner is always elsewhere/tokio.
+fn home_world(children: &[&str]) -> Sandbox {
+    let mut all: Vec<&str> = vec!["home/tokio", "elsewhere/tokio", "start"];
+    all.extend_from_slice(children);
+    let world = sandbox(&all);
+    seed(&world, &world.child("home/tokio"), "seed");
+    seed(&world, &world.child("elsewhere/tokio"), "seed");
+    write_home_config(&world, &world.child("home"));
+    world
+}
+
+// WHY: the stub echoes fzf's arguments, then emits the empty query line and the first pipeline line.
+fn fzf_stub_echoing_args() -> String {
+    "function global:fzf {\n\
+     Write-Host ('FZF_ARGS=' + ($args -join ' '))\n\
+     ''\n\
+     $input\n\
+     }\n"
+    .to_owned()
+}
+
+#[test]
+fn f_home_jumps_to_the_in_home_match_and_records_a_jump() {
+    let world = home_world(&[]);
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f -h tokio");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("home/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 3);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn f_home_flag_forms_all_scope() {
+    let world = home_world(&[]);
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f --home tokio");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("home/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+    let run = run_pwsh(&world, "", "", &start, "f tokio -h");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("home/tokio")),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn f_home_without_a_query_jumps_to_the_home_root() {
+    let world = home_world(&[]);
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f -h");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("home")),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 3);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn f_local_and_home_together_stay_put_and_report_on_stderr() {
+    let world = home_world(&["start/.git"]);
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f -l -h tokio");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("cannot be used with"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 2);
+}
+
+#[test]
+fn f_home_explain_reports_the_home_root_without_moving() {
+    let world = home_world(&[]);
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f -h tokio --explain");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    let root = canonical(&world.child("home"));
+    assert!(
+        run.stderr.contains(&format!("home root: {root}\n")),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 2);
+}
+
+#[test]
+fn f_home_with_an_alias_stays_put() {
+    let world = home_world(&["zebra"]);
+    seed_alias(&world, "ombi", &world.child("zebra"));
+    let start = world.child("start");
+    let run = run_pwsh(&world, "", "", &start, "f -h !ombi");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("--home cannot be combined with an alias"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 2);
+}
+
+#[test]
+fn fi_home_menu_branch_lists_only_the_home() {
+    let world = sandbox(&["home/alpha", "home/beta", "outside/gamma", "start"]);
+    for child in ["home/alpha", "home/beta", "outside/gamma"] {
+        seed(&world, &world.child(child), "seed");
+    }
+    write_home_config(&world, &world.child("home"));
+    let start = world.child("start");
+    let body = format!("{HIDE_FZF}function global:Read-Host {{ '' }}\nfi -h");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout.contains(&canonical(&world.child("home/alpha"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.contains(&canonical(&world.child("home/beta"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        !run.stdout
+            .contains(&canonical(&world.child("outside/gamma"))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 3);
+}
+
+#[test]
+fn fi_home_fzf_branch_scopes_the_list_and_the_reload() {
+    let world = sandbox(&["home/alpha", "outside/gamma", "start"]);
+    seed(&world, &world.child("home/alpha"), "seed");
+    seed(&world, &world.child("outside/gamma"), "seed");
+    write_home_config(&world, &world.child("home"));
+    let start = world.child("start");
+    let body = format!("{}fi -h", fzf_stub_echoing_args());
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("home/alpha")),
+        "stderr: {}",
+        run.stderr
+    );
+    assert!(
+        run.stdout
+            .contains("reload:furet query --list --color --home {q}"),
+        "stdout: {}",
+        run.stdout
+    );
+}
+
+#[test]
+fn tab_completing_after_home_proposes_home_candidates() {
+    let world = home_world(&[]);
+    let start = world.child("start");
+    let home_tokio = canonical(&world.child("home/tokio"));
+    for line in ["f -h tok", "f --home tok"] {
+        let got = completions_in(&world, "", &start, line);
+        assert_eq!(got, vec![home_tokio.clone()], "{line}: {got:?}");
+    }
+}
+
+#[test]
+fn tab_completing_an_alias_word_after_home_proposes_nothing() {
+    let world = home_world(&["zebra"]);
+    seed_alias(&world, "ombi", &world.child("zebra"));
+    let start = world.child("start");
+    let items = completion_items_in(&world, "", &start, "f -h !om");
+    assert!(items.is_empty(), "no completion after -h: {items:?}");
 }
 
 #[test]

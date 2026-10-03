@@ -1259,7 +1259,7 @@ fn init_pwsh_explain_prints_the_report_without_jumping_or_recording() {
     let open_pos = script
         .find(branch_open)
         .expect("the explain branch opens on a whole-token test of --explain");
-    let explain_call = "furet query --explain -- $query";
+    let explain_call = "furet query --explain @scope -- $query";
     let call_pos = script[open_pos..]
         .find(explain_call)
         .expect("the explain branch dispatches furet query --explain")
@@ -1311,7 +1311,7 @@ fn init_pwsh_explain_works_with_the_flag_first_in_the_argument_list() {
         "the trigger is a membership test over every argument, so the \
                  flag is detected wherever it appears",
     );
-    let explain_call = "furet query --explain -- $query";
+    let explain_call = "furet query --explain @scope -- $query";
     let call_pos = script[open_pos..]
         .find(explain_call)
         .expect("the explain dispatch is present")
