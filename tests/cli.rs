@@ -3228,6 +3228,38 @@ fn import_pwsh_history_makes_a_later_line_more_recent() {
 }
 
 #[test]
+fn import_pwsh_history_keeps_the_line_order_without_repeats() {
+    let world = sandbox(&["a", "b"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let stdin = format!(
+        "cd '{}'\ncd '{}'\n",
+        a.to_string_lossy(),
+        b.to_string_lossy()
+    );
+    let out = import_history(&world, &stdin);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        "imported 2, skipped 0 (known 0, not a directory 0, relative 0, duplicate 0, excluded 0)\n"
+    );
+    let conn = db(&world);
+    let ts = |path: &Path| -> i64 {
+        let canonical = paths::canonical(path)
+            .expect("the recorded directory canonicalizes")
+            .path;
+        conn.query_row(
+            "SELECT visits.ts FROM visits JOIN dirs ON dirs.id = visits.dir_id
+             WHERE dirs.path = ?1",
+            params![canonical],
+            |row| row.get(0),
+        )
+        .expect("the visit reads back")
+    };
+    assert!(ts(&b) > ts(&a));
+}
+
+#[test]
 fn import_pwsh_history_counts_relative_and_missing_paths() {
     let world = sandbox(&[]);
     let missing = world.tree.path().join("nope");

@@ -1,4 +1,9 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 64b — one cli test, `import_pwsh_history_keeps_the_line_order_without_repeats`
+(repeat-free fixture `cd a; cd b`), pinning the line order itself: mutation B `-(index)` is
+now caught by it while test 5 (latest occurrence wins) stays green.
+Executor: GLM 5.3 Flash. Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 64 — `furet import pwsh-history`: `import::parse_history_line` + `import::expand_home`
 (six cd-like commands, one literal path, `-Path`/`-LiteralPath`, pwsh quoting, `$ ; |` backtick
 dropped, absolute only), `record_import` extracted from `import_zoxide` (its tests stay green
