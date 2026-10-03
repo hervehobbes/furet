@@ -57,9 +57,58 @@ pub fn mark_range(spec: &str) -> Option<std::ops::RangeInclusive<u8>> {
     (start <= end).then_some(start..=end)
 }
 
+/// One mark as cycling sees it: its digit, whether it points to the
+/// current directory, and whether its directory still exists.
+pub struct MarkSlot {
+    pub digit: u8,
+    pub here: bool,
+    pub present: bool,
+}
+
+/// The mark `furet mark next` (`forward`) or `prev` lands on, plus the
+/// missing marks skipped on the way, in visiting order.
+pub fn cycle(slots: &[MarkSlot], forward: bool) -> (Option<u8>, Vec<u8>) {
+    let mut sorted: Vec<&MarkSlot> = slots.iter().collect();
+    sorted.sort_by_key(|slot| slot.digit);
+    let current = sorted.iter().find(|slot| slot.here).map(|slot| slot.digit);
+    let mut order: Vec<&MarkSlot> = Vec::new();
+    match current {
+        Some(c) if forward => {
+            order.extend(sorted.iter().copied().filter(|slot| slot.digit > c));
+            order.extend(sorted.iter().copied().filter(|slot| slot.digit < c));
+        }
+        Some(c) => {
+            order.extend(sorted.iter().copied().filter(|slot| slot.digit < c).rev());
+            order.extend(sorted.iter().copied().filter(|slot| slot.digit > c).rev());
+        }
+        None if forward => order.extend(sorted.iter().copied()),
+        None => order.extend(sorted.iter().copied().rev()),
+    }
+    let mut skipped = Vec::new();
+    for slot in order {
+        if slot.here {
+            continue;
+        }
+        if !slot.present {
+            skipped.push(slot.digit);
+            continue;
+        }
+        return (Some(slot.digit), skipped);
+    }
+    (None, skipped)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{key, mark_digit, mark_range, suggestion};
+    use super::{MarkSlot, cycle, key, mark_digit, mark_range, suggestion};
+
+    fn slot(digit: u8, here: bool, present: bool) -> MarkSlot {
+        MarkSlot {
+            digit,
+            here,
+            present,
+        }
+    }
 
     #[test]
     fn key_lowercases_valid_names_ignoring_case() {
@@ -116,5 +165,100 @@ mod tests {
         for spec in ["0", "10", "4-2", "2-", "-2", "2-10", "a", "", "2 - 4"] {
             assert_eq!(mark_range(spec), None, "spec '{spec}' is not a mark range");
         }
+    }
+
+    #[test]
+    fn cycle_moves_up_and_down_through_the_digits_skipping_holes() {
+        let slots = [
+            slot(1, false, true),
+            slot(3, true, true),
+            slot(7, false, true),
+        ];
+        assert_eq!(cycle(&slots, true), (Some(7), vec![]));
+        assert_eq!(cycle(&slots, false), (Some(1), vec![]));
+    }
+
+    #[test]
+    fn cycle_wraps_from_nine_to_one_and_back() {
+        let top = [
+            slot(1, false, true),
+            slot(3, false, true),
+            slot(7, true, true),
+        ];
+        assert_eq!(cycle(&top, true), (Some(1), vec![]));
+        let bottom = [
+            slot(1, true, true),
+            slot(3, false, true),
+            slot(7, false, true),
+        ];
+        assert_eq!(cycle(&bottom, false), (Some(7), vec![]));
+    }
+
+    #[test]
+    fn cycle_from_an_unmarked_pool_starts_at_an_end() {
+        let slots = [
+            slot(1, false, true),
+            slot(3, false, true),
+            slot(7, false, true),
+        ];
+        assert_eq!(cycle(&slots, true), (Some(1), vec![]));
+        assert_eq!(cycle(&slots, false), (Some(7), vec![]));
+    }
+
+    #[test]
+    fn cycle_counts_several_here_marks_as_the_lowest_and_skips_them() {
+        let slots = [
+            slot(1, false, true),
+            slot(2, true, true),
+            slot(3, true, true),
+            slot(5, false, true),
+        ];
+        assert_eq!(cycle(&slots, true), (Some(5), vec![]));
+        assert_eq!(cycle(&slots, false), (Some(1), vec![]));
+    }
+
+    #[test]
+    fn cycle_collects_the_missing_marks_skipped_on_the_way() {
+        let slots = [
+            slot(1, true, true),
+            slot(3, false, false),
+            slot(7, false, true),
+        ];
+        assert_eq!(cycle(&slots, true), (Some(7), vec![3]));
+    }
+
+    #[test]
+    fn cycle_on_a_single_here_mark_finds_nothing() {
+        let slots = [slot(4, true, true)];
+        assert_eq!(cycle(&slots, true), (None, vec![]));
+        assert_eq!(cycle(&slots, false), (None, vec![]));
+    }
+
+    #[test]
+    fn cycle_reports_every_missing_mark_when_nothing_is_eligible() {
+        let slots = [slot(1, true, true), slot(4, false, false)];
+        assert_eq!(cycle(&slots, true), (None, vec![4]));
+    }
+
+    #[test]
+    fn cycle_on_an_empty_pool_finds_nothing() {
+        assert_eq!(cycle(&[], true), (None, vec![]));
+        assert_eq!(cycle(&[], false), (None, vec![]));
+    }
+
+    #[test]
+    fn cycle_ignores_the_input_order() {
+        let ordered = [
+            slot(1, true, true),
+            slot(3, false, false),
+            slot(7, false, true),
+        ];
+        let shuffled = [
+            slot(7, false, true),
+            slot(1, true, true),
+            slot(3, false, false),
+        ];
+        assert_eq!(cycle(&ordered, true), cycle(&shuffled, true));
+        assert_eq!(cycle(&ordered, false), cycle(&shuffled, false));
     }
 }

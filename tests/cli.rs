@@ -5313,6 +5313,214 @@ fn query_mark_jumps_to_its_target() {
 }
 
 #[test]
+fn mark_next_and_prev_follow_the_digits_skipping_holes() {
+    let world = sandbox(&["a", "b", "c"]);
+    for (digit, child) in [("1", "a"), ("3", "b"), ("7", "c")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let next = mark(&world, &["next"], &world.child("b"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "c"))
+    );
+    let prev = mark(&world, &["prev"], &world.child("b"));
+    assert!(prev.status.success(), "stderr: {}", text(&prev.stderr));
+    assert_eq!(
+        text(&prev.stdout),
+        format!("{}\n", canonical_child(&world, "a"))
+    );
+}
+
+#[test]
+fn mark_next_and_prev_wrap_around() {
+    let world = sandbox(&["a", "b", "c"]);
+    for (digit, child) in [("1", "a"), ("3", "b"), ("7", "c")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let next = mark(&world, &["next"], &world.child("c"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "a"))
+    );
+    let prev = mark(&world, &["prev"], &world.child("a"));
+    assert!(prev.status.success(), "stderr: {}", text(&prev.stderr));
+    assert_eq!(
+        text(&prev.stdout),
+        format!("{}\n", canonical_child(&world, "c"))
+    );
+}
+
+#[test]
+fn mark_cycling_from_an_unmarked_directory_starts_at_an_end() {
+    let world = sandbox(&["a", "b", "c", "x"]);
+    for (digit, child) in [("1", "a"), ("3", "b"), ("7", "c")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let next = mark(&world, &["next"], &world.child("x"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "a"))
+    );
+    let prev = mark(&world, &["prev"], &world.child("x"));
+    assert!(prev.status.success(), "stderr: {}", text(&prev.stderr));
+    assert_eq!(
+        text(&prev.stdout),
+        format!("{}\n", canonical_child(&world, "c"))
+    );
+}
+
+#[test]
+fn mark_cycling_counts_several_marks_as_the_lowest_and_skips_them() {
+    let world = sandbox(&["a", "b", "c"]);
+    for (digit, child) in [("1", "c"), ("2", "a"), ("3", "a"), ("5", "b")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    let next = mark(&world, &["next"], &world.child("a"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "b"))
+    );
+    let prev = mark(&world, &["prev"], &world.child("a"));
+    assert!(prev.status.success(), "stderr: {}", text(&prev.stderr));
+    assert_eq!(
+        text(&prev.stdout),
+        format!("{}\n", canonical_child(&world, "c"))
+    );
+}
+
+#[test]
+fn mark_cycling_skips_a_missing_directory_with_a_stderr_line() {
+    let world = sandbox(&["a", "b", "c"]);
+    for (digit, child) in [("1", "a"), ("3", "b"), ("7", "c")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    std::fs::remove_dir_all(world.child("b")).expect("the marked directory vanishes");
+    let next = mark(&world, &["next"], &world.child("a"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "c"))
+    );
+    assert!(
+        text(&next.stderr).contains("furet: skipped mark 3: missing directory"),
+        "stderr: {}",
+        text(&next.stderr)
+    );
+}
+
+#[test]
+fn mark_cycling_without_any_mark_fails() {
+    let world = sandbox(&["a"]);
+    assert!(
+        alias(&world, &["add", "ombi", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    let next = mark(&world, &["next"], world.tree.path());
+    assert_eq!(next.status.code(), Some(1));
+    assert!(next.stdout.is_empty());
+    assert!(
+        text(&next.stderr).contains("furet: no marks set"),
+        "stderr: {}",
+        text(&next.stderr)
+    );
+}
+
+#[test]
+fn mark_cycling_with_nothing_eligible_fails() {
+    let world = sandbox(&["a", "gone"]);
+    assert!(
+        mark(&world, &["set", "4", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    let only = mark(&world, &["next"], &world.child("a"));
+    assert_eq!(only.status.code(), Some(1));
+    assert!(
+        text(&only.stderr).contains("furet: no other mark"),
+        "stderr: {}",
+        text(&only.stderr)
+    );
+    assert!(
+        mark(&world, &["set", "6", "gone"], world.tree.path())
+            .status
+            .success()
+    );
+    std::fs::remove_dir_all(world.child("gone")).expect("the marked directory vanishes");
+    let after = mark(&world, &["next"], &world.child("a"));
+    assert_eq!(after.status.code(), Some(1));
+    let stderr = text(&after.stderr);
+    assert!(
+        stderr.contains("furet: skipped mark 6: missing directory")
+            && stderr.contains("furet: no other mark"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn mark_cycling_to_a_single_mark_from_elsewhere() {
+    let world = sandbox(&["a", "x"]);
+    assert!(
+        mark(&world, &["set", "4", "a"], world.tree.path())
+            .status
+            .success()
+    );
+    let next = mark(&world, &["next"], &world.child("x"));
+    assert!(next.status.success(), "stderr: {}", text(&next.stderr));
+    assert_eq!(
+        text(&next.stdout),
+        format!("{}\n", canonical_child(&world, "a"))
+    );
+    let prev = mark(&world, &["prev"], &world.child("x"));
+    assert!(prev.status.success(), "stderr: {}", text(&prev.stderr));
+    assert_eq!(
+        text(&prev.stdout),
+        format!("{}\n", canonical_child(&world, "a"))
+    );
+}
+
+#[test]
+fn mark_cycling_writes_nothing() {
+    let world = sandbox(&["a", "b", "c", "x"]);
+    for (digit, child) in [("1", "a"), ("3", "b"), ("7", "c")] {
+        assert!(
+            mark(&world, &["set", digit, child], world.tree.path())
+                .status
+                .success()
+        );
+    }
+    assert!(mark(&world, &["next"], &world.child("b")).status.success());
+    assert!(mark(&world, &["prev"], &world.child("b")).status.success());
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
 fn mark_commands_write_no_visit_and_no_query() {
     let world = sandbox(&["a"]);
     assert!(mark(&world, &["list"], world.tree.path()).status.success());

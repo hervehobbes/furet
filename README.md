@@ -163,6 +163,11 @@ extra profile line.
   without confirmation. Marks share the aliases' namespace and table.
   Jump with `f !1`; an unset mark fails with `mark 3 not set` (no
   `did you mean` hint), and a mark to a deleted directory is an error.
+  `furet mark next` / `furet mark prev` print the next / previous mark's
+  path on stdout — wrapping from 9 to 1, skipping holes, marks on the
+  current directory and missing directories (`furet: skipped mark 3:
+  missing directory`), `furet: no marks set` / `furet: no other mark`
+  otherwise — and record nothing.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -260,6 +265,10 @@ the name. Lot 55 scopes `furet query --home` to the home root (the
 pwsh — `f -h`, `fi -h`, and Tab after `-h` all scope to the home. Lot 57
 adds numbered marks in the binary — `furet mark set`, `list` and
 `delete` over the shared `aliases` table, with the mark messages in
-alias jumps (`mark 3 not set`).
+alias jumps (`mark 3 not set`). Lot 58 adds mark cycling in the binary —
+`furet mark next` / `furet mark prev` print the next / previous mark's
+path through the pure `alias::cycle` (lowest mark of the current
+directory, wrap 9 → 1, missing marks skipped on stderr), recording
+nothing.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

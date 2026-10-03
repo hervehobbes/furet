@@ -684,5 +684,34 @@ PS C:\dev\furet> furet mark delete --all
 removed mark 1
 ```
 
+Pour enchaîner les marques sans les nommer, `furet mark next` et
+`furet mark prev` écrivent sur `stdout` le chemin de la marque suivante
+ou précédente — un saut comme un autre, donc sans nouvelle exception
+`stdout`. Avec les marques 1 = `C:\dev\ombi` et 3 = `C:\dev\furet`
+reposées :
+
+```powershell
+PS C:\dev\ombi> furet mark next
+C:\dev\furet
+
+PS C:\dev\furet> furet mark next
+C:\dev\ombi
+
+PS C:\dev\furet> furet mark prev
+C:\dev\ombi
+```
+
+`next` monte dans les chiffres en sautant les trous et s'entoure de 9
+vers 1 ; `prev` fait le miroir. Depuis un répertoire sans marque,
+`next` part de la plus petite et `prev` de la plus grande. Un
+répertoire portant plusieurs marques compte comme la plus petite, et
+toute marque pointant sur le répertoire courant est ignorée ; une
+marque dont le répertoire a disparu est sautée avec
+`furet: skipped mark N: missing directory` sur stderr. Deux erreurs,
+exit 1 : `furet: no marks set` quand aucune marque n'existe (un alias
+nommé ne compte pas) et `furet: no other mark` quand aucune n'est
+éligible. Le binaire n'enregistre ni visite ni requête ; c'est le
+`fm +` / `fm -` de pwsh qui enregistrera la visite de saut.
+
 La fonction `fm`, qui encapsule ces commandes côté pwsh, arrive dans un
 lot ultérieur.

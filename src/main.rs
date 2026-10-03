@@ -219,12 +219,17 @@ enum MarkAction {
     List,
     /// Delete a mark or a range of marks (2 or 2-4); silent on unset marks.
     Delete {
+        /// One mark (2) or a range (2-4).
         #[arg(required_unless_present = "all", conflicts_with = "all")]
         spec: Option<String>,
         /// Delete every mark (1-9); named aliases are kept.
         #[arg(long)]
         all: bool,
     },
+    /// Print the directory of the next mark, wrapping from 9 to 1.
+    Next,
+    /// Print the directory of the previous mark, wrapping from 1 to 9.
+    Prev,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -1541,6 +1546,8 @@ fn mark_command(action: MarkAction) -> Result<(), Box<dyn Error>> {
         MarkAction::Set { digit, path } => mark_set(&digit, path.as_deref()),
         MarkAction::List => mark_list(),
         MarkAction::Delete { spec, all } => mark_delete(spec.as_deref(), all),
+        MarkAction::Next => mark_cycle(true),
+        MarkAction::Prev => mark_cycle(false),
     }
 }
 
@@ -1593,6 +1600,43 @@ fn mark_delete(spec: Option<&str>, all: bool) -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+fn mark_cycle(forward: bool) -> Result<(), Box<dyn Error>> {
+    debug!(forward, "mark cycle");
+    let current = paths::canonical(&env::current_dir()?)?;
+    let conn = storage::open()?;
+    let marks: Vec<(u8, String)> = storage::alias_listing(&conn)?
+        .into_iter()
+        .filter_map(|row| alias::mark_digit(&row.name).map(|digit| (digit, row.path)))
+        .collect();
+    if marks.is_empty() {
+        return Err("no marks set".into());
+    }
+    let slots: Vec<alias::MarkSlot> = marks
+        .iter()
+        .map(|(digit, path)| alias::MarkSlot {
+            digit: *digit,
+            here: path.to_lowercase() == current.path.to_lowercase(),
+            present: Path::new(path).is_dir(),
+        })
+        .collect();
+    let (target, skipped) = alias::cycle(&slots, forward);
+    for digit in &skipped {
+        eprintln!("furet: skipped mark {digit}: missing directory");
+    }
+    match target {
+        Some(digit) => {
+            let path = marks
+                .iter()
+                .find(|(mark, _)| *mark == digit)
+                .map(|(_, path)| path.clone())
+                .ok_or("no other mark")?;
+            print_result(&path);
+            Ok(())
+        }
+        None => Err("no other mark".into()),
+    }
 }
 
 fn ask(question: &str) -> Option<String> {

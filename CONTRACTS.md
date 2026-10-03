@@ -749,8 +749,8 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
     subcommands without filtering hidden ones, a known limitation Hervé
     accepted on 2026-10-02 (no workaround, no filtering of the generated
     block).
-- `furet mark set <digit> [<path>] | list | delete <spec> | delete --all` —
-  manages the marks (scope extension beyond SPEC, decided by Hervé on
+- `furet mark set <digit> [<path>] | list | delete <spec> | delete --all |
+  next | prev` — manages the marks (scope extension beyond SPEC, decided by Hervé on
   2026-10-02 and 2026-10-03; lot 57, design doc §3 and §12). A mark is an
   `aliases` row whose name is a single digit `1`-`9` (`alias::mark_digit`);
   marks and aliases share one namespace, with **no schema change** — `set`
@@ -779,7 +779,28 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   together are refused by clap, exit 2. `delete --all` removes the names
   `1`-`9` only — never a named alias, `0` included — with no confirmation.
   No `visits` and no `queries` row is ever written
-  (`mark_commands_write_no_visit_and_no_query`).
+  (`mark_commands_write_no_visit_and_no_query`). `next` and `prev`
+  (design doc §3.3 and §12, Hervé 2026-10-03; lot 58) print the path of
+  the next / previous mark **to stdout** — a normal jump target, so **no
+  new stdout exception** — and **record nothing** (no `visits`, no
+  `queries` row, `mark_cycling_writes_nothing`; the pwsh `fm +` / `fm -`
+  of lot 59 records the `jump` visit). The rule lives in the pure
+  `alias::cycle` over `alias::MarkSlot` (digit, `here`, `present`):
+  cycling is relative to the mark of the **current directory** — the
+  canonicalized cwd compared case-insensitively with the stored path —
+  and a directory carrying several marks counts as the **lowest** one.
+  `next` visits the digits above the current one in ascending order, then
+  — the wrap from 9 to 1 — the digits below it, also in ascending
+  order; `prev` mirrors it (digits below in descending order, then above
+  in descending order); from an **unmarked** directory `next` visits
+  every mark in ascending order and `prev` in descending order. Any
+  mark pointing to the current directory is skipped, and a mark whose
+  directory is missing from disk is skipped with `furet: skipped mark
+  <d>: missing directory` on stderr, in visiting order. No mark at all
+  — a named alias does not count — fails with `furet: no marks set`,
+  exit 1 (`mark_cycling_without_any_mark_fails`); marks set but none
+  eligible fails with `furet: no other mark`, exit 1
+  (`mark_cycling_with_nothing_eligible_fails`).
 - `furet home` — prints the configured `home` (SPEC §16), canonicalized, or
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
@@ -856,6 +877,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `mark set <digit> [<path>]` | the digit is `1`-`9` and the target canonicalizes to a directory; an existing mark is overwritten silently (`mark_set_defaults_to_the_cwd_and_overwrites_silently`, `mark_set_takes_an_explicit_path`) | the digit is not one char `1`-`9` (`mark_set_rejects_anything_but_one_to_nine`), the target is missing or a file (`mark_set_rejects_a_missing_path_and_a_file`), or a DB error |
 | `mark list` | always, even with no mark set (`mark_list_prints_only_marks_in_digit_order`) | a DB error |
 | `mark delete <spec> / --all` | a valid spec or `--all`; unset digits are silent, named aliases are kept (`mark_delete_one_and_a_range_and_stays_silent_on_unset`, `mark_delete_all_keeps_named_aliases`) | an invalid spec (`mark_delete_rejects_invalid_specs`) or a DB error; a bare `mark delete` and `<spec> --all` are refused by clap, exit 2 (`mark_delete_needs_a_spec_or_all_but_not_both`) |
+| `mark next` / `mark prev` | an eligible mark exists and its path is printed (`mark_next_and_prev_follow_the_digits_skipping_holes`, `mark_next_and_prev_wrap_around`, `mark_cycling_from_an_unmarked_directory_starts_at_an_end`, `mark_cycling_to_a_single_mark_from_elsewhere`) | no mark set (`mark_cycling_without_any_mark_fails`), no eligible mark — missing marks skipped with `furet: skipped mark <d>: missing directory` (`mark_cycling_skips_a_missing_directory_with_a_stderr_line`, `mark_cycling_with_nothing_eligible_fails`), or a DB error |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 | `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 

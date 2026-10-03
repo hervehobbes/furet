@@ -1,0 +1,10 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the directory of the next mark, wrapping from 9 to 1
+
+Usage: furet mark next
+
+Options:
+  -h, --help  Print help

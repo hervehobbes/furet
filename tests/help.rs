@@ -129,6 +129,16 @@ fn mark_delete_help_is_pinned() {
 }
 
 #[test]
+fn mark_next_help_is_pinned() {
+    snapshot_help("mark_next_help", &["mark", "next", "--help"]);
+}
+
+#[test]
+fn mark_prev_help_is_pinned() {
+    snapshot_help("mark_prev_help", &["mark", "prev", "--help"]);
+}
+
+#[test]
 fn home_help_is_pinned() {
     snapshot_help("home_help", &["home", "--help"]);
 }

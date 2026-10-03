@@ -1,4 +1,15 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 58 — mark cycling: `furet mark next`/`prev` print the target's path on stdout (a normal jump
+target, no new stdout exception) through the pure `alias::cycle` — lowest `here` mark as current,
+wrap 9→1, marks on the cwd skipped, missing dirs skipped with `furet: skipped mark N: missing
+directory` on stderr, `furet: no marks set` / `furet: no other mark` exit 1 — recording nothing (no
+visit, no queries row). 9 unit + 9 cli + 2 help tests written first, all failing; mutations A/B/C each
+caught by the predicted tests. 2 new help snapshots, 2 lines in `mark_help`, the `[SPEC]` line in
+`mark_delete_help`; docs: CONTRACTS mark entry + exit row, README bullet + Status, ROADMAP 58,
+example.md (French). Executor: GLM 5.3. Decisions: none beyond the prompt (design §3.3/§12).
+Next: reviewer pass from a Claude Code session; lot 59 wires pwsh `fm +`/`fm -` and the bindings.
+
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 57 — marks in the binary: `furet mark set/list/delete` over the shared `aliases` table
 (`alias::mark_digit`/`mark_range`, silent overwrite via a check-free `upsert_alias`, `--all` deletes
 1-9 only, never a named alias) plus the two mark messages in `alias_query` (`mark 3 not set` without
