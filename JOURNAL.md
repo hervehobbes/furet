@@ -1,4 +1,11 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 60b — docs-only: restored the lot 59 JOURNAL entry that lot 60 had replaced instead of
+inserting above it; the entry was re-inserted byte-identical, extracted with `git show b915f06:JOURNAL.md`
+and never retyped. No code change, no test.
+Decisions: none — every step pinned by the lot prompt. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; lots 58, 59 and 60 can be pushed.
+
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 60 — `fi !`: an alias branch in pwsh `fi` (unscoped, one token `!`/`=`), fed by the
 unchanged `furet alias complete` (marks first in key order); fzf gets `--delimiter`, `--query om`
 and a `{2}` preview; the no-fzf menu filters by strict prefix; empty entries return silently;
@@ -8,6 +15,17 @@ closed), ROADMAP 60, example.md (`fi !` paragraph, `f !5` fix, cycling moved bef
 `fi !` pointer) — the commanded pass also fixed two pre-existing `## Les alias` contradictions.
 Decisions: Hervé's option A — template verbatim, the preview-window test counts 2. Executor: GLM 5.3.
 Next: reviewer pass from a Claude Code session; design section 3 is complete.
+
+## 2026-10-03 — branch main — v0.2.0
+Done: lot 59 — the pwsh `fm` helper (list, `fm 1` set, `fm -d 2`/`2-4`/`-d!` delete, `fm +`/`-` cycle
+with Set-Location + `__furet_record … 'jump'`), no `param()` block (the spike:
+ValueFromRemainingArguments swallows `-d`), fixed name like `fi`; plus Ctrl+Alt+→/←
+(`FuretNextMark`/`FuretPreviousMark`) under `if (Get-Module PSReadLine)`, empty line only, else Ding.
+11 pwsh tests + 1 unit test written first, all failing; mutations A/B/C each caught by the predicted
+test. Docs: CONTRACTS, README `fm` bullet + Status, ROADMAP 59, example.md `## Les marques` + fixes.
+Decisions: one test deviation — `Get-Command jm` gains `-CommandType Function` because this machine
+has a `jm.ps1` on PATH; everything else per the prompt (design §3/§12). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session; lot 60 is `fi !`.
 
 ## 2026-10-03 — branch main — v0.2.0
 Done: lot 58 — mark cycling: `furet mark next`/`prev` print the target's path on stdout (a normal jump
