@@ -70,3 +70,4 @@
 | 63 | `f -N`: go N directories back in the session (`furet back --steps`) |
 | 64 | `furet import pwsh-history` seeds the database from PSReadLine history |
 | 65 | `furet history`: visit history numbered like `f -N` |
+| 66 | pwsh `fh`: session history numbered like `f -N` |

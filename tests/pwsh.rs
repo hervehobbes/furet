@@ -1768,6 +1768,97 @@ fn fm_is_fixed_whatever_the_cmd() {
     );
 }
 
+// WHY: the fh lines are picked by their tab-field shape, the only tab-separated stdout the script prints.
+fn history_lines(stdout: &str, field_count: usize) -> Vec<Vec<&str>> {
+    stdout
+        .lines()
+        .map(|line| line.split('\t').collect::<Vec<_>>())
+        .filter(|fields| fields.len() == field_count)
+        .collect()
+}
+
+#[test]
+fn fh_lists_the_session_numbered_like_f_dash_n() {
+    let world = sandbox(&["a", "b", "c"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let body = format!(
+        "f {}\nf {}\nf {}\nfh\nf -2",
+        quote(&a),
+        quote(&b),
+        quote(&c)
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    let lines = history_lines(&run.stdout, 4);
+    assert_eq!(lines.len(), 3, "stdout: {}", run.stdout);
+    for (index, dir) in [("0", &c), ("1", &b), ("2", &a)] {
+        let fields = lines
+            .iter()
+            .find(|fields| fields[0] == index)
+            .unwrap_or_else(|| panic!("no history line {index} in: {}", run.stdout));
+        assert_eq!(fields[2], "jump", "line {index}: {}", run.stdout);
+        assert_eq!(fields[3], canonical(dir), "line {index}: {}", run.stdout);
+    }
+    assert_eq!(run.cwd, canonical(&a), "stderr: {}", run.stderr);
+}
+
+#[test]
+fn fh_dash_a_lists_every_session_without_numbers() {
+    let world = sandbox(&["a", "x"]);
+    let a = world.child("a");
+    seed(&world, &world.child("x"), "other-session");
+    let body = format!("f {}\nfh -a", quote(&a));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    let lines = history_lines(&run.stdout, 3);
+    assert_eq!(lines.len(), 2, "stdout: {}", run.stdout);
+    let seeded = canonical(&world.child("x"));
+    assert!(
+        lines.iter().any(|fields| fields[2] == seeded),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        lines.iter().any(|fields| fields[2] == canonical(&a)),
+        "stdout: {}",
+        run.stdout
+    );
+}
+
+#[test]
+fn fh_dash_n_limits_the_lines() {
+    let world = sandbox(&["a", "b", "c"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let body = format!("f {}\nf {}\nf {}\nfh -n 1", quote(&a), quote(&b), quote(&c));
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    let lines = history_lines(&run.stdout, 4);
+    assert_eq!(lines.len(), 1, "stdout: {}", run.stdout);
+    assert_eq!(lines[0][0], "0", "stdout: {}", run.stdout);
+    assert_eq!(lines[0][3], canonical(&c), "stdout: {}", run.stdout);
+}
+
+#[test]
+fn fh_is_fixed_whatever_the_cmd() {
+    let world = sandbox(&["a"]);
+    let body = "Write-Output ('FURET_TEST_FH=' + [bool](Get-Command fh -CommandType Function -ErrorAction SilentlyContinue))\n\
+                Write-Output ('FURET_TEST_JH=' + [bool](Get-Command jh -CommandType Function -ErrorAction SilentlyContinue))";
+    let run = run_pwsh(&world, "", "--cmd j", world.tree.path(), body);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_FH="),
+        "True",
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_JH="),
+        "False",
+        "stderr: {}",
+        run.stderr
+    );
+}
+
 #[test]
 fn init_binds_ctrl_alt_arrows_when_psreadline_is_loaded() {
     let world = sandbox(&[]);

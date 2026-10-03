@@ -586,7 +586,8 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   scope extension beyond SPEC decided by Hervé on 2026-10-02/03) adds
   `function global:fm` to the script, placed after `fi`. `fm` is a
   **fixed** name: like `fi` it does not follow `--cmd` — `furet init
-  pwsh --cmd j` defines `j` and `fm`, never `jm`. It has **no
+  pwsh --cmd j` defines `j`, `fm` and `fh`, never `jm` or `jh`
+  (`fh` is lot 66, below). It has **no
   `param()` block**, dispatching on plain `$args` instead: a spike on a
   real `pwsh -NoProfile` (2026-10-03) showed that
   `[Parameter(ValueFromRemainingArguments)]` — the pattern `f` and `fi`
@@ -618,7 +619,19 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   empty command line** — it inserts `fm +` / `fm -` and calls
   `AcceptLine`, giving a normal history entry and a normal `jump`
   visit — while a non-empty line only `Ding`s, so typed text is never
-  lost. One completer —
+  lost. Lot 66 (Hervé, 2026-10-03) adds `function global:fh` to the
+  script, placed after `fm` and before the key handlers. `fh` shows the
+  visit history in one word: like `fi` and `fm` it is a **fixed** name and
+  has **no `param()` block**, dispatching on plain `$args` (same
+  spike-backed reason as `fm`, so `-a` and `-n` are never bound away).
+  When `$args` contains `-a` or `--all` it runs `furet history @args` —
+  every session, without numbers — otherwise `furet history --session
+  $global:__furet_session @args` — the current session, numbered like
+  `f -N`. Every other argument passes through untouched, so `-n <N>`
+  reaches `--limit` (`fh -n 50`). `fh` never moves, never records, and
+  adds nothing of its own: its output is `furet history`'s, the eighth
+  accepted stdout exception — `fh` introduces no new exception.
+  One completer —
   the `FuretArgs` registration above — handles every line, `-l` and `-h`
   included:
   the declared switches keep pwsh's completion binder on the normal path

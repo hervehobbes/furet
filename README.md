@@ -121,8 +121,14 @@ extra profile line.
   exactly where `f -N` goes (line 0 is the current directory); with
   `--all`, every session's visits are listed without the numbers.
   `--limit` (`-n`, default 20) caps the number of lines, `0` prints them
-  all. Read-only, like `furet list`; the `fh` wrapper for interactive use
-  comes in the next lot.
+  all. Read-only, like `furet list`; `fh` (next clause) is its pwsh
+  wrapper.
+- `fh` — the session history in one word: print the current session's
+  visit history, numbered like `f -N` (line 0 is the current directory,
+  line `N` is where `f -N` goes). `fh -a` lists every session without
+  numbers, `fh -n 50` caps the output at 50 lines (`0` prints it all).
+  Fixed name, like `fi` and `fm` — `furet init pwsh --cmd j` still
+  defines `fh`, never `jh`.
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` —
   forget known directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory
@@ -331,6 +337,9 @@ history — `cd`-like lines with one absolute path (`~` expands to the user
 profile), later lines more recent, re-running it a no-op. Lot 65 adds
 `furet history`: the visit history, newest first, numbered like `f -N`
 per session (`--session <id>`) or listed across every session without
-numbers (`--all`); the `fh` pwsh wrapper is the next lot.
+numbers (`--all`); the `fh` pwsh wrapper is the next lot. Lot 66 wires
+that wrapper: the fixed-name `fh` prints the session history (`fh -a`
+for every session, `fh -n <N>` for a limit) without typing
+`furet history`.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

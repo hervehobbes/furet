@@ -1,4 +1,13 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 66 — pwsh `fh`: the fixed-name wrapper over `furet history`, placed after `fm` — no
+`param()` block; `-a`/`--all` runs `furet history @args` (every session), anything else
+`furet history --session $global:__furet_session @args` (numbered like `f -N`), `-n` passes
+through. 4 pwsh tests written first (all failed pre-change: `fh` unrecognized) + the rendered-
+script unit assertion `script_defines_fh_whatever_the_cmd`; mutations A/B caught as required.
+Docs: CONTRACTS (fh paragraph, fm's `--cmd j` listing), README (usage + Status), ROADMAP row 66,
+example.md `fh` section. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 65 — `furet history`: `storage::visit_history` + `HistoryRow` (order `ts DESC, id DESC`,
 the same walk as `visited_dir_back`, so line N is `f -N`'s target; LIMIT -1 for `--limit 0` = all)
 and `furet history --session <id> | --all -n <limit>` (default 20; numbers only per session).

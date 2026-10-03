@@ -200,6 +200,25 @@ PS C:\dev\sourcier>
 Au-delà de l'historique, la commande échoue, le shell reste en place et
 affiche `furet: no directory 3 steps back in this session` (pour `f -3`).
 
+### Voir l'historique des déplacements
+
+`fh` affiche l'historique des déplacements de la session en cours, du plus
+récent au plus ancien — la même séquence que dans la section précédente :
+
+```powershell
+PS C:\dev\furet> fh
+0	2026-10-03T14:20:31	jump	C:\dev\furet
+1	2026-10-03T14:20:12	jump	C:\dev\zoxide
+2	2026-10-03T14:19:58	jump	C:\dev\clypher
+3	2026-10-03T14:19:40	jump	C:\dev\sourcier
+```
+
+Le numéro de chaque ligne est le `N` de `f -N` : la ligne 0 est le
+répertoire courant, et `f -3` va exactement là où la ligne 3 le dit
+(`C:\dev\sourcier` ci-dessus). `fh -a` liste les déplacements de toutes
+les sessions, sans numéros, et `fh -n 50` limite l'affichage à 50 lignes
+(`fh -n 0` les affiche toutes).
+
 ### Retour à la maison
 
 ```powershell
