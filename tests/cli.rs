@@ -3,12 +3,13 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Output;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use assert_cmd::Command;
-use assert_fs::TempDir;
 use furet::paths;
 use furet::project;
 use rusqlite::{Connection, params};
+use tempfile::TempDir;
 
 struct Sandbox {
     tree: TempDir,
@@ -16,12 +17,33 @@ struct Sandbox {
 }
 
 fn sandbox(children: &[&str]) -> Sandbox {
-    let tree = TempDir::new().expect("a fresh tree directory");
+    let tree = letter_free_tempdir();
     for child in children {
         std::fs::create_dir_all(tree.path().join(child)).expect("a child directory exists");
     }
     let data = TempDir::new().expect("a fresh data directory");
     Sandbox { tree, data }
+}
+
+// WHY: tempfile's random suffix has letters that can complete stage 1's folder bonus on a full parent path, which made same-name fixtures flaky (lot 61).
+fn letter_free_tempdir() -> TempDir {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    loop {
+        let name = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        match tempfile::Builder::new()
+            .prefix(&name)
+            .rand_bytes(0)
+            .tempdir()
+        {
+            Ok(dir) => return dir,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("a fresh tree directory: {error}"),
+        }
+    }
 }
 
 impl Sandbox {
@@ -5538,4 +5560,26 @@ fn mark_commands_write_no_visit_and_no_query() {
     let conn = db(&world);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 0);
     assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn sandbox_tree_names_hold_no_letters() {
+    let first = sandbox(&[]);
+    let second = sandbox(&[]);
+    for world in [&first, &second] {
+        let name = world
+            .tree
+            .path()
+            .file_name()
+            .expect("the tree has a name")
+            .to_string_lossy();
+        assert!(
+            name.chars().all(|c| c.is_ascii_digit() || c == '-'),
+            "the tree name holds letters: {name}"
+        );
+    }
+    assert_ne!(
+        first.tree.path().file_name(),
+        second.tree.path().file_name()
+    );
 }

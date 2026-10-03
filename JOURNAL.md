@@ -1,4 +1,13 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 61 — letter-free sandbox trees: `letter_free_tempdir()` (pid + atomic counter, `rand_bytes(0)`)
+builds the `tree` directory in the cli/pwsh/explain test crates, so no random letter can complete stage 1's
+folder bonus on a full parent path — the reviewer's diagnosis of the 1-in-30 query-home flake, credited.
+New `sandbox_tree_names_hold_no_letters` failed before the change and passes after; 60/60 query-home and
+5/5 pwsh home+local loop runs green. Test code only.
+Decisions: one compile fix — the three crates' `TempDir` import swapped to `tempfile` (assert_fs's TempDir
+wraps tempfile's with no conversion path); data/script_dir lines unchanged, clippy clean. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 60b — docs-only: restored the lot 59 JOURNAL entry that lot 60 had replaced instead of
 inserting above it; the entry was re-inserted byte-identical, extracted with `git show b915f06:JOURNAL.md`
 and never retyped. No code change, no test.

@@ -2,11 +2,12 @@
 #![allow(clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use assert_cmd::Command;
-use assert_fs::TempDir;
 use furet::paths;
 use rusqlite::{Connection, params};
+use tempfile::TempDir;
 
 const LAB: &str = "tokio-lab";
 
@@ -16,7 +17,7 @@ struct Sandbox {
 }
 
 fn sandbox(children: &[&str]) -> Sandbox {
-    let tree = TempDir::new().expect("a fresh tree directory");
+    let tree = letter_free_tempdir();
     for child in children {
         std::fs::create_dir_all(tree.path().join(LAB).join(child))
             .expect("a child directory exists");
@@ -26,6 +27,27 @@ fn sandbox(children: &[&str]) -> Sandbox {
     std::fs::write(data.path().join("config.toml"), "retention_days = 0")
         .expect("the config file is written");
     Sandbox { tree, data }
+}
+
+// WHY: tempfile's random suffix has letters that can complete stage 1's folder bonus on a full parent path, which made same-name fixtures flaky (lot 61).
+fn letter_free_tempdir() -> TempDir {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    loop {
+        let name = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        match tempfile::Builder::new()
+            .prefix(&name)
+            .rand_bytes(0)
+            .tempdir()
+        {
+            Ok(dir) => return dir,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("a fresh tree directory: {error}"),
+        }
+    }
 }
 
 impl Sandbox {
