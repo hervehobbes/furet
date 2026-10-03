@@ -215,8 +215,7 @@ Register-ArgumentCompleter -CommandName __FURET_CMD__ -ParameterName FuretArgs -
         $lastExit = $lastExit.Value
     }
     try {
-        # WHY: an alias word completes by strict prefix through the hidden
-        # `furet alias complete`, never the ranked query list.
+        # WHY: alias words complete by strict prefix via `furet alias complete`, never the query list.
         if ($wordToComplete.StartsWith('!') -or $wordToComplete.StartsWith('=')) {
             if ($local) {
                 return

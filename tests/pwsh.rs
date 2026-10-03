@@ -847,6 +847,23 @@ fn tab_completing_an_alias_word_after_local_proposes_nothing() {
 }
 
 #[test]
+fn tab_completing_an_alias_word_never_falls_through_to_the_query_list() {
+    let world = sandbox(&["deep/!omega"]);
+    seed(&world, &world.child("deep/!omega"), "seed");
+    write_alias_prefix_config(&world, "=");
+    let global_list = query_list_in(&world, world.tree.path(), &["query", "--list", "--", "!om"]);
+    assert!(
+        global_list.contains(&canonical(&world.child("deep/!omega"))),
+        "a fall-through to query --list would return the bang directory: {global_list:?}"
+    );
+    let items = completion_items_in(&world, "", world.tree.path(), "f !om");
+    assert!(
+        items.is_empty(),
+        "no completion may fall through: {items:?}"
+    );
+}
+
+#[test]
 fn tab_completing_an_alias_word_leaves_lastexitcode_untouched() {
     let world = sandbox(&["ombi"]);
     seed_alias(&world, "ombi", &world.child("ombi"));

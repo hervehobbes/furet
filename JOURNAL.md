@@ -1,3 +1,14 @@
+## 2026-10-03 — branch main — v0.2.0
+Done: lot 54b — the `# WHY:` above the completer's `!`/`=` branch is one line, and a new pwsh test pins the
+no-fall-through rule: under `alias_prefix = "="` the word `!om` is a plain fuzzy query (`query --list -- !om`
+lists seeded `deep/!omega`) while `f !om<Tab>` completes nothing — the branch swallows the word, `alias complete`
+drops the other prefix, and no `!`-child sits at the root for pwsh's filename fallback. Discrimination proven:
+branch deleted → the completion lists `deep\!omega`; reverted, `git diff src/pwsh.rs` shows only the comment.
+Decisions: the test follows Hervé's revision (2026-10-03) after the first fixture was blocked — lot 53 makes
+`query --list` refuse `!`-words under the default prefix, and pwsh falls back to filename completion on a
+zero-result completer, so a `!`-child in the completion cwd can never yield empty items. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+
 ## 2026-10-02 — branch main — v0.2.0
 Done: lot 54 — Tab completion of alias words: hidden `furet alias complete <word>` (`#[command(hide = true)]`,
 strict case-insensitive prefix on names over `alias_listing`, `name<TAB>path` lines, nothing written), plus a
