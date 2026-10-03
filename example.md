@@ -299,12 +299,11 @@ PS C:\dev\furet> furet alias remove ombi
 removed alias ombi
 ```
 
-Sans chemin, `alias add` prend le répertoire courant. Un nom existe déjà
-refuse (`alias 'ombi' already exists (C:\apps\ombi); use --force to
-replace it`) ; `--force` remplace nom et chemin. Les noms acceptés sont
-les lettres, chiffres, `_` et `-` — les marques (style Vim) partageront la
-même table. `alias list` écrit sur `stdout` (une exception documentée),
-`nom<TAB>chemin<TAB>date de création` par ligne.
+Sans chemin, `alias add` prend le répertoire courant. Un nom qui existe
+déjà est refusé (`alias 'ombi' already exists (C:\apps\ombi); use --force
+to replace it`) ; `--force` remplace nom et chemin. Les noms acceptés sont
+les lettres, chiffres, `_` et `-`. `alias list` écrit sur `stdout` (une
+exception documentée), `nom<TAB>chemin<TAB>date de création` par ligne.
 
 Le saut se fait avec le préfixe `!` :
 

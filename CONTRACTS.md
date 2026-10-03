@@ -380,8 +380,9 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   without `--local`); the `queries` row is written exactly as for a global
   query, the scope is not stored.
   `--home` (scope extension beyond SPEC, decided by Hervé on 2026-10-03;
-  lot 55 — the pwsh `f -h` is lot 56) restricts the candidate pool to the
-  **home root**, long form only (`-h` is clap's help). The home root is the
+  lots 55-56; the pwsh side is `f -h`, see `init pwsh`) restricts the
+  candidate pool to the **home root**, long form only (`-h` is clap's
+  help). The home root is the
   configured `home`, validated exactly as `furet home` validates it; when
   it is unset or invalid (never an error) the root is `dirs::home_dir()`
   canonicalized — the user profile pwsh calls `$HOME`. Unlike `--local` it
@@ -460,8 +461,7 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   named like the alias wins in `f`: the pwsh `Test-Path` branch runs
   before the query, so `f !ombi` with a `!ombi` directory in the current
   directory goes there
-  (`f_existing_directory_named_like_the_alias_wins`); `src/pwsh.rs` is
-  unchanged.
+  (`f_existing_directory_named_like_the_alias_wins`).
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
 - `furet back --session <s>` — prints the second-to-last directory visited

@@ -1,27 +1,31 @@
 ## 2026-10-03 — branch main — v0.2.0
-Done: lot 56 — pwsh home scope: `f`/`fi` take `[Alias('h')] [switch] $HomeScope` (`$Home` is read-only
-in pwsh) and build a `$scope` array splatted `@scope` into every `furet query` call (explain one call,
-fzf one call pair with `$($scope -join ' ')` in the reload, menu one call); the completer derives a
-`$scope` string from the first token and scopes Tab after `-h`/`--home`; `-l -h` forwards both and clap
-refuses (exit 2, shell stays put). 10 real-pwsh tests, 9 failing pre-change; the two fi fzf script-count
-tests moved 2→1 (one call pair now, per Hervé's revision after the blocker report). Mutations A/B/C:
-1,2,4,5,6,7,8 / 9 / 10+the local twin fail as expected. example.md catches up in French (Les alias,
-Rester sous la maison). Executor: GLM 5.3.
-Decisions: Hervé's revision (2026-10-03) — the fzf counts 2→1; the DoD then surfaced two lot-17 cli
-tests pinning the old two-call explain string, updated to the `@scope` form the same way (disclosed).
+Done: lot 56b — docs-only: the lot 55 and lot 56 JOURNAL entries cut to 9 lines each; two stale
+CONTRACTS.md lines fixed (the `--home` scope note now reads "lots 55-56; the pwsh side is `f -h`, see
+`init pwsh`" and the alias-queries paragraph drops its obsolete "`src/pwsh.rs` is unchanged" clause);
+example.md's Les alias paragraph fixed — the "existe déjà refuse" grammar slip corrected and the
+unshipped marks mention ("partageront la même table") deleted. No code change, no test.
+Decisions: none — every replacement text pinned by the lot prompt (Hervé, 2026-10-03). Executor: GLM 5.3 Flash.
 Next: reviewer pass from a Claude Code session.
 
 ## 2026-10-03 — branch main — v0.2.0
-Done: lot 55 — `furet query --home` (long only, `conflicts_with = local`) scopes the pool to the home
-root: the configured `home` validated as `furet home` does (extracted `configured_home`), else the
-canonicalized user profile (`dirs::home_dir`). `local_root` became `scope_root(current, local, home,
-settings)`; the fallback starts at the scope root when the cwd is outside it (`within` check); `--explain`
-gains `home root:` where `--local` prints `project root:`; aliases refuse `--home`; empty query prints
-the root. 11 cli tests + 1 explain unit test first (10 failed pre-change on `unexpected argument
-'--home'`; the fallback-inside test passed vacuously — its scoped half only asserts failure + empty
-stdout); the query help snapshot gains exactly the `--home` line. `src/pwsh.rs` untouched (lot 56's).
-Executor: GLM 5.3. Decisions: none beyond the prompt (design §2/§11, Hervé 2026-10-02/03).
-Next: reviewer pass from a Claude Code session; lot 56 wires `f -h`/`fi -h`/Tab in pwsh.
+Done: lot 56 — pwsh home scope: `f`/`fi` take `[Alias('h')] [switch] $HomeScope` (`$Home` is
+read-only) and splat a `$scope` array (`--local`/`--home`) into every `furet query` call; the
+completer scopes Tab after `-h`/`--home`; `-l -h` forwards both and clap refuses (exit 2, shell
+stays put). 10 real-pwsh tests (9 failing pre-change); mutations A/B/C fail tests 1,2,4-8 / 9 /
+10 + its local twin. example.md catches up in French (Les alias, Rester sous la maison).
+Decisions: Hervé's revision — fi's fzf count tests 2→1; two lot-17 cli tests pinning the old explain
+string moved to the `@scope` form (disclosed, accepted by the reviewer). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-03 — branch main — v0.2.0
+Done: lot 55 — `furet query --home` (long only, `conflicts_with = local`) scopes the pool to the
+home root: the configured `home` validated as `furet home` does (`configured_home`), else the
+canonical `dirs::home_dir()`. `local_root` became `scope_root`; the fallback starts at the scope
+root when the cwd is outside it; `--explain` gains `home root:`; aliases refuse `--home`; an empty
+query prints the root. 11 cli tests + 1 explain unit test first (10 failed pre-change; the
+fallback-inside one passed vacuously); the query help snapshot gains the `--home` line.
+Decisions: none beyond the prompt (design §2/§11, Hervé 2026-10-02/03). Executor: GLM 5.3.
+Next: lot 56 wires `f -h`/`fi -h`/Tab in pwsh.
 
 ## 2026-10-03 — branch main — v0.2.0
 Done: lot 54b — the `# WHY:` above the completer's `!`/`=` branch is one line, and a new pwsh test pins the
