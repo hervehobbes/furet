@@ -1,5 +1,9 @@
 # Backlog
 
+## Remontées des agents
+
+- Quand une requête Tab ne donne aucun résultat, pwsh propose à la place les fichiers et dossiers du répertoire courant. Ce comportement est peut-être voulu, peut-être pas.
+
 ## idées
 Hors ce qui est déjà dans les cartons (import historique PowerShell, `--history`, alias `@`, nucleo, marques, boost contexte git, yazi, bash/zsh), voici ce que je vois, trié par rapport valeur/coût :
 
