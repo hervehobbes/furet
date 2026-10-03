@@ -1,4 +1,16 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 55 — `furet query --home` (long only, `conflicts_with = local`) scopes the pool to the home
+root: the configured `home` validated as `furet home` does (extracted `configured_home`), else the
+canonicalized user profile (`dirs::home_dir`). `local_root` became `scope_root(current, local, home,
+settings)`; the fallback starts at the scope root when the cwd is outside it (`within` check); `--explain`
+gains `home root:` where `--local` prints `project root:`; aliases refuse `--home`; empty query prints the
+root. 11 cli tests + 1 explain unit test first (10 failed pre-change on `unexpected argument '--home'`; the
+fallback-inside test passed vacuously, its scoped half only asserts failure + empty stdout); query help
+snapshot gains exactly the `--home` line. `src/pwsh.rs` untouched (`f -h` is lot 56).
+Decisions: none beyond the prompt (design §2/§11, Hervé 2026-10-02/03). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session; lot 56 wires `f -h`/`fi -h`/Tab in pwsh.
+
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 54b — the `# WHY:` above the completer's `!`/`=` branch is one line, and a new pwsh test pins the
 no-fall-through rule: under `alias_prefix = "="` the word `!om` is a plain fuzzy query (`query --list -- !om`
 lists seeded `deep/!omega`) while `f !om<Tab>` completes nothing — the branch swallows the word, `alias complete`

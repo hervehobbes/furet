@@ -52,6 +52,8 @@ pub struct Report<'a> {
     pub engine: Engine,
     /// Set by `query --local`: the git project root the pool was scoped to.
     pub project_root: Option<String>,
+    /// Set by `query --home`: the home root the pool was scoped to.
+    pub home_root: Option<String>,
     pub evaluations: Vec<Evaluation<'a>>,
     pub decision: Decision<'a>,
     pub deciding_criterion: Option<TieBreak>,
@@ -154,6 +156,7 @@ pub fn explain_recalled<'a>(
         normalized_query: Normalized::new(query).text(),
         engine,
         project_root: None,
+        home_root: None,
         decision,
         deciding_criterion,
         evaluations,
@@ -190,6 +193,9 @@ pub fn render(report: &Report) -> String {
     rendered.push_str(&memory_line(report));
     if let Some(root) = &report.project_root {
         rendered.push_str(&format!("project root: {root}\n"));
+    }
+    if let Some(root) = &report.home_root {
+        rendered.push_str(&format!("home root: {root}\n"));
     }
     if report.origin == Origin::Fallback {
         rendered.push_str("origin: fallback\n");
@@ -687,6 +693,26 @@ mod tests {
             deciding criterion: score\n\
             decision: jump /dev/tokio\n";
         assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn a_home_root_renders_right_after_memory_and_never_a_project_root() {
+        let candidates = [dir("/dev/tokio", "tokio", "/dev", 1)];
+        let mut report = explain(
+            "tokio",
+            "",
+            &candidates,
+            Origin::Database,
+            TYPO_MIN_QUERY_LEN,
+            Engine::Reference,
+        );
+        report.home_root = Some("C:\\Users\\herve".to_owned());
+        let rendered = render(&report);
+        assert!(
+            rendered.contains("memory: none\nhome root: C:\\Users\\herve\n"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("project root:"), "{rendered}");
     }
 
     #[test]

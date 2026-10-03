@@ -59,3 +59,4 @@
 | 52 | `furet alias add / list / remove` (no resolution yet) |
 | 53 | Alias resolution: `f !name`, `alias_prefix` (`!`/`=`), `did you mean` hint |
 | 54 | Tab completion of alias words: strict prefix, path shown, name inserted |
+| 55 | Home scope in the binary: `furet query --home` |

@@ -3932,6 +3932,247 @@ fn query_explain_local_prints_the_project_root_line() {
     );
 }
 
+fn write_home_config(sandbox: &Sandbox, home: &Path) {
+    let forward = home.to_string_lossy().replace('\\', "/");
+    write_config(sandbox, &format!("home = \"{forward}\""));
+}
+
+fn user_profile_home() -> String {
+    let home = dirs::home_dir().expect("the user profile resolves");
+    paths::canonical(&home)
+        .expect("the user profile canonicalizes")
+        .path
+}
+
+#[test]
+fn query_home_ignores_a_better_match_outside_the_home() {
+    let world = sandbox(&["home/tokio", "elsewhere/tokio"]);
+    assert!(
+        add(&world, &world.child("home/tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(
+            &world,
+            &world.child("elsewhere/tokio"),
+            "session-1",
+            None,
+            None
+        )
+        .status
+        .success()
+    );
+    visited_at(&world, &world.child("home/tokio"), 1_700_000_001);
+    visited_at(&world, &world.child("elsewhere/tokio"), 1_700_000_002);
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.tree.path();
+    let global = query_with(&world, &["tokio"], cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    let outside = canonical_child(&world, "elsewhere/tokio");
+    assert_eq!(text(&global.stdout), format!("{outside}\n"));
+    let scoped = query_with(&world, &["--home", "tokio"], cwd);
+    assert!(scoped.status.success(), "stderr: {}", text(&scoped.stderr));
+    let inside = canonical_child(&world, "home/tokio");
+    assert_eq!(text(&scoped.stdout), format!("{inside}\n"));
+}
+
+#[test]
+fn query_home_with_an_empty_query_prints_the_home_root() {
+    let world = sandbox(&["home/sub"]);
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.tree.path();
+    let root = canonical_child(&world, "home");
+    for args in [vec!["--home"], vec!["--home", "   "]] {
+        let out = query_with(&world, &args, cwd);
+        assert!(
+            out.status.success(),
+            "args: {args:?}, stderr: {}",
+            text(&out.stderr)
+        );
+        assert_eq!(text(&out.stdout), format!("{root}\n"), "args: {args:?}");
+        assert!(
+            !world.data.path().join("furet.db").exists()
+                || scalar(&db(&world), "SELECT COUNT(*) FROM queries") == 0,
+            "args: {args:?}"
+        );
+    }
+}
+
+#[test]
+fn query_home_without_a_configured_home_uses_the_user_profile() {
+    let world = sandbox(&[]);
+    let out = query_with(&world, &["--home"], world.tree.path());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), format!("{}\n", user_profile_home()));
+}
+
+#[test]
+fn query_home_with_an_invalid_home_uses_the_user_profile() {
+    let world = sandbox(&[]);
+    let expected = format!("{}\n", user_profile_home());
+    write_config(&world, "home = \"C:/definitely/missing/furet-lot-55\"");
+    let missing = query_with(&world, &["--home"], world.tree.path());
+    assert!(
+        missing.status.success(),
+        "stderr: {}",
+        text(&missing.stderr)
+    );
+    assert_eq!(text(&missing.stdout), expected);
+    write_config(&world, "home = \"relative/home\"");
+    let relative = query_with(&world, &["--home"], world.tree.path());
+    assert!(
+        relative.status.success(),
+        "stderr: {}",
+        text(&relative.stderr)
+    );
+    assert_eq!(text(&relative.stdout), expected);
+}
+
+#[test]
+fn query_home_fallback_inside_the_home_never_climbs_above_it() {
+    let world = sandbox(&["home", "outhome"]);
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.child("home");
+    let global = query_with(&world, &["outhome"], &cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    let expected = canonical_child(&world, "outhome");
+    assert_eq!(text(&global.stdout), format!("{expected}\n"));
+    let scoped = query_with(&world, &["--home", "outhome"], &cwd);
+    assert!(!scoped.status.success());
+    assert!(scoped.stdout.is_empty());
+}
+
+#[test]
+fn query_home_fallback_from_outside_walks_the_home() {
+    let world = sandbox(&["home/zebra", "cwd/zulu"]);
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.child("cwd");
+    let scoped = query_with(&world, &["--home", "zebra"], &cwd);
+    assert!(scoped.status.success(), "stderr: {}", text(&scoped.stderr));
+    let zebra = canonical_child(&world, "home/zebra");
+    assert_eq!(text(&scoped.stdout), format!("{zebra}\n"));
+    let outside = query_with(&world, &["--home", "zulu"], &cwd);
+    assert!(!outside.status.success());
+    assert!(outside.stdout.is_empty());
+    let global = query_with(&world, &["zulu"], &cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    let zulu = canonical_child(&world, "cwd/zulu");
+    assert_eq!(text(&global.stdout), format!("{zulu}\n"));
+}
+
+#[test]
+fn query_list_home_with_an_empty_query_lists_the_home_by_recency() {
+    let world = sandbox(&["home/alpha", "home/beta", "outside/gamma"]);
+    for child in ["home/alpha", "home/beta", "outside/gamma"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    visited_at(&world, &world.child("home/alpha"), 1_700_000_001);
+    visited_at(&world, &world.child("home/beta"), 1_700_000_002);
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.tree.path();
+    let out = query_with(&world, &["--list", "--home"], cwd);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let beta = canonical_child(&world, "home/beta");
+    let alpha = canonical_child(&world, "home/alpha");
+    assert_eq!(text(&out.stdout), format!("{beta}\n{alpha}\n"));
+}
+
+#[test]
+fn query_explain_home_prints_the_home_root_line() {
+    let world = sandbox(&["home/tokio"]);
+    assert!(
+        add(&world, &world.child("home/tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    write_home_config(&world, &world.child("home"));
+    let cwd = world.tree.path();
+    let root = canonical_child(&world, "home");
+    let out = query_with(&world, &["--explain", "--home", "tokio"], cwd);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+    let stderr = text(&out.stderr);
+    assert!(
+        stderr.starts_with(&format!(
+            "normalized query: tokio\nengine: reference\nmemory: none\nhome root: {root}\n"
+        )),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("project root:"), "{stderr}");
+    let global = query_with(&world, &["--explain", "tokio"], cwd);
+    assert!(global.status.success(), "stderr: {}", text(&global.stderr));
+    assert!(
+        !text(&global.stderr).contains("home root:"),
+        "{}",
+        text(&global.stderr)
+    );
+}
+
+#[test]
+fn query_memory_respects_home_scope() {
+    let world = aged_world(
+        &["proj/om", "proj/omega", "elsewhere/ombi", "origin"],
+        &["proj/om", "proj/omega", "elsewhere/ombi"],
+    );
+    pick(&world, "elsewhere/ombi", "om");
+    write_home_config(&world, &world.child("proj"));
+    let cwd = world.tree.path();
+    let explained = query_with(&world, &["--home", "--explain", "om"], cwd);
+    assert!(
+        text(&explained.stderr).contains("\nmemory: not applied (no longer matches)\n"),
+        "{}",
+        text(&explained.stderr)
+    );
+    assert_eq!(
+        jumped_to(&query_with(&world, &["om"], cwd)),
+        format!("{}\n", canonical_child(&world, "elsewhere/ombi"))
+    );
+    assert_eq!(
+        jumped_to(&query_with(&world, &["--home", "om"], cwd)),
+        format!("{}\n", canonical_child(&world, "proj/om"))
+    );
+}
+
+#[test]
+fn query_home_and_local_together_fail() {
+    let world = sandbox(&["tokio"]);
+    let out = query_with(&world, &["--home", "--local", "tokio"], world.tree.path());
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).contains("cannot be used with"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM queries") == 0
+    );
+}
+
+#[test]
+fn query_alias_with_home_fails() {
+    let world = sandbox(&["zebra"]);
+    assert!(
+        alias(&world, &["add", "ombi", "zebra"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = query_with(&world, &["--home", "!ombi"], world.tree.path());
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).contains("furet: --home cannot be combined with an alias"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+}
+
 #[test]
 fn query_engine_flag_overrides_the_config() {
     let world = sandbox(&["my-dev", "d-e-v"]);

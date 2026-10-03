@@ -76,6 +76,9 @@ extra profile line.
   `--explain`, `--color`, and `--no-ignore`. Outside a git repository it
   fails with `furet: not inside a git repository` (exit 1); an empty query
   without `--list`/`--explain` prints the project root.
+- `furet query --home <query>` — the same scoping around the home root
+  (the `home` key, else the user profile), from anywhere; `f -h` arrives
+  in the next lot.
 - `furet query <query> --explain` — print the scoring report for `<query>`
   on stderr without jumping.
 - `furet query <query> --engine <reference|nucleo>` — pick the stage-1
@@ -240,6 +243,7 @@ marks (migration 4); lot 52 adds `furet alias add`, `list` and `remove`
 over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
 (`!`/`=`) and the `did you mean` hint; lot 54 completes alias words on
 Tab — `f !om<Tab>` lists every matching alias with its path and inserts
-the name.
+the name. Lot 55 scopes `furet query --home` to the home root (the
+`home` key, else the user profile), from anywhere.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

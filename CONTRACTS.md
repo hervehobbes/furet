@@ -344,7 +344,7 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   path (the same format `furet query` writes), `query` = the text as typed.
   A blank or whitespace-only text writes no row; the retention purge still
   runs after these writes.
-- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local] [--engine <reference|nucleo>]` — ranks
+- `furet query [<text>] [--list] [--explain] [--color] [--no-ignore] [--local] [--home] [--engine <reference|nucleo>]` — ranks
   recorded directories, falling back to a disk walk (SPEC §11) when nothing
   matches; prints the jump target to stdout, or the SPEC §9 menu to stderr
   on a stage-2 tie, reading the answer from stdin. The menu's journal row is
@@ -379,6 +379,27 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `project root: <path>` line right after the `memory:` line (absent
   without `--local`); the `queries` row is written exactly as for a global
   query, the scope is not stored.
+  `--home` (scope extension beyond SPEC, decided by Hervé on 2026-10-03;
+  lot 55 — the pwsh `f -h` is lot 56) restricts the candidate pool to the
+  **home root**, long form only (`-h` is clap's help). The home root is the
+  configured `home`, validated exactly as `furet home` validates it; when
+  it is unset or invalid (never an error) the root is `dirs::home_dir()`
+  canonicalized — the user profile pwsh calls `$HOME`. Unlike `--local` it
+  works from anywhere, including outside the home. `--local --home` is
+  refused by clap (exit 2, `cannot be used with`); an alias query combined
+  with `--home` fails with `furet: --home cannot be combined with an
+  alias`, exit 1, before any resolution. An empty query without
+  `--list`/`--explain` prints the home root on stdout and exits 0 before
+  the database is opened. Entries outside the root are dropped exactly as
+  under `--local` (same `project::within` scoping, current-directory and
+  `missing` exclusions, and query-memory scope). The disk fallback: with
+  the cwd inside the home root it starts at the cwd and the climb stops at
+  the home root (`stop_at`, like `--local` at the git root); with the cwd
+  outside it the walk starts at the home root itself — its children are
+  walked and there is no climb — so the cwd is never walked.
+  `--explain` gains a `home root: <path>` line right after the `memory:`
+  line (absent without `--home`; the `project root:` line of `--local` is
+  unchanged and never coexists with it).
   `--engine <reference|nucleo>` (SPEC-v2 §20, clap value enum, no clap
   default) picks the stage-1 engine for this call; precedence is
   `--engine`, then the `engine` config key, then `reference`
@@ -401,7 +422,7 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   (`query_memory_jump_journals_the_real_stage`). `--list`, and so Tab
   completion and `fi`, lists it first (`query_list_puts_the_remembered_directory_first`).
   `--explain` prints a `memory:` line right after `engine:` (before any
-  `project root:` line): `memory: <path> (chosen <local date>)` when
+  `project root:` or `home root:` line): `memory: <path> (chosen <local date>)` when
   applied — the deciding criterion is then `query memory`, the decision is
   the jump, and the remembered directory is listed first — else `memory:
   none`, `memory: not applied (probable failure)`, `memory: not applied (no
@@ -418,7 +439,8 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   `storage::alias_by_key`), no fuzzy matching, no disk fallback, no
   reconcile. A second token (`f !ombi src`) fails with `furet: an alias
   takes no other token`, exit 1; `--local` combined with an alias fails
-  with `furet: --local cannot be combined with an alias`, exit 1, before
+  with `furet: --local cannot be combined with an alias` and `--home` with
+  `furet: --home cannot be combined with an alias`, exit 1, before
   the git-repository check; a name outside `[A-Za-z0-9_-]` — including a
   bare `!` or `!ombi\src` — fails with the `furet alias add` message
   `furet: invalid alias name '<name>': use letters, digits, '_' and '-'`,
@@ -709,7 +731,10 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   nothing when it is unset, a relative path, or does not resolve to an
   existing directory (missing, or a file — SPEC §1, `paths::PathError`);
   never fails because of the config. The pwsh `f` with no argument calls it
-  and falls back to `$HOME` on empty output.
+  and falls back to `$HOME` on empty output. The `home` key is also the
+  root of `furet query --home` (Hervé 2026-10-03, lot 55); there the
+  fallback when it is unset or invalid is the user profile
+  (`dirs::home_dir()`, pwsh's `$HOME`), never an error.
 - `furet import zoxide` — reads `<score> <path>` lines from stdin (as
   produced by `zoxide query -ls`), canonicalizes each path through
   `paths::canonical` (directories only), skips already-known directories,

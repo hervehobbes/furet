@@ -83,6 +83,9 @@ enum Command {
         /// Restrict candidates to the current git project (nearest ancestor with a .git entry).
         #[arg(short, long)]
         local: bool,
+        /// Restrict candidates to the home directory (config `home`, else the user profile).
+        #[arg(long, conflicts_with = "local")]
+        home: bool,
         /// Stage-1 matching engine; overrides the `engine` key of config.toml.
         #[arg(long, value_enum)]
         engine: Option<EngineArg>,
@@ -269,6 +272,7 @@ fn main() {
             color,
             no_ignore,
             local,
+            home,
             engine,
         } => report(query_directories(
             &query,
@@ -277,6 +281,7 @@ fn main() {
             color,
             no_ignore,
             local,
+            home,
             engine.map(EngineArg::engine),
         )),
         Command::Up { n } => report(up(n)),
@@ -431,6 +436,8 @@ const SECONDS_PER_DAY: i64 = 86_400;
 // WHY: distinct from any real shell GUID, so `back` never sees this visit.
 const FALLBACK_SESSION: &str = "fallback";
 
+// WHY: the lot-pinned one-flag-per-parameter shape reaches 8 arguments; grouping them is a design change.
+#[allow(clippy::too_many_arguments)]
 fn query_directories(
     query: &str,
     list: bool,
@@ -438,6 +445,7 @@ fn query_directories(
     color: bool,
     no_ignore: bool,
     local: bool,
+    home: bool,
     engine: Option<rank::Engine>,
 ) -> Result<(), Box<dyn Error>> {
     debug!(
@@ -447,20 +455,21 @@ fn query_directories(
         color,
         no_ignore,
         local,
+        home,
         ?engine,
         "query"
     );
     let settings = load_settings();
     debug!(?settings, "effective settings");
-    if let Some(outcome) = alias_query(query, list, explain, local, settings.alias_prefix) {
+    if let Some(outcome) = alias_query(query, list, explain, local, home, settings.alias_prefix) {
         return outcome;
     }
     let cwd = env::current_dir()?;
     let current = paths::canonical(&cwd)?;
     let clock = SystemClock::new();
-    let project_root = local_root(&current.path, local)?;
+    let scope_root = scope_root(&current.path, local, home, &settings)?;
     // WHY: the root itself is the answer Hervé wants from `f -l`, so no database is even opened.
-    if let Some(root) = &project_root
+    if let Some(root) = &scope_root
         && query.trim().is_empty()
         && !list
         && !explain
@@ -471,7 +480,7 @@ fn query_directories(
     let conn = storage::open()?;
     // WHY: a non-empty query only stats the directories it matches, so its cost no longer grows with every known directory.
     let check_all = explain || query.trim().is_empty();
-    let entries = scoped_entries(&conn, project_root.as_deref(), check_all, &clock)?;
+    let entries = scoped_entries(&conn, scope_root.as_deref(), check_all, &clock)?;
     let candidates: Vec<Candidate> = entries
         .iter()
         .map(|entry| {
@@ -502,9 +511,16 @@ fn query_directories(
         drop_missing(&conn, entries, &mut db_ranked, &clock)?;
     }
     let is_fallback = !query.trim().is_empty() && db_ranked.is_empty();
+    // WHY: a cwd outside the scope is never walked; the fallback starts at the scope root itself.
+    let fallback_start = match &scope_root {
+        Some(root) if !project::within(&current.path.to_lowercase(), &root.to_lowercase()) => {
+            root.clone()
+        }
+        _ => current.path.clone(),
+    };
     // WHY: kept as if/else; the lot's `.then(..).unwrap_or_default()` form trips clippy::obfuscated_if_else.
     let fallback_pool = if is_fallback {
-        fallback_candidates(&current.path, no_ignore, &settings, project_root.as_deref())
+        fallback_candidates(&fallback_start, no_ignore, &settings, scope_root.as_deref())
     } else {
         Vec::new()
     };
@@ -533,7 +549,12 @@ fn query_directories(
             engine,
             recall,
         );
-        report.project_root = project_root.clone();
+        if local {
+            report.project_root = scope_root.clone();
+        }
+        if home {
+            report.home_root = scope_root.clone();
+        }
         eprint!("{}", explain::render(&report));
         return Ok(());
     }
@@ -571,6 +592,7 @@ fn alias_query(
     _list: bool,
     explain: bool,
     local: bool,
+    home: bool,
     prefix: char,
 ) -> Option<Result<(), Box<dyn Error>>> {
     debug!(text, "alias query");
@@ -582,6 +604,9 @@ fn alias_query(
     }
     if local {
         return Some(Err("--local cannot be combined with an alias".into()));
+    }
+    if home {
+        return Some(Err("--home cannot be combined with an alias".into()));
     }
     let Some(key) = alias::key(name) else {
         return Some(Err(format!(
@@ -618,12 +643,19 @@ fn alias_query(
     })())
 }
 
-fn local_root(current_path: &str, local: bool) -> Result<Option<String>, Box<dyn Error>> {
+fn scope_root(
+    current_path: &str,
+    local: bool,
+    home: bool,
+    settings: &Settings,
+) -> Result<Option<String>, Box<dyn Error>> {
     if local {
         Ok(Some(
             project::root(current_path, &project::RealGitMarker)
                 .ok_or("not inside a git repository")?,
         ))
+    } else if home {
+        Ok(Some(home_root(settings)?))
     } else {
         Ok(None)
     }
@@ -973,22 +1005,35 @@ fn back(session: &str) -> Result<(), Box<dyn Error>> {
 fn home_command() -> Result<(), Box<dyn Error>> {
     debug!("home");
     let settings = load_settings();
-    let Some(configured) = settings.home else {
-        return Ok(());
-    };
-    let unified = paths::unify_separators(&configured);
+    if let Some(home) = configured_home(&settings) {
+        print_result(&home);
+    }
+    Ok(())
+}
+
+fn configured_home(settings: &Settings) -> Option<String> {
+    let configured = settings.home.as_ref()?;
+    let unified = paths::unify_separators(configured);
     let candidate = Path::new(&unified);
     if !candidate.is_absolute() {
         warn!(home = %configured, "config home must be an absolute path; ignored");
-        return Ok(());
+        return None;
     }
     match paths::canonical(candidate) {
-        Ok(canonical) => print_result(&canonical.path),
+        Ok(canonical) => Some(canonical.path),
         Err(error) => {
             warn!(%error, home = %configured, "config home does not resolve to an existing directory; ignored");
+            None
         }
     }
-    Ok(())
+}
+
+fn home_root(settings: &Settings) -> Result<String, Box<dyn Error>> {
+    if let Some(home) = configured_home(settings) {
+        return Ok(home);
+    }
+    let home = dirs::home_dir().ok_or("no home directory")?;
+    Ok(paths::canonical(&home)?.path)
 }
 
 const IMPORT_SOURCE: &str = "import";
