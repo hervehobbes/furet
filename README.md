@@ -290,4 +290,10 @@ menu of aliases and marks (fed by `furet alias complete`, fzf-fuzzy or
 strict-prefix, a `jump` visit and no `queries` row) — **closing design
 section 3**: aliases, home scope and marks are complete.
 
+Version 0.3.0 adds the aliases, home-scope and marks cycle (lots 51-61):
+`furet alias` add/list/remove with `f !name` resolution, the `alias_prefix`
+(`!`/`=`) key, Tab completion and the `fi !` menu; the home scope (`f -h`,
+`furet query --home`); and marks — `furet mark`, the `fm` helper, `fm +`/`fm -`
+cycling, and Ctrl+Alt+→/←. French usage examples live in [example.md](example.md).
+
 Licensed under the MIT License — see [LICENSE](LICENSE).

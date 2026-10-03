@@ -65,3 +65,4 @@
 | 58 | Mark cycling in the binary: `furet mark next/prev` |
 | 59 | pwsh `fm` (set/list/delete/cycle) and Ctrl+Alt+→/← mark bindings |
 | 60 | `fi !`: interactive menu of aliases and marks |
+| 62 | Release 0.3.0: aliases, home scope, marks (design cycle, lots 51-61) |

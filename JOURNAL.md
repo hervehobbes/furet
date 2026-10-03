@@ -1,3 +1,10 @@
+## 2026-10-03 — branch main — v0.3.0
+Done: lot 62 — release 0.3.0 at the close of the aliases-home-marks cycle (lots 51-61): version bumped
+to 0.3.0 in Cargo.toml (Cargo.lock's furet entry follows, nothing else), a README Status paragraph
+summarizing the cycle and pointing to example.md, and the ROADMAP 62 row. No behavior change; no test
+or snapshot pins 0.2.0.
+Decisions: none beyond the prompt. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; the annotated tag comes after its review.
 ## 2026-10-03 — branch main — v0.2.0
 Done: lot 61 — letter-free sandbox trees: `letter_free_tempdir()` (pid + atomic counter, `rand_bytes(0)`)
 builds the `tree` directory in the cli/pwsh/explain test crates, so no random letter can complete stage 1's
