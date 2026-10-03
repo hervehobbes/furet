@@ -100,6 +100,9 @@ enum Command {
         /// Terminal session to look the previous directory up in.
         #[arg(long)]
         session: String,
+        /// How many directories back to go; 1 is the previous directory.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+        steps: u32,
     },
     /// Print shell integration code for the requested shell.
     Init {
@@ -316,7 +319,7 @@ fn main() {
             engine.map(EngineArg::engine),
         )),
         Command::Up { n } => report(up(n)),
-        Command::Back { session } => report(back(&session)),
+        Command::Back { session, steps } => report(back(&session, steps)),
         Command::Init { shell } => match shell {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
@@ -1034,11 +1037,16 @@ fn up_from(start: &Path, n: u32) -> Result<String, Box<dyn Error>> {
     Ok(canonical.path)
 }
 
-fn back(session: &str) -> Result<(), Box<dyn Error>> {
-    debug!(session, "back");
+fn back(session: &str, steps: u32) -> Result<(), Box<dyn Error>> {
+    debug!(session, steps, "back");
     let conn = storage::open()?;
-    let previous = storage::last_visited_dir(&conn, session)?
-        .ok_or("no previous directory for this session")?;
+    let previous = storage::visited_dir_back(&conn, session, steps)?.ok_or_else(|| {
+        if steps == 1 {
+            "no previous directory for this session".to_owned()
+        } else {
+            format!("no directory {steps} steps back in this session")
+        }
+    })?;
     print_result(&previous);
     Ok(())
 }

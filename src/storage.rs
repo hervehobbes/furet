@@ -452,15 +452,25 @@ pub fn dir_listing(
 /// The path of the second-to-last visited directory for `session`, ordered
 /// by `ts` then `id` descending; `None` when fewer than two visits exist.
 pub fn last_visited_dir(conn: &Connection, session: &str) -> Result<Option<String>, StorageError> {
+    visited_dir_back(conn, session, 1)
+}
+
+/// The directory `steps` visits before the latest one in `session`
+/// (`steps = 1` is the previous directory), or `None` past the history.
+pub fn visited_dir_back(
+    conn: &Connection,
+    session: &str,
+    steps: u32,
+) -> Result<Option<String>, StorageError> {
     let mut stmt = conn.prepare(
         "SELECT dirs.path
          FROM visits
          JOIN dirs ON dirs.id = visits.dir_id
          WHERE visits.session = ?1
          ORDER BY visits.ts DESC, visits.id DESC
-         LIMIT 1 OFFSET 1",
+         LIMIT 1 OFFSET ?2",
     )?;
-    let mut rows = stmt.query(params![session])?;
+    let mut rows = stmt.query(params![session, steps])?;
     match rows.next()? {
         Some(row) => Ok(Some(row.get(0)?)),
         None => Ok(None),
@@ -703,7 +713,7 @@ mod tests {
         dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
         last_visited_dir, logs_dir, missing_since_by_id, open, open_at, purge_before, query_log,
         recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, stats_counts,
-        top_dirs, upsert_alias, upsert_dir, visit_log,
+        top_dirs, upsert_alias, upsert_dir, visit_log, visited_dir_back,
     };
     use crate::clock::Timestamp;
     use crate::memory::{self, Recall};
@@ -1508,6 +1518,28 @@ mod tests {
             .expect("the single visit inserts");
         let single = last_visited_dir(&conn, "one-visit").expect("the single-visit lookup runs");
         assert_eq!(single, None);
+    }
+
+    #[test]
+    fn visited_dir_back_walks_the_session_history() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        let a = upsert_dir(&conn, "c:\\dev\\a", "c:\\dev\\a", at(100)).expect("the a dir upserts");
+        let b = upsert_dir(&conn, "c:\\dev\\b", "c:\\dev\\b", at(100)).expect("the b dir upserts");
+        let c = upsert_dir(&conn, "c:\\dev\\c", "c:\\dev\\c", at(100)).expect("the c dir upserts");
+        let d = upsert_dir(&conn, "c:\\dev\\d", "c:\\dev\\d", at(100)).expect("the d dir upserts");
+        let x = upsert_dir(&conn, "c:\\dev\\x", "c:\\dev\\x", at(100)).expect("the x dir upserts");
+        insert_visit(&conn, a, at(110), "jump", "s1", None).expect("the first visit inserts");
+        insert_visit(&conn, b, at(120), "jump", "s1", None).expect("the second visit inserts");
+        insert_visit(&conn, x, at(125), "jump", "s2", None).expect("the decoy visit inserts");
+        insert_visit(&conn, c, at(130), "jump", "s1", None).expect("the third visit inserts");
+        insert_visit(&conn, d, at(140), "jump", "s1", None).expect("the fourth visit inserts");
+        let one = visited_dir_back(&conn, "s1", 1).expect("the one-step lookup runs");
+        assert_eq!(one, Some("c:\\dev\\c".to_owned()));
+        let three = visited_dir_back(&conn, "s1", 3).expect("the three-step lookup runs");
+        assert_eq!(three, Some("c:\\dev\\a".to_owned()));
+        let four = visited_dir_back(&conn, "s1", 4).expect("the past-the-end lookup runs");
+        assert_eq!(four, None);
     }
 
     #[test]

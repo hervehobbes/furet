@@ -46,6 +46,9 @@ extra profile line.
 - `f <path>` — jump straight to `<path>` if it exists on disk.
 - `f ..`, `f ...` — go up 1, 2, ... levels.
 - `f -` — jump back to the previous directory in this session.
+- `f -3` — go 3 directories back in this session's raw visit history
+  (duplicates kept, `f -1` the same as `f -`); `furet back --steps <N>`
+  underneath.
 - `f` (no argument) — jump home, or the configured `home` directory when set
   and valid.
 - `f <query> --explain` — print the scoring report for `<query>` on stderr
@@ -295,5 +298,8 @@ Version 0.3.0 adds the aliases, home-scope and marks cycle (lots 51-61):
 (`!`/`=`) key, Tab completion and the `fi !` menu; the home scope (`f -h`,
 `furet query --home`); and marks — `furet mark`, the `fm` helper, `fm +`/`fm -`
 cycling, and Ctrl+Alt+→/←. French usage examples live in [example.md](example.md).
+Lot 63 generalizes `f -` into `f -N`: go `N` directories back in the
+session's raw visit history (duplicates kept, `f -1` equal to `f -`),
+recorded as a `back` visit — the binary side is `furet back --steps <N>`.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

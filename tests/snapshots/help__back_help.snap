@@ -4,8 +4,9 @@ expression: text
 ---
 Print the second-to-last directory visited in this session
 
-Usage: furet back --session <SESSION>
+Usage: furet back [OPTIONS] --session <SESSION>
 
 Options:
       --session <SESSION>  Terminal session to look the previous directory up in
+      --steps <STEPS>      How many directories back to go; 1 is the previous directory [default: 1]
   -h, --help               Print help

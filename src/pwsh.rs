@@ -115,6 +115,16 @@ function global:__FURET_CMD__ {
         return
     }
 
+    if ($query -match '^-[0-9]+$') {
+        $target = furet back --session $global:__furet_session --steps $query.Substring(1)
+        if ($LASTEXITCODE -ne 0) {
+            return
+        }
+        Set-Location -LiteralPath $target
+        __furet_record $target $from 'back'
+        return
+    }
+
     if (Test-Path -LiteralPath $query -PathType Container) {
         Set-Location -LiteralPath $query
         __furet_record (Get-Location).Path $from 'jump'

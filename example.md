@@ -184,6 +184,22 @@ PS C:\dev\clypher> f -
 PS C:\dev\furet>
 ```
 
+`f -1` fait exactement la même chose. `f -3` revient de trois répertoires
+dans l'historique brut de la session — un répertoire visité deux fois
+compte deux fois :
+
+```powershell
+PS C:\dev\furet> f sourcier
+PS C:\dev\sourcier> f clypher
+PS C:\dev\clypher> f zoxide
+PS C:\dev\zoxide> f furet
+PS C:\dev\furet> f -3
+PS C:\dev\sourcier>
+```
+
+Au-delà de l'historique, la commande échoue, le shell reste en place et
+affiche `furet: no directory 3 steps back in this session` (pour `f -3`).
+
 ### Retour à la maison
 
 ```powershell

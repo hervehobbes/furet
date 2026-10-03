@@ -470,8 +470,14 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   (`f_existing_directory_named_like_the_alias_wins`).
 - `furet up <n>` — prints the ancestor `n` levels above the current
   directory.
-- `furet back --session <s>` — prints the second-to-last directory visited
-  in that session.
+- `furet back --session <s> [--steps <N>]` — prints the directory `N`
+  visits before the latest one in that session, ordered `ts` then `id`
+  descending — the session's raw visit history, duplicates kept, offset 0
+  being the current directory. `--steps` defaults to 1 (the second-to-last
+  directory) and rejects 0 by clap, exit 2; past the end of the history the
+  command fails with exit 1 and `no previous directory for this session`
+  when `--steps` is 1, `no directory <N> steps back in this session`
+  otherwise.
 - `furet init pwsh [--cmd <name>]` — prints the PowerShell integration
   script (mirrors zoxide's `init` shape), preceded by the `clap_complete`
   PowerShell completion block: a native completer registered for `furet`
@@ -521,8 +527,13 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   the scoped branch calls `furet query @scope -- $query`, without one it
   calls `furet query @scope` and jumps to the scope root — the project
   root under `-l`, the home root under `-h` — recording the landing
-  as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, direct-path,
-  and home branches are never reached. `-l -h` (both switches bound) is
+  as `--source jump` (Hervé, 2026-09-26) — the `.`, `..`, `-`, `-N`,
+  direct-path, and home branches are never reached. Unscoped, `f -N`
+  (lot 63) generalizes `f -`: a word matching `^-[0-9]+$` runs
+  `furet back --session … --steps N` and records the landing as a `back`
+  visit, like `f -`; it is skipped under `-l` and `-h` like every special
+  form, and `f -0` reaches clap, which rejects it (exit 2, the shell
+  stays put). `-l -h` (both switches bound) is
   forwarded as both flags and rejected by clap (exit 2, `cannot be used
   with`); the `$LASTEXITCODE` check returns without moving. `f <scope>
   <query> --explain` forwards the scope (`furet query --explain @scope --

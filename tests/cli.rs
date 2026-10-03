@@ -1175,6 +1175,117 @@ fn back_fails_when_the_session_has_fewer_than_two_visits() {
 }
 
 #[test]
+fn back_steps_walks_the_session_history() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    for dir in [&a, &b, &c, &d] {
+        assert!(add(&world, dir, "session-1", None, None).status.success());
+    }
+    let expected_c = paths::canonical(&c)
+        .expect("the expected previous directory canonicalizes")
+        .path;
+    let expected_a = paths::canonical(&a)
+        .expect("the expected third-back directory canonicalizes")
+        .path;
+    let one = run(world
+        .furet()
+        .arg("back")
+        .arg("--session")
+        .arg("session-1")
+        .arg("--steps")
+        .arg("1"));
+    assert!(one.status.success(), "stderr: {}", text(&one.stderr));
+    assert_eq!(text(&one.stdout), format!("{expected_c}\n"));
+    let three = run(world
+        .furet()
+        .arg("back")
+        .arg("--session")
+        .arg("session-1")
+        .arg("--steps")
+        .arg("3"));
+    assert!(three.status.success(), "stderr: {}", text(&three.stderr));
+    assert_eq!(text(&three.stdout), format!("{expected_a}\n"));
+    let default = run(world.furet().arg("back").arg("--session").arg("session-1"));
+    assert!(
+        default.status.success(),
+        "stderr: {}",
+        text(&default.stderr)
+    );
+    assert_eq!(text(&default.stdout), format!("{expected_c}\n"));
+}
+
+#[test]
+fn back_steps_ignores_other_sessions() {
+    let world = sandbox(&["a", "b", "c", "d", "x"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    let x = world.child("x");
+    assert!(add(&world, &a, "session-1", None, None).status.success());
+    assert!(add(&world, &b, "session-1", None, None).status.success());
+    assert!(add(&world, &x, "session-2", None, None).status.success());
+    assert!(add(&world, &c, "session-1", None, None).status.success());
+    assert!(add(&world, &d, "session-1", None, None).status.success());
+    let out = run(world
+        .furet()
+        .arg("back")
+        .arg("--session")
+        .arg("session-1")
+        .arg("--steps")
+        .arg("2"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let expected = paths::canonical(&b)
+        .expect("the expected second-back directory canonicalizes")
+        .path;
+    assert_eq!(text(&out.stdout), format!("{expected}\n"));
+}
+
+#[test]
+fn back_steps_beyond_the_history_fails() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for child in ["a", "b", "c", "d"] {
+        assert!(
+            add(&world, &world.child(child), "session-1", None, None)
+                .status
+                .success()
+        );
+    }
+    let out = run(world
+        .furet()
+        .arg("back")
+        .arg("--session")
+        .arg("session-1")
+        .arg("--steps")
+        .arg("4"));
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert_eq!(
+        text(&out.stderr),
+        "furet: no directory 4 steps back in this session\n"
+    );
+}
+
+#[test]
+fn back_steps_zero_is_rejected() {
+    let world = sandbox(&["a"]);
+    let a = world.child("a");
+    assert!(add(&world, &a, "session-1", None, None).status.success());
+    let out = run(world
+        .furet()
+        .arg("back")
+        .arg("--session")
+        .arg("session-1")
+        .arg("--steps")
+        .arg("0"));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
 fn init_pwsh_prints_a_nonempty_script_naming_the_default_command() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("init").arg("pwsh"));

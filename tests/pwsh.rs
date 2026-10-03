@@ -428,6 +428,89 @@ fn f_dash_returns_to_the_previous_directory_of_the_session_recorded_as_back() {
 }
 
 #[test]
+fn f_dash_three_goes_three_directories_back_recorded_as_back() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    let body = format!(
+        "f {}\nf {}\nf {}\nf {}\nf -3",
+        quote(&a),
+        quote(&b),
+        quote(&c),
+        quote(&d)
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&a), "stderr: {}", run.stderr);
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 5);
+    assert_eq!(last_visit_source(&conn), "back");
+}
+
+#[test]
+fn f_dash_one_is_f_dash() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    let body = format!(
+        "f {}\nf {}\nf {}\nf {}\nf -1",
+        quote(&a),
+        quote(&b),
+        quote(&c),
+        quote(&d)
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&c), "stderr: {}", run.stderr);
+}
+
+#[test]
+fn f_dash_n_beyond_the_history_stays_put() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    let body = format!(
+        "f {}\nf {}\nf {}\nf {}\nf -9",
+        quote(&a),
+        quote(&b),
+        quote(&c),
+        quote(&d)
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&d), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("no directory 9 steps back in this session"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 4);
+}
+
+#[test]
+fn f_dash_zero_stays_put() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    let a = world.child("a");
+    let b = world.child("b");
+    let c = world.child("c");
+    let d = world.child("d");
+    let body = format!(
+        "f {}\nf {}\nf {}\nf {}\nf -0",
+        quote(&a),
+        quote(&b),
+        quote(&c),
+        quote(&d)
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert_eq!(run.cwd, canonical(&d), "stderr: {}", run.stderr);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM visits"), 4);
+}
+
+#[test]
 fn f_dot_does_nothing_and_records_nothing() {
     let world = sandbox(&["x"]);
     let x = world.child("x");

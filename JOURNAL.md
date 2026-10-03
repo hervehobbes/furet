@@ -1,4 +1,13 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 63 — `f -N`: `visited_dir_back(conn, session, steps)` in storage (`last_visited_dir`
+delegates to it with steps = 1), `furet back --steps N` (default 1, clap range 1.., exit 2 on 0)
+and the `^-[0-9]+$` branch in pwsh `f` recording a `back` visit, skipped under `-l`/`-h`.
+1 unit + 4 cli + 4 pwsh tests written first (the unit test compiles only after the change; one
+cli and one pwsh pin pass pre-change), mutations A/B caught as required. Docs: CONTRACTS back
++ f entries, README usage + Status, ROADMAP rows 61 (missing) and 63, example.md `f -3`.
+Decisions: the help snapshot also gains clap's mechanical `[OPTIONS]` in the Usage line — disclosed.
+Executor: GLM 5.3 Flash. Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 62 — release 0.3.0 at the close of the aliases-home-marks cycle (lots 51-61): version bumped
 to 0.3.0 in Cargo.toml (Cargo.lock's furet entry follows, nothing else), a README Status paragraph
 summarizing the cycle and pointing to example.md, and the ROADMAP 62 row. No behavior change; no test
