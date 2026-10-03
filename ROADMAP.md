@@ -63,3 +63,4 @@
 | 56 | Home scope in pwsh: `f -h`, `fi -h`, Tab after `-h` |
 | 57 | Marks in the binary: `furet mark set/list/delete`, `mark N not set` |
 | 58 | Mark cycling in the binary: `furet mark next/prev` |
+| 59 | pwsh `fm` (set/list/delete/cycle) and Ctrl+Alt+→/← mark bindings |

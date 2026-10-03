@@ -1,4 +1,15 @@
 ## 2026-10-03 — branch main — v0.2.0
+Done: lot 59 — the pwsh `fm` helper (list, `fm 1` set, `fm -d 2`/`2-4`/`-d!` delete, `fm +`/`-` cycle
+with Set-Location + `__furet_record … 'jump'`), no `param()` block (the spike:
+ValueFromRemainingArguments swallows `-d`), fixed name like `fi`; plus Ctrl+Alt+→/←
+(`FuretNextMark`/`FuretPreviousMark`) under `if (Get-Module PSReadLine)`, empty line only, else Ding.
+11 pwsh tests + 1 unit test written first, all failing; mutations A/B/C each caught by the predicted
+test. Docs: CONTRACTS, README `fm` bullet + Status, ROADMAP 59, example.md `## Les marques` + fixes.
+Decisions: one test deviation — `Get-Command jm` gains `-CommandType Function` because this machine
+has a `jm.ps1` on PATH; everything else per the prompt (design §3/§12). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session; lot 60 is `fi !`.
+
+## 2026-10-03 — branch main — v0.2.0
 Done: lot 58 — mark cycling: `furet mark next`/`prev` print the target's path on stdout (a normal jump
 target, no new stdout exception) through the pure `alias::cycle` — lowest `here` mark as current,
 wrap 9→1, marks on the cwd skipped, missing dirs skipped with `furet: skipped mark N: missing

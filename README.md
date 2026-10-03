@@ -168,6 +168,14 @@ extra profile line.
   current directory and missing directories (`furet: skipped mark 3:
   missing directory`), `furet: no marks set` / `furet: no other mark`
   otherwise — and record nothing.
+- `fm` (pwsh) — the marks helper over lots 57-58, fixed like `fi` (never
+  `jm` under `--cmd j`): `fm` lists the marks, `fm 3` marks the current
+  directory (silent overwrite, Vim's `m3`; a path argument goes through),
+  `fm -d 2` / `fm -d 2-4` / `fm -d!` delete one mark, a range, every mark,
+  and `fm +` / `fm -` jump to the next / previous mark (wrap 9 → 1),
+  recording the landing as a `jump` visit like any jump. Ctrl+Alt+→ and
+  Ctrl+Alt+← run `fm +` / `fm -` from an **empty** command line — a
+  non-empty line only dings — and exist only when PSReadLine is loaded.
 - `furet query <query> --list --color` — wrap each printed path in the
   `LS_COLORS` directory color (the `di=` entry). Does nothing unless the
   `LS_COLORS` environment variable is set — PowerShell doesn't set it by
@@ -269,6 +277,9 @@ alias jumps (`mark 3 not set`). Lot 58 adds mark cycling in the binary —
 `furet mark next` / `furet mark prev` print the next / previous mark's
 path through the pure `alias::cycle` (lowest mark of the current
 directory, wrap 9 → 1, missing marks skipped on stderr), recording
-nothing.
+nothing. Lot 59 wires the pwsh side: the `fm` helper (fixed name, plain
+`$args` so `-d` is never bound — set/list/delete/cycle) and the
+Ctrl+Alt+→/← PSReadLine bindings, which run `fm +` / `fm -` on an empty
+command line and only ding otherwise.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

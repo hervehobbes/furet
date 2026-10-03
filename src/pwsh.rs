@@ -184,6 +184,61 @@ function global:fi {
     __furet_record $target $from 'jump' $query
 }
 
+# WHY: fm has no param() block so that pwsh never binds -d.
+function global:fm {
+    if ($args.Count -eq 0) {
+        furet mark list
+        return
+    }
+    if ($args.Count -eq 1 -and ($args[0] -eq '+' -or $args[0] -eq '-')) {
+        $from = (Get-Location).Path
+        $target = if ($args[0] -eq '+') { furet mark next } else { furet mark prev }
+        if ($LASTEXITCODE -ne 0) {
+            return
+        }
+        Set-Location -LiteralPath $target
+        __furet_record $target $from 'jump'
+        return
+    }
+    if ($args[0] -eq '-d!') {
+        furet mark delete --all @($args | Select-Object -Skip 1)
+        return
+    }
+    if ($args[0] -eq '-d') {
+        furet mark delete @($args | Select-Object -Skip 1)
+        return
+    }
+    furet mark set @args
+}
+
+# WHY: Ctrl+Alt+arrows because Windows Terminal takes Alt+arrows for pane focus, PSReadLine takes Alt+digits and brackets are impractical on AZERTY; they act only on an empty line, so typed text is never lost.
+if (Get-Module PSReadLine) {
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+Alt+RightArrow' -BriefDescription FuretNextMark -Description 'furet: jump to the next mark (fm +)' -ScriptBlock {
+        param($key, $arg)
+        $line = $null
+        $cursor = $null
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        if ($line.Length -ne 0) {
+            [Microsoft.PowerShell.PSConsoleReadLine]::Ding()
+            return
+        }
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert('fm +')
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+    }
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+Alt+LeftArrow' -BriefDescription FuretPreviousMark -Description 'furet: jump to the previous mark (fm -)' -ScriptBlock {
+        param($key, $arg)
+        $line = $null
+        $cursor = $null
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        if ($line.Length -ne 0) {
+            [Microsoft.PowerShell.PSConsoleReadLine]::Ding()
+            return
+        }
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert('fm -')
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+    }
+}
+
 # WHY: a plain <Tab> on the current word cycles through `furet query --list`
 # in ranked order; zoxide instead triggers on a trailing space and rewrites
 # the whole line, which this completer deliberately does not do. stderr is
@@ -299,5 +354,15 @@ mod tests {
     fn script_registers_no_native_completer_for_the_jump_function() {
         let rendered = script("f");
         assert!(!rendered.contains("-Native"));
+    }
+
+    #[test]
+    fn script_binds_mark_keys_only_on_an_empty_line() {
+        let rendered = script("f");
+        assert!(rendered.contains("'Ctrl+Alt+RightArrow'"));
+        assert!(rendered.contains("'Ctrl+Alt+LeftArrow'"));
+        assert!(rendered.contains("Insert('fm +')"));
+        assert!(rendered.contains("Insert('fm -')"));
+        assert_eq!(rendered.matches("$line.Length -ne 0").count(), 2);
     }
 }

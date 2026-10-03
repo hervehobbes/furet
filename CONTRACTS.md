@@ -549,7 +549,43 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   non-blank (`-not [string]::IsNullOrWhiteSpace`) the add call gains
   `--query $query` before `-- $target`, so a choice journals exactly one
   `pick` row (none for an empty query), and every 3-argument call (all of
-  `f`'s) behaves exactly as before. One completer —
+  `f`'s) behaves exactly as before. Lot 59 (design doc §3 and §12, a
+  scope extension beyond SPEC decided by Hervé on 2026-10-02/03) adds
+  `function global:fm` to the script, placed after `fi`. `fm` is a
+  **fixed** name: like `fi` it does not follow `--cmd` — `furet init
+  pwsh --cmd j` defines `j` and `fm`, never `jm`. It has **no
+  `param()` block**, dispatching on plain `$args` instead: a spike on a
+  real `pwsh -NoProfile` (2026-10-03) showed that
+  `[Parameter(ValueFromRemainingArguments)]` — the pattern `f` and `fi`
+  use — swallows `-d`, so `fm -d 2` would receive only `2`. The
+  dispatch, in order: no argument runs `furet mark list` (Vim `:marks`;
+  the only `fm` form that writes to stdout, the `mark list` exception —
+  `fm` writes nothing to stdout in any other form: `set` and `delete`
+  speak on stderr, `+`/`-` capture the target); `$args.Count -eq 1` with
+  `'+'` or `'-'` runs `furet mark next` / `prev` (lot 58) — on a
+  non-zero `$LASTEXITCODE` it returns, the binary having already written
+  its error (`no marks set`, `no other mark`, the `skipped mark N:
+  missing directory` lines), and on success it `Set-Location
+  -LiteralPath`s the printed target and calls `__furet_record $target
+  $from 'jump'`, so a cycle lands like any jump with a `jump` visit;
+  `-d!` runs `furet mark delete --all` (Vim `:delm!`; extra arguments
+  go to clap, which rejects them) and `-d` runs `furet mark delete`
+  with the remaining arguments (a bare `fm -d` reaches clap, exit 2
+  with its usage error); anything else runs `furet mark set @args` —
+  `fm 3` marks the cwd (Vim `m3`, silent overwrite, the binary
+  validating the digit and the optional path). The script also binds
+  two PSReadLine keys, but only when PSReadLine is already loaded
+  (`if (Get-Module PSReadLine)` — the guard must not autoload the
+  module): `Ctrl+Alt+RightArrow` (`-BriefDescription FuretNextMark`,
+  `furet: jump to the next mark (fm +)`) and `Ctrl+Alt+LeftArrow`
+  (`FuretPreviousMark`, `furet: jump to the previous mark (fm -)`),
+  chords chosen because Windows Terminal takes Alt+arrows for pane
+  focus, PSReadLine takes Alt+digits, and the brackets are impractical
+  on AZERTY. Each handler reads the buffer state and acts **only on an
+  empty command line** — it inserts `fm +` / `fm -` and calls
+  `AcceptLine`, giving a normal history entry and a normal `jump`
+  visit — while a non-empty line only `Ding`s, so typed text is never
+  lost. One completer —
   the `FuretArgs` registration above — handles every line, `-l` and `-h`
   included:
   the declared switches keep pwsh's completion binder on the normal path

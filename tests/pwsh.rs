@@ -77,6 +77,30 @@ fn seed_alias(sandbox: &Sandbox, name: &str, path: &Path) {
     );
 }
 
+fn seed_mark(sandbox: &Sandbox, digit: &str, path: &Path) {
+    let out = sandbox
+        .furet()
+        .arg("mark")
+        .arg("set")
+        .arg(digit)
+        .arg(path)
+        .output()
+        .expect("furet mark set runs");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn mark_path(sandbox: &Sandbox, digit: &str) -> Option<String> {
+    db(sandbox)
+        .query_row("SELECT path FROM aliases WHERE name = ?1", [digit], |row| {
+            row.get(0)
+        })
+        .ok()
+}
+
 fn db(sandbox: &Sandbox) -> Connection {
     Connection::open(sandbox.data.path().join("furet.db")).expect("the recorded database opens")
 }
@@ -1410,4 +1434,229 @@ fn f_existing_directory_named_like_the_alias_wins() {
     std::fs::create_dir_all(&literal).expect("the literal !ombi child exists");
     let run = run_pwsh(&world, "", "", &start, "f !ombi");
     assert_eq!(run.cwd, canonical(&literal), "stderr: {}", run.stderr);
+}
+
+#[test]
+fn fm_digit_marks_the_current_directory() {
+    let world = sandbox(&["a", "b"]);
+    let first = run_pwsh(&world, "", "", &world.child("a"), "fm 1");
+    let a = canonical(&world.child("a"));
+    assert!(
+        first.stderr.contains(&format!("mark 1 -> {a}")),
+        "stderr: {}",
+        first.stderr
+    );
+    assert_eq!(mark_path(&world, "1"), Some(a));
+    let second = run_pwsh(&world, "", "", &world.child("b"), "fm 1");
+    let b = canonical(&world.child("b"));
+    assert!(
+        second.stderr.contains(&format!("mark 1 -> {b}")),
+        "stderr: {}",
+        second.stderr
+    );
+    assert!(!second.stderr.contains("already exists"));
+    assert_eq!(mark_path(&world, "1"), Some(b));
+}
+
+#[test]
+fn fm_without_arguments_lists_the_marks() {
+    let world = sandbox(&["a", "b"]);
+    seed_mark(&world, "1", &world.child("a"));
+    seed_mark(&world, "3", &world.child("b"));
+    let run = run_pwsh(&world, "", "", world.tree.path(), "fm");
+    assert!(run.stderr.is_empty(), "stderr: {}", run.stderr);
+    assert!(
+        run.stdout
+            .contains(&format!("1\t{}", canonical(&world.child("a")))),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        run.stdout
+            .contains(&format!("3\t{}", canonical(&world.child("b")))),
+        "stdout: {}",
+        run.stdout
+    );
+}
+
+#[test]
+fn fm_delete_forms() {
+    let world = sandbox(&["a", "b", "c", "d"]);
+    for (digit, child) in [("1", "a"), ("2", "b"), ("3", "c"), ("4", "d")] {
+        seed_mark(&world, digit, &world.child(child));
+    }
+    seed_alias(&world, "ombi", &world.child("a"));
+    let one = run_pwsh(&world, "", "", world.tree.path(), "fm -d 2");
+    assert!(
+        one.stderr.contains("removed mark 2"),
+        "stderr: {}",
+        one.stderr
+    );
+    let range = run_pwsh(&world, "", "", world.tree.path(), "fm -d 3-4");
+    assert!(
+        range.stderr.contains("removed mark 3") && range.stderr.contains("removed mark 4"),
+        "stderr: {}",
+        range.stderr
+    );
+    let all = run_pwsh(&world, "", "", world.tree.path(), "fm -d!");
+    assert!(
+        all.stderr.contains("removed mark 1"),
+        "stderr: {}",
+        all.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM aliases"), 1);
+    let listed = world
+        .furet()
+        .arg("alias")
+        .arg("list")
+        .output()
+        .expect("furet alias list runs");
+    assert!(
+        String::from_utf8_lossy(&listed.stdout).contains("ombi"),
+        "stdout: {}",
+        String::from_utf8_lossy(&listed.stdout)
+    );
+}
+
+#[test]
+fn fm_plus_jumps_to_the_next_mark_and_records_a_jump() {
+    let world = sandbox(&["a", "b"]);
+    seed_mark(&world, "1", &world.child("a"));
+    seed_mark(&world, "3", &world.child("b"));
+    let run = run_pwsh(&world, "", "", &world.child("a"), "fm +");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("b")),
+        "stderr: {}",
+        run.stderr
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+}
+
+#[test]
+fn fm_minus_wraps_to_the_previous_mark() {
+    let world = sandbox(&["a", "b"]);
+    seed_mark(&world, "1", &world.child("a"));
+    seed_mark(&world, "3", &world.child("b"));
+    let run = run_pwsh(&world, "", "", &world.child("a"), "fm -");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("b")),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn fm_cycling_without_marks_stays_put() {
+    let world = sandbox(&["x"]);
+    let run = run_pwsh(&world, "", "", &world.child("x"), "fm +");
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("x")),
+        "stderr: {}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("no marks set"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM visits") == 0
+    );
+}
+
+#[test]
+fn fm_invalid_digit_reports_and_changes_nothing() {
+    let world = sandbox(&["a"]);
+    let run = run_pwsh(&world, "", "", &world.child("a"), "fm 0");
+    assert!(
+        run.stderr.contains("invalid mark '0'"),
+        "stderr: {}",
+        run.stderr
+    );
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM aliases") == 0
+    );
+}
+
+#[test]
+fn f_bang_digit_jumps_to_a_mark_set_with_fm() {
+    let world = sandbox(&["a", "x"]);
+    let body = format!(
+        "fm 1\nSet-Location -LiteralPath {x}\nf !1",
+        x = quote(&world.child("x"))
+    );
+    let run = run_pwsh(&world, "", "", &world.child("a"), &body);
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("a")),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn fm_is_fixed_whatever_the_cmd() {
+    let world = sandbox(&["a"]);
+    let body = "Write-Output ('FURET_TEST_JM=' + [bool](Get-Command jm -CommandType Function -ErrorAction SilentlyContinue))\nfm 1";
+    let run = run_pwsh(&world, "", "--cmd j", &world.child("a"), body);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_JM="),
+        "False",
+        "stderr: {}",
+        run.stderr
+    );
+    assert!(
+        run.stderr
+            .contains(&format!("mark 1 -> {}", canonical(&world.child("a")))),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn init_binds_ctrl_alt_arrows_when_psreadline_is_loaded() {
+    let world = sandbox(&[]);
+    let body = "Write-Output ('FURET_TEST_NEXT=' + (Get-PSReadLineKeyHandler -Chord 'Ctrl+Alt+RightArrow').Function)\n\
+                Write-Output ('FURET_TEST_PREV=' + (Get-PSReadLineKeyHandler -Chord 'Ctrl+Alt+LeftArrow').Function)";
+    let run = run_pwsh(
+        &world,
+        "Import-Module PSReadLine",
+        "",
+        world.tree.path(),
+        body,
+    );
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_NEXT="),
+        "FuretNextMark",
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_PREV="),
+        "FuretPreviousMark",
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn init_without_psreadline_binds_nothing() {
+    let world = sandbox(&[]);
+    let body = "Write-Output ('FURET_TEST_MODULE=' + [bool](Get-Module PSReadLine))";
+    let run = run_pwsh(&world, "", "", world.tree.path(), body);
+    assert!(run.stderr.is_empty(), "stderr: {}", run.stderr);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_MODULE="),
+        "False",
+        "stderr: {}",
+        run.stderr
+    );
 }

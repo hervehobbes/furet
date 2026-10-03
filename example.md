@@ -347,6 +347,80 @@ PS C:\dev\furet> f !om<Tab>   # propose !ombi  C:\apps\ombi, insère !ombi
 
 Après `-l` ou `-h`, un mot d'alias ne propose rien.
 
+## Les marques
+
+Une marque est un raccourci numéroté (`1` à `9`) posé à la volée, dans
+l'esprit de Vim ; côté pwsh, tout passe par la fonction `fm` :
+
+```powershell
+PS C:\dev\furet> fm 1
+mark 1 -> C:\dev\furet
+
+PS C:\dev\ombi> fm 3
+mark 3 -> C:\dev\ombi
+
+PS C:\dev\furet> fm
+1	C:\dev\furet
+3	C:\dev\ombi
+```
+
+`fm 1` marque le répertoire courant et le remplace **silencieusement**
+s'il existait déjà (le `m1` de Vim) ; `fm` sans argument liste les
+marques (`:marks`). Le saut se fait avec le même préfixe `!` que les
+alias :
+
+```powershell
+PS C:\dev\ombi> f !1
+PS C:\dev\furet>
+
+PS C:\dev\furet> f !3
+furet: mark 3 not set
+```
+
+La suppression suit `:delm` : `fm -d 2` retire la marque 2, `fm -d 2-4`
+une plage, `fm -d!` toutes les marques (`1`-`9` seulement, jamais un
+alias nommé), sans confirmation :
+
+```powershell
+PS C:\dev\furet> fm -d 2-4
+removed mark 3
+
+PS C:\dev\furet> fm -d!
+removed mark 1
+```
+
+Pour enchaîner les marques sans les nommer, `fm +` saute à la marque
+suivante et `fm -` à la précédente :
+
+```powershell
+PS C:\dev\furet> fm +
+PS C:\dev\ombi>
+```
+
+`fm +` monte dans les chiffres en sautant les trous et reboucle de 9
+vers 1 ; `fm -` fait le miroir. Depuis un répertoire sans marque,
+`fm +` part de la plus petite et `fm -` de la plus grande ; un
+répertoire portant plusieurs marques compte comme la plus petite, et
+toute marque pointant sur le répertoire courant est ignorée. Une marque
+dont le répertoire a disparu est sautée avec `furet: skipped mark N:
+missing directory` sur stderr. Sans aucune marque : `furet: no marks
+set` ; quand aucune n'est éligible : `furet: no other mark` — le saut
+n'a pas lieu. Contrairement aux commandes `furet mark` directes,
+`fm +` et `fm -` enregistrent la visite `jump` comme tout saut.
+
+Les touches **Ctrl+Alt+→** et **Ctrl+Alt+←** font le même saut sans
+rien taper : sur une **ligne de commande vide**, elles exécutent
+`fm +` / `fm -` (entrée d'historique normale, visite `jump`
+enregistrée) ; si la ligne n'est pas vide, elles ne font que sonner,
+pour ne jamais perdre le texte saisi. Elles n'existent que quand
+PSReadLine est chargé. Tab complète aussi les marques : `f !<Tab>`
+liste chaque alias et marque avec son chemin, mais n'insère que le
+nom (`!1`).
+
+Divergence assumée avec Vim : ses marques `'0`-`'9` sont remplies par
+viminfo/shada avec les dernières positions de sortie ; les marques
+`1`-`9` de furet sont posées par l'utilisateur, rien d'autre.
+
 ## Commandes `furet` directes (sans le hook pwsh)
 
 Ces sous-commandes sont utiles pour scripter ou déboguer ; elles écrivent
@@ -701,7 +775,7 @@ PS C:\dev\furet> furet mark prev
 C:\dev\ombi
 ```
 
-`next` monte dans les chiffres en sautant les trous et s'entoure de 9
+`next` monte dans les chiffres en sautant les trous et reboucle de 9
 vers 1 ; `prev` fait le miroir. Depuis un répertoire sans marque,
 `next` part de la plus petite et `prev` de la plus grande. Un
 répertoire portant plusieurs marques compte comme la plus petite, et
@@ -713,5 +787,5 @@ nommé ne compte pas) et `furet: no other mark` quand aucune n'est
 éligible. Le binaire n'enregistre ni visite ni requête ; c'est le
 `fm +` / `fm -` de pwsh qui enregistrera la visite de saut.
 
-La fonction `fm`, qui encapsule ces commandes côté pwsh, arrive dans un
-lot ultérieur.
+La fonction `fm`, qui encapsule ces commandes côté pwsh, est décrite
+plus haut dans [Les marques](#les-marques).
