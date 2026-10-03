@@ -190,6 +190,12 @@ fn import_history(sandbox: &Sandbox, stdin: &str) -> Output {
     run(&mut cmd)
 }
 
+fn export(sandbox: &Sandbox) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("export");
+    run(&mut cmd)
+}
+
 fn write_config(sandbox: &Sandbox, contents: &str) {
     std::fs::write(sandbox.data.path().join("config.toml"), contents)
         .expect("the config file is written");
@@ -6148,4 +6154,164 @@ fn sandbox_tree_names_hold_no_letters() {
         first.tree.path().file_name(),
         second.tree.path().file_name()
     );
+}
+
+#[test]
+fn export_prints_every_table_as_versioned_json() {
+    let world = sandbox(&["alpha", "beta"]);
+    assert!(
+        add(&world, &world.child("alpha"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(
+            &world,
+            &world.child("beta"),
+            "session-1",
+            None,
+            Some(&world.child("alpha"))
+        )
+        .status
+        .success()
+    );
+    assert!(
+        query(&world, "alp", world.tree.path(), false)
+            .status
+            .success()
+    );
+    assert!(
+        alias(&world, &["add", "om", "alpha"], world.tree.path())
+            .status
+            .success()
+    );
+    assert!(
+        mark(&world, &["set", "3", "beta"], world.tree.path())
+            .status
+            .success()
+    );
+    let out = export(&world);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    let value: serde_json::Value =
+        serde_json::from_str(&text(&out.stdout)).expect("the export parses as JSON");
+    assert_eq!(value["format"], "furet-export");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["furet"], env!("CARGO_PKG_VERSION"));
+    let alpha_key = paths::canonical(&world.child("alpha"))
+        .expect("alpha canonicalizes")
+        .path
+        .to_lowercase();
+    let beta_key = paths::canonical(&world.child("beta"))
+        .expect("beta canonicalizes")
+        .path
+        .to_lowercase();
+    let dirs = value["dirs"].as_array().expect("dirs is an array");
+    let visits = value["visits"].as_array().expect("visits is an array");
+    let queries = value["queries"].as_array().expect("queries is an array");
+    let aliases = value["aliases"].as_array().expect("aliases is an array");
+    assert_eq!(dirs.len(), 2, "dirs: {dirs:?}");
+    assert_eq!(visits.len(), 2, "visits: {visits:?}");
+    assert!(
+        !queries.is_empty(),
+        "the jumping query is journaled: {queries:?}"
+    );
+    assert_eq!(aliases.len(), 2, "aliases: {aliases:?}");
+    let beta_visit = visits
+        .iter()
+        .find(|visit| visit["dir"] == beta_key.as_str())
+        .expect("beta has a visit");
+    assert_eq!(beta_visit["from_dir"], alpha_key.as_str());
+}
+
+#[test]
+fn export_of_an_empty_database_has_empty_arrays() {
+    let world = sandbox(&[]);
+    let out = export(&world);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    let value: serde_json::Value =
+        serde_json::from_str(&text(&out.stdout)).expect("the export parses as JSON");
+    for key in ["dirs", "visits", "queries", "aliases"] {
+        assert!(
+            value[key]
+                .as_array()
+                .unwrap_or_else(|| panic!("{key} must be an array"))
+                .is_empty(),
+            "{key} must be an empty array: {}",
+            value[key]
+        );
+    }
+}
+
+#[test]
+fn export_is_pure_ascii_and_keeps_accented_paths() {
+    let world = sandbox(&["réf"]);
+    assert!(
+        add(&world, &world.child("réf"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let out = export(&world);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    assert!(stdout.is_ascii(), "the export must be pure ASCII");
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("the export parses");
+    let expected = paths::canonical(&world.child("réf"))
+        .expect("réf canonicalizes")
+        .path;
+    assert_eq!(
+        value["dirs"][0]["path"],
+        expected.as_str(),
+        "the accented path round-trips"
+    );
+}
+
+#[test]
+fn export_writes_nothing() {
+    let world = sandbox(&["alpha", "beta"]);
+    assert!(
+        add(&world, &world.child("alpha"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(
+            &world,
+            &world.child("beta"),
+            "session-1",
+            None,
+            Some(&world.child("alpha"))
+        )
+        .status
+        .success()
+    );
+    assert!(
+        query(&world, "alp", world.tree.path(), false)
+            .status
+            .success()
+    );
+    assert!(
+        alias(&world, &["add", "om", "alpha"], world.tree.path())
+            .status
+            .success()
+    );
+    assert!(
+        mark(&world, &["set", "3", "beta"], world.tree.path())
+            .status
+            .success()
+    );
+    let counts = || {
+        let conn = db(&world);
+        (
+            scalar(&conn, "SELECT COUNT(*) FROM dirs"),
+            scalar(&conn, "SELECT COUNT(*) FROM visits"),
+            scalar(&conn, "SELECT COUNT(*) FROM queries"),
+            scalar(&conn, "SELECT COUNT(*) FROM aliases"),
+        )
+    };
+    let before = counts();
+    let out = export(&world);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert_eq!(before, counts(), "export must not write any row");
 }

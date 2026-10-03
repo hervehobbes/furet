@@ -154,6 +154,11 @@ fn import_help_is_pinned() {
 }
 
 #[test]
+fn export_help_is_pinned() {
+    snapshot_help("export_help", &["export", "--help"]);
+}
+
+#[test]
 fn preview_help_is_pinned() {
     snapshot_help("preview_help", &["preview", "--help"]);
 }

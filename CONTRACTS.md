@@ -303,7 +303,7 @@ mode, foreign keys on, ordered `PRAGMA user_version` migrations.
 Only jump targets reach stdout: `furet query`'s resolved match and its
 `--list` lines, `up`'s ancestor, `back`'s previous directory, and `home`'s
 configured directory — plus `init pwsh`'s generated script. Everything
-else (menus, `--explain`, errors) goes to stderr, with eight documented
+else (menus, `--explain`, errors) goes to stderr, with nine documented
 exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr. The rule is
 compile-time enforced: `clippy::print_stdout` + `disallowed-methods` on
@@ -717,6 +717,38 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   stored, and an empty result (unknown session, empty database) prints
   nothing and exits 0 (`src/storage.rs`, `visit_history`;
   `main::history_command`).
+- `furet export` — prints the whole database as versioned JSON **to
+  stdout**, pretty-printed, for backup or moving to another machine — the
+  **ninth** accepted stdout exception (Hervé, 2026-10-03), same
+  justification as `furet list`: a reporting tool whose output is never
+  piped into `Set-Location`; the user redirects it (`furet export >
+  furet-backup.json`). Lot 68's `furet import json` will read this exact
+  format from stdin. Everything is exported: `dirs`, `visits`, `queries`
+  (query memory, SPEC-v2 §24 — it takes part in ranking) and `aliases`
+  (marks included). Read-only and write-free: the four tables are read
+  inside **one transaction** (`conn.transaction()`), so a hook writing
+  concurrently cannot produce a torn export, and there is **no
+  reconcile** — `missing_since` is exported exactly as stored. The
+  document opens with `format` (`"furet-export"`), `version` (`1`),
+  `furet` (the crate version, `env!("CARGO_PKG_VERSION")`) and
+  `exported_at` (Unix seconds read from `SystemClock`); every other
+  field is the column of the same name, as stored (`src/backup.rs`,
+  `storage::snapshot`, `main::export_command`). Rows refer to
+  directories by their **`key`**, never by `id` — ids are local to one
+  database: `visits.dir` and `visits.from_dir` are the keys of the
+  visited and origin directories (`LEFT JOIN dirs`, `null` where the
+  column is `NULL`), and `queries.result_dir` the key of the result
+  directory (`null` likewise). The four arrays are ordered
+  deterministically: `dirs` by `key`, `visits` and `queries` by `ts, id`,
+  `aliases` by `key`. Every non-ASCII character is escaped as `\uXXXX`
+  (lowercase hex, surrogate pairs for astral characters,
+  `backup::escape_non_ascii` — valid because, in serialized JSON, a
+  non-ASCII char can only appear inside a string), so the output is
+  **pure ASCII** and neither pwsh's `>` nor any console code page can
+  corrupt an accented path; success writes nothing to stderr
+  (`export_redirected_by_pwsh_keeps_an_accented_path`,
+  `export_is_pure_ascii_and_keeps_accented_paths`,
+  `export_writes_nothing`).
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` — forgets known directories matching
   `<pattern>`, **hard-deleting** their `dirs` row (no `missing_since` reuse,
   no `removed_at` column, no schema change; not in SPEC — scope extension
@@ -998,6 +1030,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
 | `stats [--top <n>]` | always, even with an empty database (`stats_on_an_empty_database_prints_zeros_and_no_top_line`) | a DB error |
 | `history (--session <id> \| --all) [-n <n>]` | always, even with an unknown session or an empty database (`history_of_an_unknown_session_or_an_empty_database_prints_nothing`) | a DB error; a bare `furet history` and `--session` with `--all` are refused by clap, exit 2 (`history_needs_a_session_or_all_but_not_both`) |
+| `export` | always, even with an empty database — every array empty (`export_of_an_empty_database_has_empty_arrays`) | a DB error |
 | `remove [<pattern>] [--missing] [--confirm \| --yes] [--dry-run]` | every match removed and reported on stderr (`remove_by_name_glob_removes_every_match_and_reports_on_stderr_only`, `remove_confirm_yes_to_each_removes_both`), or `--dry-run` with at least one candidate, printing `would remove <path>` and changing nothing (`remove_dry_run_changes_nothing`, `remove_missing_dry_run_changes_nothing`), or `--missing` removing at least one vanished directory (`remove_missing_yes_removes_a_vanished_directory_and_keeps_a_returned_one`) | empty pattern (`remove_empty_pattern_fails_with_exit_one`, `remove_missing_with_an_empty_pattern_fails_like_a_plain_remove`), no match (`remove_with_no_match_fails_with_exit_one_and_removes_nothing`, `remove_dry_run_with_no_match_fails_like_a_real_remove`), no missing known directory, with or without a pattern (`remove_missing_without_missing_directories_fails`), nothing removed — every answer kept, `q`, or EOF (`remove_confirm_empty_and_no_answers_keep_everything`, `remove_confirm_eof_removes_nothing`, `remove_confirm_declined_or_eof_removes_nothing_and_exits_one`), or a DB error; `--confirm --yes` is refused by clap, exit 2 (`remove_confirm_and_yes_conflict`), and so is a bare `furet remove` — no pattern, no `--missing` (`remove_without_a_pattern_or_missing_is_refused`) |
 | `home` | always, whether or not it prints a path (`home_prints_the_configured_directory_canonicalized`, `home_prints_nothing_and_exits_zero_when_unset`, `home_prints_nothing_and_warns_when_the_directory_is_missing`, `home_prints_nothing_and_warns_when_home_is_a_file`, `home_prints_nothing_and_warns_on_a_relative_path`) | — |
 | `alias add <name> [<path>] [--force]` | the name is valid, the target canonicalizes to a directory, and the name is new — or `--force` was given (`alias_add_defaults_to_the_current_directory`, `alias_add_force_replaces_name_and_path`, `alias_add_accepts_a_digit_name`) | invalid name (`alias_add_rejects_invalid_names`), a target that is missing or a file (`alias_add_rejects_a_missing_path_and_a_file`), an existing name without `--force` (`alias_add_refuses_an_existing_name_ignoring_case`), or a DB error |

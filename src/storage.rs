@@ -7,6 +7,7 @@ use rusqlite::{Connection, params};
 use thiserror::Error;
 use tracing::debug;
 
+use crate::backup::{self, AliasRecord, DirRecord, QueryRecord, Snapshot, VisitRecord};
 use crate::calibration;
 use crate::clock::Timestamp;
 use crate::memory::{self, Recall};
@@ -749,15 +750,101 @@ pub fn top_dirs(conn: &Connection, limit: usize) -> Result<Vec<(i64, String)>, S
     Ok(rows)
 }
 
+/// Every row of the four tables as a `backup::Snapshot`, ids replaced by
+/// directory keys; `furet` and `exported_at` are the caller's.
+pub fn snapshot(
+    conn: &mut Connection,
+    furet: &str,
+    exported_at: i64,
+) -> Result<Snapshot, StorageError> {
+    let tx = conn.transaction()?;
+    let dirs = {
+        let mut stmt =
+            tx.prepare("SELECT path, key, first_seen, missing_since FROM dirs ORDER BY key")?;
+        stmt.query_map([], |row| {
+            Ok(DirRecord {
+                path: row.get(0)?,
+                key: row.get(1)?,
+                first_seen: row.get(2)?,
+                missing_since: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    let visits = {
+        let mut stmt = tx.prepare(
+            "SELECT d.key, v.ts, v.source, v.session, f.key
+             FROM visits v
+             JOIN dirs d ON d.id = v.dir_id
+             LEFT JOIN dirs f ON f.id = v.from_dir_id
+             ORDER BY v.ts, v.id",
+        )?;
+        stmt.query_map([], |row| {
+            Ok(VisitRecord {
+                dir: row.get(0)?,
+                ts: row.get(1)?,
+                source: row.get(2)?,
+                session: row.get(3)?,
+                from_dir: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    let queries = {
+        let mut stmt = tx.prepare(
+            "SELECT q.ts, q.cwd, q.query, d.key, q.stage, q.outcome
+             FROM queries q
+             LEFT JOIN dirs d ON d.id = q.result_dir_id
+             ORDER BY q.ts, q.id",
+        )?;
+        stmt.query_map([], |row| {
+            Ok(QueryRecord {
+                ts: row.get(0)?,
+                cwd: row.get(1)?,
+                query: row.get(2)?,
+                result_dir: row.get(3)?,
+                stage: row.get(4)?,
+                outcome: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    let aliases = {
+        let mut stmt = tx.prepare("SELECT name, key, path, created FROM aliases ORDER BY key")?;
+        stmt.query_map([], |row| {
+            Ok(AliasRecord {
+                name: row.get(0)?,
+                key: row.get(1)?,
+                path: row.get(2)?,
+                created: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    tx.commit()?;
+    Ok(Snapshot {
+        format: backup::FORMAT.to_owned(),
+        version: backup::VERSION,
+        furet: furet.to_owned(),
+        exported_at,
+        dirs,
+        visits,
+        queries,
+        aliases,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         alias_by_key, alias_listing, config_path, db_path, dir_entries, dir_id_by_key, dir_listing,
         dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
         last_visited_dir, logs_dir, missing_since_by_id, open, open_at, purge_before, query_log,
-        recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, stats_counts,
-        top_dirs, upsert_alias, upsert_dir, visit_history, visit_log, visited_dir_back,
+        recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, snapshot,
+        stats_counts, top_dirs, upsert_alias, upsert_dir, visit_history, visit_log,
+        visited_dir_back,
     };
+    use crate::backup;
     use crate::clock::Timestamp;
     use crate::memory::{self, Recall};
     use rusqlite::{Connection, params};
@@ -1952,6 +2039,130 @@ mod tests {
             recall(&conn, &key).expect("the recall reads"),
             Recall::ProbableFailure,
             "the latest word wins; the older good row is never used"
+        );
+    }
+
+    #[test]
+    fn snapshot_exports_every_table_with_keys_for_references() {
+        let (_dir, path) = temp_db();
+        let mut conn = opened(&path);
+        let alpha = insert_dir(&conn, "C:\\dev\\alpha", "c:\\dev\\alpha");
+        let gone = insert_dir(&conn, "C:\\dev\\gone", "c:\\dev\\gone");
+        conn.execute(
+            "UPDATE dirs SET missing_since = 900 WHERE id = ?1",
+            params![gone],
+        )
+        .expect("the fixture marks the dir missing");
+        conn.execute(
+            "INSERT INTO visits (dir_id, ts, source, session) VALUES (?1, 10, 'hook', 's')",
+            params![alpha],
+        )
+        .expect("the plain visit inserts");
+        conn.execute(
+            "INSERT INTO visits (dir_id, ts, source, session, from_dir_id)
+             VALUES (?1, 20, 'jump', 's', ?2)",
+            params![gone, alpha],
+        )
+        .expect("the visit from alpha inserts");
+        conn.execute(
+            "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+             VALUES (30, 'C:\\dev', 'al', ?1, '1', 'jump')",
+            params![alpha],
+        )
+        .expect("the jump query inserts");
+        conn.execute(
+            "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+             VALUES (40, 'C:\\dev', 'no', NULL, 'fallback', 'none')",
+            [],
+        )
+        .expect("the failed query inserts");
+        upsert_alias(&conn, "Ombi", "ombi", "C:\\dev\\alpha", at(50))
+            .expect("the fixture alias upserts");
+        upsert_alias(&conn, "3", "3", "C:\\dev\\gone", at(60)).expect("the fixture mark upserts");
+
+        let exported = snapshot(&mut conn, "0.3.0", 1_759_500_000).expect("the snapshot reads");
+
+        assert_eq!(exported.format, backup::FORMAT);
+        assert_eq!(exported.version, backup::VERSION);
+        assert_eq!(exported.furet, "0.3.0");
+        assert_eq!(exported.exported_at, 1_759_500_000);
+        assert_eq!(
+            exported.dirs,
+            vec![
+                super::DirRecord {
+                    path: "C:\\dev\\alpha".to_owned(),
+                    key: "c:\\dev\\alpha".to_owned(),
+                    first_seen: 1_700_000_000,
+                    missing_since: None,
+                },
+                super::DirRecord {
+                    path: "C:\\dev\\gone".to_owned(),
+                    key: "c:\\dev\\gone".to_owned(),
+                    first_seen: 1_700_000_000,
+                    missing_since: Some(900),
+                },
+            ],
+            "dirs are ordered by key, missing_since as stored"
+        );
+        assert_eq!(
+            exported.visits,
+            vec![
+                super::VisitRecord {
+                    dir: "c:\\dev\\alpha".to_owned(),
+                    ts: 10,
+                    source: "hook".to_owned(),
+                    session: "s".to_owned(),
+                    from_dir: None,
+                },
+                super::VisitRecord {
+                    dir: "c:\\dev\\gone".to_owned(),
+                    ts: 20,
+                    source: "jump".to_owned(),
+                    session: "s".to_owned(),
+                    from_dir: Some("c:\\dev\\alpha".to_owned()),
+                },
+            ],
+            "visits are ordered by ts, id; from_dir is a key or null"
+        );
+        assert_eq!(
+            exported.queries,
+            vec![
+                super::QueryRecord {
+                    ts: 30,
+                    cwd: "C:\\dev".to_owned(),
+                    query: "al".to_owned(),
+                    result_dir: Some("c:\\dev\\alpha".to_owned()),
+                    stage: "1".to_owned(),
+                    outcome: "jump".to_owned(),
+                },
+                super::QueryRecord {
+                    ts: 40,
+                    cwd: "C:\\dev".to_owned(),
+                    query: "no".to_owned(),
+                    result_dir: None,
+                    stage: "fallback".to_owned(),
+                    outcome: "none".to_owned(),
+                },
+            ],
+            "queries are ordered by ts, id; result_dir is a key or null"
+        );
+        assert_eq!(
+            exported.aliases,
+            vec![
+                super::AliasRecord {
+                    name: "3".to_owned(),
+                    key: "3".to_owned(),
+                    path: "C:\\dev\\gone".to_owned(),
+                    created: at(60).unix_seconds(),
+                },
+                super::AliasRecord {
+                    name: "Ombi".to_owned(),
+                    key: "ombi".to_owned(),
+                    path: "C:\\dev\\alpha".to_owned(),
+                    created: at(50).unix_seconds(),
+                },
+            ],
+            "aliases and marks are ordered by key"
         );
     }
 }

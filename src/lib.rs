@@ -1,4 +1,5 @@
 pub mod alias;
+pub mod backup;
 pub mod calibration;
 pub mod clock;
 pub mod config;

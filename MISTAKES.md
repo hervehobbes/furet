@@ -25,3 +25,8 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   Code and logs on disk were fine; caught by the architect reading both
   logs and confirmed by the reviewer's own DoD run. Rule unchanged: the
   reviewer's run is the proof, the executor's paste is not.
+- 2026-10-03, lot 66 (GLM 5.3 Flash): the report's mutation-B block
+  contained an edited line, `ok→FAILED (shown above as FAILED)`, instead
+  of the raw test output. The code was fine; the reviewer's own rerun of
+  the mutations was the proof. Rule unchanged: paste raw output by
+  copying it, never annotate inside it — comments go outside the block.

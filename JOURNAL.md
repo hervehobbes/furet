@@ -1,4 +1,13 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 67 — `furet export`: `backup::Snapshot` + `escape_non_ascii` (pretty JSON, every
+non-ASCII char as `\uXXXX`, output pure ASCII), `storage::snapshot` (one transaction, LEFT JOIN
+on dirs, references by key, orders: dirs by key, visits/queries by ts,id, aliases by key) and
+the `Export` subcommand through one `stdout_line` call. 2 unit + 4 cli + 1 pwsh + 1 help tests
+written first (all failed pre-change on clap's unknown subcommand); mutations A/B/C caught as
+required. Ninth accepted stdout exception (Hervé 2026-10-03); serde_json v1.0.151 added.
+Executor: GLM 5.3 Flash. Next: reviewer pass from a Claude Code session; lot 68 imports the
+format (`furet import json`).
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 66 — pwsh `fh`: the fixed-name wrapper over `furet history`, placed after `fm` — no
 `param()` block; `-a`/`--all` runs `furet history @args` (every session), anything else
 `furet history --session $global:__furet_session @args` (numbered like `f -N`), `-n` passes

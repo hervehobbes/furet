@@ -241,6 +241,19 @@ relative path cannot be resolved reliably; a leading `~` means the user
 profile. Already-known directories are skipped, so re-running it is a
 no-op.
 
+## Backup and moving to another machine
+
+Save the whole database — directories, visits, the query journal and the
+aliases/marks — as versioned JSON:
+
+```powershell
+furet export > furet-backup.json
+```
+
+The output is pure ASCII (every non-ASCII character is escaped), so the
+redirection cannot corrupt an accented path. The matching import that
+restores this file on another machine comes in the next lot.
+
 ## Configuration
 
 `<data dir>/config.toml` overrides these built-in defaults; a missing file
@@ -340,6 +353,8 @@ per session (`--session <id>`) or listed across every session without
 numbers (`--all`); the `fh` pwsh wrapper is the next lot. Lot 66 wires
 that wrapper: the fixed-name `fh` prints the session history (`fh -a`
 for every session, `fh -n <N>` for a limit) without typing
-`furet history`.
+`furet history`. Lot 67 adds `furet export`: the whole database as
+versioned JSON on stdout, pure ASCII so a redirect keeps every accented
+path; the import of that file is the next lot.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

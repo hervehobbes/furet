@@ -775,6 +775,19 @@ de façon fiable. Un `~` initial désigne le profil utilisateur (pas le
 `home` configuré). Relancer l'import n'ajoute rien : les répertoires déjà
 connus sont ignorés.
 
+### Sauvegarder la base
+
+Pour sauvegarder toute la base, ou la passer d'une machine à l'autre :
+
+```powershell
+PS C:\dev\furet> furet export > furet-backup.json
+```
+
+Le fichier contient la base entière en JSON versionné — répertoires,
+visites, journal des requêtes et alias — avec chaque caractère non-ASCII
+échappé, donc purement ASCII. L'import correspondant arrive au prochain
+lot (68).
+
 ### Remonter ou revenir en arrière sans le hook
 
 ```powershell

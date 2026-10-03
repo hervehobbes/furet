@@ -1,0 +1,10 @@
+---
+source: tests/help.rs
+expression: text
+---
+Print the whole database as versioned JSON, for backup or another machine
+
+Usage: furet export
+
+Options:
+  -h, --help  Print help

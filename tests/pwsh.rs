@@ -2051,3 +2051,22 @@ fn fi_bang_under_the_equals_prefix_uses_equals() {
         fresh.stdout
     );
 }
+
+#[test]
+fn export_redirected_by_pwsh_keeps_an_accented_path() {
+    let world = sandbox(&["réf"]);
+    seed(&world, &world.child("réf"), "session-1");
+    let backup = world.tree.path().join("backup.json");
+    let body = format!("furet export > {}", quote(&backup));
+    run_pwsh(&world, "", "", world.tree.path(), &body);
+    let bytes = std::fs::read(&backup).expect("pwsh wrote the backup file");
+    let contents = std::str::from_utf8(&bytes).expect("the backup file is valid UTF-8");
+    assert!(contents.is_ascii(), "the backup file must be pure ASCII");
+    let value: serde_json::Value =
+        serde_json::from_str(contents).expect("the backup file parses as JSON");
+    assert_eq!(
+        value["dirs"][0]["path"],
+        canonical(&world.child("réf")),
+        "the accented path round-trips through the pwsh redirection"
+    );
+}

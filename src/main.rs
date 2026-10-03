@@ -9,6 +9,7 @@ use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::generate;
 use clap_complete::shells::PowerShell;
 use furet::alias;
+use furet::backup;
 use furet::calibration::{self, FailureReason};
 use furet::clock::{Clock, SystemClock, Timestamp};
 use furet::config::{self, Settings};
@@ -176,6 +177,8 @@ enum Command {
         /// Tool to import from.
         source: ImportSource,
     },
+    /// Print the whole database as versioned JSON, for backup or another machine.
+    Export,
     /// List a directory's contents for the fzf preview pane.
     Preview {
         /// Directory to list; ANSI color codes are ignored.
@@ -365,6 +368,7 @@ fn main() {
             ImportSource::Zoxide => import_zoxide(),
             ImportSource::PwshHistory => import_pwsh_history(),
         }),
+        Command::Export => report(export_command()),
         Command::Preview { path } => report(preview_command(&path)),
     };
     // WHY: process::exit skips destructors, so the guard is dropped explicitly to flush buffered log lines.
@@ -1327,6 +1331,26 @@ fn init_pwsh(cmd: &str) -> Result<(), Box<dyn Error>> {
         String::from_utf8_lossy(&completions),
         pwsh::script(cmd)
     ));
+    Ok(())
+}
+
+// WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
+fn export_command() -> Result<(), Box<dyn Error>> {
+    debug!("export");
+    let mut conn = storage::open()?;
+    let snapshot = storage::snapshot(
+        &mut conn,
+        env!("CARGO_PKG_VERSION"),
+        SystemClock::new().now().unix_seconds(),
+    )?;
+    stdout_line(&backup::render(&snapshot));
+    info!(
+        dirs = snapshot.dirs.len(),
+        visits = snapshot.visits.len(),
+        queries = snapshot.queries.len(),
+        aliases = snapshot.aliases.len(),
+        "export"
+    );
     Ok(())
 }
 
