@@ -57,6 +57,11 @@ extra profile line.
   the right (`--preview "furet preview {}"`, `--preview-window
   "right,50%"`) listing the highlighted directory's contents through the
   `furet preview` subcommand; the console menu branch has no preview.
+  `fi !` opens an interactive menu of marks and aliases (marks `1`-`9`
+  first), fed by `furet alias complete`; `fi !om` gives fzf the initial
+  query `om` with the path as preview, or prefix-filters the numbered
+  menu without fzf; a pick jumps and, like `f !name`, writes no
+  `queries` row.
   Choices made in menus and `fi` are remembered in the query journal
   (`outcome = 'pick'`) — the base of query memory, below.
 - **Query memory** — once a query has taken you to a directory, the same
@@ -280,6 +285,9 @@ directory, wrap 9 → 1, missing marks skipped on stderr), recording
 nothing. Lot 59 wires the pwsh side: the `fm` helper (fixed name, plain
 `$args` so `-d` is never bound — set/list/delete/cycle) and the
 Ctrl+Alt+→/← PSReadLine bindings, which run `fm +` / `fm -` on an empty
-command line and only ding otherwise.
+command line and only ding otherwise. Lot 60 adds `fi !`, the interactive
+menu of aliases and marks (fed by `furet alias complete`, fzf-fuzzy or
+strict-prefix, a `jump` visit and no `queries` row) — **closing design
+section 3**: aliases, home scope and marks are complete.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

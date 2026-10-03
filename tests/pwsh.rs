@@ -220,6 +220,26 @@ fn fzf_stub_two_lines(query: &str, target: &str) -> String {
     )
 }
 
+// WHY: the stub echoes the lines fzf receives, then emits the first one.
+fn fzf_stub_echoing_input_and_first_line() -> String {
+    "function global:fzf {\n\
+     $lines = @($input)\n\
+     foreach ($line in $lines) {\n\
+     Write-Host ('FZF_IN=' + $line)\n\
+     }\n\
+     $lines[0]\n\
+     }\n"
+    .to_owned()
+}
+
+// WHY: the stub prints fzf's arguments and emits nothing, so no line is ever selected.
+fn fzf_stub_echoing_args_silently() -> String {
+    "function global:fzf {\n\
+     Write-Host ('FZF_ARGS=' + ($args -join ' '))\n\
+     }\n"
+    .to_owned()
+}
+
 // WHY: fi's no-fzf branch only triggers once every fzf/fzf.exe on PATH is hidden.
 const HIDE_FZF: &str = "$env:PATH = ((($env:PATH -split ';') | Where-Object { \
     -not (Test-Path (Join-Path $_ 'fzf.exe')) -and -not (Test-Path (Join-Path $_ 'fzf')) \
@@ -710,8 +730,8 @@ fn fi_fzf_branch_passes_the_preview_options() {
     );
     assert_eq!(
         script.matches("--preview-window \"right,50%\"").count(),
-        1,
-        "the fzf call must pass the preview window: {script}"
+        2,
+        "both fzf calls (the query list and the alias menu) must pass the preview window: {script}"
     );
 }
 
@@ -1658,5 +1678,158 @@ fn init_without_psreadline_binds_nothing() {
         "False",
         "stderr: {}",
         run.stderr
+    );
+}
+
+#[test]
+fn fi_bang_fzf_lists_marks_first_and_jumps_without_a_query_row() {
+    let world = sandbox(&["ombi", "omnitool", "apps", "one", "x"]);
+    seed_mark(&world, "1", &world.child("one"));
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    seed_alias(&world, "apps", &world.child("apps"));
+    let start = world.child("x");
+    let body = format!("{}fi !", fzf_stub_echoing_input_and_first_line());
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("one")),
+        "stderr: {}",
+        run.stderr
+    );
+    let listed: Vec<&str> = run
+        .stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("FZF_IN="))
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            format!("!1\t{}", canonical(&world.child("one"))),
+            format!("!apps\t{}", canonical(&world.child("apps"))),
+            format!("!ombi\t{}", canonical(&world.child("ombi"))),
+        ],
+        "stdout: {}",
+        run.stdout
+    );
+    let conn = db(&world);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 1);
+    assert_eq!(last_visit_source(&conn), "jump");
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn fi_bang_fzf_passes_the_initial_query_and_the_preview() {
+    let world = sandbox(&["ombi", "omnitool", "apps", "x"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("x");
+    let body = format!("{}fi !om", fzf_stub_echoing_args_silently());
+    let run = run_pwsh(&world, "", "", &start, &body);
+    let args = extract(&run.stdout, "FZF_ARGS=");
+    assert!(args.contains("--query om"), "args: {args}");
+    assert!(args.contains("--delimiter"), "args: {args}");
+    assert!(args.contains("furet preview {2}"), "args: {args}");
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+}
+
+#[test]
+fn fi_bang_menu_without_fzf_filters_by_prefix_and_jumps() {
+    let world = sandbox(&["ombi", "omnitool", "apps", "x"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    seed_alias(&world, "omnitool", &world.child("omnitool"));
+    seed_alias(&world, "apps", &world.child("apps"));
+    let start = world.child("x");
+    let body = format!("{HIDE_FZF}function global:Read-Host {{ '2' }}\nfi !om");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("omnitool")),
+        "stderr: {}",
+        run.stderr
+    );
+    let ombi = canonical(&world.child("ombi"));
+    let omnitool = canonical(&world.child("omnitool"));
+    assert!(
+        run.stdout.contains(&format!("1) !ombi  {ombi}")),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.contains(&format!("2) !omnitool  {omnitool}")),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(!run.stdout.contains("!apps"), "stdout: {}", run.stdout);
+    assert_eq!(scalar(&db(&world), "SELECT COUNT(*) FROM queries"), 0);
+}
+
+#[test]
+fn fi_bang_menu_cancel_stays_put() {
+    let world = sandbox(&["ombi", "x"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("x");
+    let body = format!("{HIDE_FZF}function global:Read-Host {{ '' }}\nfi !om");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM visits") == 0
+    );
+}
+
+#[test]
+fn fi_bang_with_no_alias_does_nothing() {
+    let world = sandbox(&["x"]);
+    let start = world.child("x");
+    let body = format!("{HIDE_FZF}fi !");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        !run.stdout.contains("Choose a directory:"),
+        "stdout: {}",
+        run.stdout
+    );
+    assert!(
+        !world.data.path().join("furet.db").exists()
+            || scalar(&db(&world), "SELECT COUNT(*) FROM visits") == 0
+    );
+}
+
+#[test]
+fn fi_local_with_an_alias_word_keeps_the_scoped_behavior() {
+    let world = sandbox(&["x/.git", "ombi"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    let start = world.child("x");
+    let body = format!("{HIDE_FZF}fi -l !om");
+    let run = run_pwsh(&world, "", "", &start, &body);
+    assert_eq!(run.cwd, canonical(&start), "stderr: {}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("--local cannot be combined with an alias"),
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
+fn fi_bang_under_the_equals_prefix_uses_equals() {
+    let world = sandbox(&["ombi", "x"]);
+    seed_alias(&world, "ombi", &world.child("ombi"));
+    write_alias_prefix_config(&world, "=");
+    let start = world.child("x");
+    let pick = format!("{HIDE_FZF}function global:Read-Host {{ '1' }}\nfi =om");
+    let run = run_pwsh(&world, "", "", &start, &pick);
+    assert_eq!(
+        run.cwd,
+        canonical(&world.child("ombi")),
+        "stderr: {}",
+        run.stderr
+    );
+    let bang = format!("{HIDE_FZF}fi !om");
+    let fresh = run_pwsh(&world, "", "", &start, &bang);
+    assert_eq!(fresh.cwd, canonical(&start), "stderr: {}", fresh.stderr);
+    assert!(
+        !fresh.stdout.contains("Choose a directory:"),
+        "stdout: {}",
+        fresh.stdout
     );
 }

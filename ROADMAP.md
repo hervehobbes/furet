@@ -64,3 +64,4 @@
 | 57 | Marks in the binary: `furet mark set/list/delete`, `mark N not set` |
 | 58 | Mark cycling in the binary: `furet mark next/prev` |
 | 59 | pwsh `fm` (set/list/delete/cycle) and Ctrl+Alt+→/← mark bindings |
+| 60 | `fi !`: interactive menu of aliases and marks |

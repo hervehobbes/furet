@@ -541,7 +541,29 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   as an array: `lines[0]` is fzf's final query (an empty query line comes
   back as an empty element, so `lines[1]` is the selection) and fewer than
   two lines — abort or no selection — returns without moving; the selection
-  is ANSI-stripped as before. The console menu branch has no preview. On a
+  is ANSI-stripped as before. The console menu branch has no preview.
+  Lot 60 (design doc §3.4 and §12, a scope extension decided by Hervé on
+  2026-10-03 — the last lot of section 3) adds an **alias branch** to
+  `fi`, taken only when `fi` is unscoped and receives exactly one token
+  starting with `!` or `=` — with `-l`/`-h` or several tokens, `fi`
+  keeps its current behavior, and the scoped menu branch's
+  `furet query --list --local !om` is rejected by the binary with
+  `--local cannot be combined with an alias`. The entries come from
+  `furet alias complete -- $word` (lot 54, unchanged):
+  `<prefix><name><TAB><path>` lines in key order — marks `1`-`9` first,
+  named aliases after — and nothing when the word lacks the configured
+  prefix; an empty answer returns silently, as `fi` already does with
+  no candidate. With fzf the whole list is piped into
+  `fzf --delimiter "<TAB>" --query <name-part> --preview "furet
+  preview {2}" --preview-window "right,50%"` — everything after the
+  first token char (`om`) is fzf's initial fuzzy query, the preview
+  pane shows the path column — and the selected line is split on the
+  first TAB to get the target; without fzf the same numbered menu as a
+  query (9 entries at most, `N) !ombi  <path>` lines) filters the
+  entries by strict prefix, as Tab does. A pick jumps
+  (`Set-Location -LiteralPath`) and records `__furet_record $target
+  $from 'jump'` **without** a query argument, so like `f !name` it
+  writes no `queries` row (design doc open question 9 closed). On a
   jump the fzf branch calls `__furet_record $target $from 'jump'
   $finalQuery` and the console-menu branch `__furet_record $target $from
   'jump' $query` (its joined arguments); `__furet_record($target, $from,

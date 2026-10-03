@@ -145,6 +145,42 @@ function global:fi {
     $query = ($FuretArgs -join ' ') -replace '/', '\'
     $from = (Get-Location).Path
 
+    # WHY: an alias word opens the alias menu, fed by `furet alias complete`, and is never ranked.
+    if (-not $scoped -and $FuretArgs.Count -eq 1 -and ($FuretArgs[0].StartsWith('!') -or $FuretArgs[0].StartsWith('='))) {
+        $word = $FuretArgs[0]
+        $entries = @(furet alias complete -- $word 2>$null)
+        if ($entries.Count -eq 0) {
+            return
+        }
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $lines = @($entries | fzf --delimiter "`t" --query $word.Substring(1) --preview "furet preview {2}" --preview-window "right,50%")
+            if ($lines.Count -lt 1) {
+                return
+            }
+            $target = ($lines[0] -split "`t", 2)[1]
+        } else {
+            $candidates = @($entries | Select-Object -First 9)
+            Write-Host 'Choose a directory:'
+            for ($i = 0; $i -lt $candidates.Count; $i++) {
+                $name, $path = $candidates[$i] -split "`t", 2
+                Write-Host "  $($i + 1)) $name  $path"
+            }
+            Write-Host 'Enter to confirm, Esc to cancel'
+            $answer = Read-Host
+            if ($answer -notmatch '^[1-9][0-9]*$') {
+                return
+            }
+            $index = [int]$answer
+            if ($index -lt 1 -or $index -gt $candidates.Count) {
+                return
+            }
+            $target = ($candidates[$index - 1] -split "`t", 2)[1]
+        }
+        Set-Location -LiteralPath $target
+        __furet_record $target $from 'jump'
+        return
+    }
+
     if (Get-Command fzf -ErrorAction SilentlyContinue) {
         # WHY: the print-query flag makes fzf prepend the final query line (empty
         # query included), so lines[0] is the query and lines[1] the selection;
@@ -364,5 +400,12 @@ mod tests {
         assert!(rendered.contains("Insert('fm +')"));
         assert!(rendered.contains("Insert('fm -')"));
         assert_eq!(rendered.matches("$line.Length -ne 0").count(), 2);
+    }
+
+    #[test]
+    fn script_fi_opens_the_alias_menu_unscoped() {
+        let rendered = script("f");
+        assert!(rendered.contains("furet alias complete -- $word"));
+        assert!(rendered.contains("furet preview {2}"));
     }
 }

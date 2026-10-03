@@ -294,9 +294,10 @@ alias outils -> C:\apps\ombi\outils
 
 PS C:\dev\furet> furet alias list
 ombi	C:\apps\ombi	2026-10-02T09:14:31
+outils	C:\apps\ombi\outils	2026-10-02T09:15:02
 
-PS C:\dev\furet> furet alias remove ombi
-removed alias ombi
+PS C:\dev\furet> furet alias remove outils
+removed alias outils
 ```
 
 Sans chemin, `alias add` prend le répertoire courant. Un nom qui existe
@@ -347,6 +348,21 @@ PS C:\dev\furet> f !om<Tab>   # propose !ombi  C:\apps\ombi, insère !ombi
 
 Après `-l` ou `-h`, un mot d'alias ne propose rien.
 
+Le choix interactif se fait avec `fi !` : le menu liste chaque alias et
+chaque marque avec son chemin, les marques `1`-`9` en premier. Sans
+fzf, `fi !om` restreint la liste aux noms commençant par `om` :
+
+```text
+Choose a directory:
+  1) !ombi  C:\apps\ombi
+Enter to confirm, Esc to cancel
+```
+
+Avec fzf, `om` devient la requête initiale et le filtrage est flou,
+avec un aperçu du répertoire visé dans la colonne de droite. Comme
+tout saut par alias, un choix n'écrit **aucune** ligne de mémoire des
+requêtes.
+
 ## Les marques
 
 Une marque est un raccourci numéroté (`1` à `9`) posé à la volée, dans
@@ -373,20 +389,8 @@ alias :
 PS C:\dev\ombi> f !1
 PS C:\dev\furet>
 
-PS C:\dev\furet> f !3
-furet: mark 3 not set
-```
-
-La suppression suit `:delm` : `fm -d 2` retire la marque 2, `fm -d 2-4`
-une plage, `fm -d!` toutes les marques (`1`-`9` seulement, jamais un
-alias nommé), sans confirmation :
-
-```powershell
-PS C:\dev\furet> fm -d 2-4
-removed mark 3
-
-PS C:\dev\furet> fm -d!
-removed mark 1
+PS C:\dev\furet> f !5
+furet: mark 5 not set
 ```
 
 Pour enchaîner les marques sans les nommer, `fm +` saute à la marque
@@ -415,7 +419,21 @@ enregistrée) ; si la ligne n'est pas vide, elles ne font que sonner,
 pour ne jamais perdre le texte saisi. Elles n'existent que quand
 PSReadLine est chargé. Tab complète aussi les marques : `f !<Tab>`
 liste chaque alias et marque avec son chemin, mais n'insère que le
-nom (`!1`).
+nom (`!1`). La vue d'ensemble des marques et de leurs chemins se fait
+avec `fi !`, le menu des alias et des marques — voir
+[Les alias](#les-alias).
+
+La suppression suit `:delm` : `fm -d 2` retire la marque 2, `fm -d 2-4`
+une plage, `fm -d!` toutes les marques (`1`-`9` seulement, jamais un
+alias nommé), sans confirmation :
+
+```powershell
+PS C:\dev\furet> fm -d 2-4
+removed mark 3
+
+PS C:\dev\furet> fm -d!
+removed mark 1
+```
 
 Divergence assumée avec Vim : ses marques `'0`-`'9` sont remplies par
 viminfo/shada avec les dernières positions de sortie ; les marques
