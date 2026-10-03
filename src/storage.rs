@@ -834,15 +834,152 @@ pub fn snapshot(
     })
 }
 
+/// What `merge_snapshot` changed.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MergeReport {
+    pub dirs_added: usize,
+    pub visits_added: usize,
+    pub queries_added: usize,
+    pub aliases_added: usize,
+    pub already_present: usize,
+    pub conflicts: Vec<(String, String, String)>,
+}
+
+// WHY: merge_snapshot assumes backup::validate ran; a missing key is a programming error, not user input.
+#[allow(clippy::expect_used)]
+fn local_dir_id(dir_ids: &HashMap<String, i64>, key: &str) -> i64 {
+    *dir_ids
+        .get(key)
+        .expect("the snapshot passed backup::validate: every referenced key exists")
+}
+
+/// Merges a validated snapshot in one transaction; never deletes or
+/// overwrites a local row, except lowering `dirs.first_seen`.
+pub fn merge_snapshot(
+    conn: &mut Connection,
+    snapshot: &Snapshot,
+) -> Result<MergeReport, StorageError> {
+    let mut report = MergeReport::default();
+    let tx = conn.transaction()?;
+    let mut dir_ids: HashMap<String, i64> = HashMap::new();
+    for dir in &snapshot.dirs {
+        match tx.query_row(
+            "SELECT id, first_seen FROM dirs WHERE key = ?1",
+            params![dir.key],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        ) {
+            Ok((id, local_first_seen)) => {
+                if dir.first_seen < local_first_seen {
+                    tx.execute(
+                        "UPDATE dirs SET first_seen = ?1 WHERE id = ?2",
+                        params![dir.first_seen, id],
+                    )?;
+                }
+                report.already_present += 1;
+                dir_ids.insert(dir.key.clone(), id);
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                tx.execute(
+                    "INSERT INTO dirs (path, key, first_seen, missing_since)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![dir.path, dir.key, dir.first_seen, dir.missing_since],
+                )?;
+                report.dirs_added += 1;
+                dir_ids.insert(dir.key.clone(), tx.last_insert_rowid());
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    for visit in &snapshot.visits {
+        let dir_id = local_dir_id(&dir_ids, &visit.dir);
+        let from_dir_id = visit
+            .from_dir
+            .as_deref()
+            .map(|key| local_dir_id(&dir_ids, key));
+        let known: i64 = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM visits
+             WHERE dir_id = ?1 AND ts = ?2 AND source = ?3 AND session = ?4)",
+            params![dir_id, visit.ts, visit.source, visit.session],
+            |row| row.get(0),
+        )?;
+        if known == 0 {
+            tx.execute(
+                "INSERT INTO visits (dir_id, ts, source, session, from_dir_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![dir_id, visit.ts, visit.source, visit.session, from_dir_id],
+            )?;
+            report.visits_added += 1;
+        } else {
+            report.already_present += 1;
+        }
+    }
+    for query in &snapshot.queries {
+        let result_dir_id = query
+            .result_dir
+            .as_deref()
+            .map(|key| local_dir_id(&dir_ids, key));
+        let known: i64 = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM queries
+             WHERE ts = ?1 AND cwd = ?2 AND query = ?3 AND stage = ?4 AND outcome = ?5)",
+            params![query.ts, query.cwd, query.query, query.stage, query.outcome],
+            |row| row.get(0),
+        )?;
+        if known == 0 {
+            tx.execute(
+                "INSERT INTO queries (ts, cwd, query, result_dir_id, stage, outcome)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    query.ts,
+                    query.cwd,
+                    query.query,
+                    result_dir_id,
+                    query.stage,
+                    query.outcome
+                ],
+            )?;
+            report.queries_added += 1;
+        } else {
+            report.already_present += 1;
+        }
+    }
+    for alias in &snapshot.aliases {
+        match tx.query_row(
+            "SELECT name, path FROM aliases WHERE key = ?1",
+            params![alias.key],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        ) {
+            Ok((local_name, local_path)) => {
+                if local_path == alias.path {
+                    report.already_present += 1;
+                } else {
+                    report
+                        .conflicts
+                        .push((local_name, local_path, alias.path.clone()));
+                }
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                tx.execute(
+                    "INSERT INTO aliases (name, key, path, created) VALUES (?1, ?2, ?3, ?4)",
+                    params![alias.name, alias.key, alias.path, alias.created],
+                )?;
+                report.aliases_added += 1;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    tx.commit()?;
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         alias_by_key, alias_listing, config_path, db_path, dir_entries, dir_id_by_key, dir_listing,
         dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
-        last_visited_dir, logs_dir, missing_since_by_id, open, open_at, purge_before, query_log,
-        recall, remove_alias, remove_dirs, resolve_data_dir, set_missing_since, snapshot,
-        stats_counts, top_dirs, upsert_alias, upsert_dir, visit_history, visit_log,
-        visited_dir_back,
+        last_visited_dir, logs_dir, merge_snapshot, missing_since_by_id, open, open_at,
+        purge_before, query_log, recall, remove_alias, remove_dirs, resolve_data_dir,
+        set_missing_since, snapshot, stats_counts, top_dirs, upsert_alias, upsert_dir,
+        visit_history, visit_log, visited_dir_back,
     };
     use crate::backup;
     use crate::clock::Timestamp;
@@ -2042,12 +2179,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn snapshot_exports_every_table_with_keys_for_references() {
-        let (_dir, path) = temp_db();
-        let mut conn = opened(&path);
-        let alpha = insert_dir(&conn, "C:\\dev\\alpha", "c:\\dev\\alpha");
-        let gone = insert_dir(&conn, "C:\\dev\\gone", "c:\\dev\\gone");
+    fn seed_snapshot_fixture(conn: &Connection) {
+        let alpha = insert_dir(conn, "C:\\dev\\alpha", "c:\\dev\\alpha");
+        let gone = insert_dir(conn, "C:\\dev\\gone", "c:\\dev\\gone");
         conn.execute(
             "UPDATE dirs SET missing_since = 900 WHERE id = ?1",
             params![gone],
@@ -2076,9 +2210,16 @@ mod tests {
             [],
         )
         .expect("the failed query inserts");
-        upsert_alias(&conn, "Ombi", "ombi", "C:\\dev\\alpha", at(50))
+        upsert_alias(conn, "Ombi", "ombi", "C:\\dev\\alpha", at(50))
             .expect("the fixture alias upserts");
-        upsert_alias(&conn, "3", "3", "C:\\dev\\gone", at(60)).expect("the fixture mark upserts");
+        upsert_alias(conn, "3", "3", "C:\\dev\\gone", at(60)).expect("the fixture mark upserts");
+    }
+
+    #[test]
+    fn snapshot_exports_every_table_with_keys_for_references() {
+        let (_dir, path) = temp_db();
+        let mut conn = opened(&path);
+        seed_snapshot_fixture(&conn);
 
         let exported = snapshot(&mut conn, "0.3.0", 1_759_500_000).expect("the snapshot reads");
 
@@ -2163,6 +2304,135 @@ mod tests {
                 },
             ],
             "aliases and marks are ordered by key"
+        );
+    }
+
+    #[test]
+    fn merge_snapshot_into_an_empty_database_reproduces_the_snapshot() {
+        let (_dir, path) = temp_db();
+        {
+            let conn = opened(&path);
+            seed_snapshot_fixture(&conn);
+        }
+        let mut source = opened(&path);
+        let exported =
+            snapshot(&mut source, "0.3.0", 1_759_500_000).expect("the source database exports");
+
+        let (_dst, dst_path) = temp_db();
+        let mut dst = opened(&dst_path);
+        let report = merge_snapshot(&mut dst, &exported).expect("the merge runs");
+        assert_eq!(
+            report,
+            super::MergeReport {
+                dirs_added: 2,
+                visits_added: 2,
+                queries_added: 2,
+                aliases_added: 2,
+                already_present: 0,
+                conflicts: Vec::new(),
+            },
+            "an empty database takes every record"
+        );
+
+        let re_exported =
+            snapshot(&mut dst, "0.3.0", 1_759_500_000).expect("the merged database exports");
+        assert_eq!(exported, re_exported, "the merge reproduces the snapshot");
+    }
+
+    #[test]
+    fn merge_snapshot_twice_adds_nothing_and_keeps_local_rows() {
+        let (_dir, path) = temp_db();
+        {
+            let conn = opened(&path);
+            seed_snapshot_fixture(&conn);
+        }
+        let mut source = opened(&path);
+        let exported =
+            snapshot(&mut source, "0.3.0", 1_759_500_000).expect("the source database exports");
+
+        let (_dst, dst_path) = temp_db();
+        let mut dst = opened(&dst_path);
+        merge_snapshot(&mut dst, &exported).expect("the first merge runs");
+
+        let second = merge_snapshot(&mut dst, &exported).expect("the second merge runs");
+        assert_eq!(
+            second,
+            super::MergeReport {
+                dirs_added: 0,
+                visits_added: 0,
+                queries_added: 0,
+                aliases_added: 0,
+                already_present: 8,
+                conflicts: Vec::new(),
+            },
+            "every record of the snapshot is already present"
+        );
+
+        dst.execute(
+            "UPDATE aliases SET name = 'ombi', path = 'C:\\local\\ombi' WHERE key = 'ombi'",
+            [],
+        )
+        .expect("the local alias is repathed");
+        let conflicted = merge_snapshot(&mut dst, &exported).expect("the third merge runs");
+        assert_eq!(
+            conflicted.aliases_added, 0,
+            "the local alias is not replaced"
+        );
+        assert_eq!(
+            conflicted.conflicts,
+            vec![(
+                "ombi".to_owned(),
+                "C:\\local\\ombi".to_owned(),
+                "C:\\dev\\alpha".to_owned(),
+            )],
+            "the conflict carries the local name, the local path, the exported path"
+        );
+        let kept: String = dst
+            .query_row("SELECT path FROM aliases WHERE key = 'ombi'", [], |row| {
+                row.get(0)
+            })
+            .expect("the kept alias reads back");
+        assert_eq!(kept, "C:\\local\\ombi", "the local alias target is kept");
+
+        let exported_alpha_first_seen = exported.dirs[0].first_seen;
+        assert_eq!(exported.dirs[0].key, "c:\\dev\\alpha");
+        dst.execute(
+            "UPDATE dirs SET first_seen = 1700000500 WHERE key = 'c:\\dev\\alpha'",
+            [],
+        )
+        .expect("the local first_seen is bumped");
+        let lowered = merge_snapshot(&mut dst, &exported).expect("the fourth merge runs");
+        assert_eq!(lowered.dirs_added, 0);
+        let first_seen: i64 = dst
+            .query_row(
+                "SELECT first_seen FROM dirs WHERE key = 'c:\\dev\\alpha'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the first_seen reads back");
+        assert_eq!(
+            first_seen, exported_alpha_first_seen,
+            "a later local first_seen is lowered to the exported one"
+        );
+
+        dst.execute(
+            "UPDATE dirs SET missing_since = 1700003000 WHERE key = 'c:\\dev\\alpha'",
+            [],
+        )
+        .expect("the local dir is marked missing");
+        let kept_missing = merge_snapshot(&mut dst, &exported).expect("the fifth merge runs");
+        assert_eq!(kept_missing.dirs_added, 0);
+        let missing_since: Option<i64> = dst
+            .query_row(
+                "SELECT missing_since FROM dirs WHERE key = 'c:\\dev\\alpha'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the kept marker reads back");
+        assert_eq!(
+            missing_since,
+            Some(1_700_003_000),
+            "the local missing_since stays; the exported None does not clear it"
         );
     }
 }

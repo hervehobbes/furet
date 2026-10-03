@@ -251,8 +251,18 @@ furet export > furet-backup.json
 ```
 
 The output is pure ASCII (every non-ASCII character is escaped), so the
-redirection cannot corrupt an accented path. The matching import that
-restores this file on another machine comes in the next lot.
+redirection cannot corrupt an accented path. Restore it on another
+machine (or after a reinstall) — the import is an idempotent merge, never
+a replacement:
+
+```powershell
+Get-Content furet-backup.json -Raw | furet import json
+```
+
+Directories are united by key; visits and queries are added without
+duplicates, so importing the same file twice adds nothing; an alias that
+already exists keeps its local target, and the conflict is reported on
+stderr.
 
 ## Configuration
 
@@ -355,6 +365,9 @@ that wrapper: the fixed-name `fh` prints the session history (`fh -a`
 for every session, `fh -n <N>` for a limit) without typing
 `furet history`. Lot 67 adds `furet export`: the whole database as
 versioned JSON on stdout, pure ASCII so a redirect keeps every accented
-path; the import of that file is the next lot.
+path; the import of that file is the next lot. Lot 68 completes the
+backup pair: `furet import json` merges a `furet export` file
+idempotently — directories united by key, visits and queries
+deduplicated, local aliases kept on conflict.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

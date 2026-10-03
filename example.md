@@ -775,7 +775,7 @@ de façon fiable. Un `~` initial désigne le profil utilisateur (pas le
 `home` configuré). Relancer l'import n'ajoute rien : les répertoires déjà
 connus sont ignorés.
 
-### Sauvegarder la base
+### Sauvegarder et restaurer la base
 
 Pour sauvegarder toute la base, ou la passer d'une machine à l'autre :
 
@@ -785,8 +785,25 @@ PS C:\dev\furet> furet export > furet-backup.json
 
 Le fichier contient la base entière en JSON versionné — répertoires,
 visites, journal des requêtes et alias — avec chaque caractère non-ASCII
-échappé, donc purement ASCII. L'import correspondant arrive au prochain
-lot (68).
+échappé, donc purement ASCII.
+
+Pour restaurer ce fichier sur une autre machine, ou après une réinstallation :
+
+```powershell
+PS C:\dev\furet> Get-Content furet-backup.json -Raw | furet import json
+added 12 dirs, 30 visits, 8 queries, 2 aliases; 0 already present; 0 alias conflicts
+```
+
+L'import est une fusion idempotente, jamais un remplacement : importer le
+même fichier une deuxième fois n'ajoute rien. Un alias qui existe déjà ici
+garde sa cible locale, et le conflit est signalé sur stderr :
+
+```
+furet: alias 'om' kept: C:\dev\ombi (export has C:\dev\alpha)
+```
+
+Les répertoires venus d'une autre machine mais absents de celle-ci seront
+marqués manquants comme n'importe quel autre.
 
 ### Remonter ou revenir en arrière sans le hook
 

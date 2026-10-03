@@ -196,6 +196,53 @@ fn export(sandbox: &Sandbox) -> Output {
     run(&mut cmd)
 }
 
+fn import_json(sandbox: &Sandbox, stdin: &str) -> Output {
+    let mut cmd = sandbox.furet();
+    cmd.arg("import").arg("json").write_stdin(stdin);
+    run(&mut cmd)
+}
+
+// WHY: the lot pins one shared fixture: the same data as lot 67's export test.
+fn seed_export_source(sandbox: &Sandbox) {
+    assert!(
+        add(sandbox, &sandbox.child("alpha"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        add(
+            sandbox,
+            &sandbox.child("beta"),
+            "session-1",
+            None,
+            Some(&sandbox.child("alpha"))
+        )
+        .status
+        .success()
+    );
+    assert!(
+        query(sandbox, "alp", sandbox.tree.path(), false)
+            .status
+            .success()
+    );
+    assert!(
+        alias(sandbox, &["add", "om", "alpha"], sandbox.tree.path())
+            .status
+            .success()
+    );
+    assert!(
+        mark(sandbox, &["set", "3", "beta"], sandbox.tree.path())
+            .status
+            .success()
+    );
+}
+
+fn export_value(sandbox: &Sandbox) -> serde_json::Value {
+    let out = export(sandbox);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    serde_json::from_str(&text(&out.stdout)).expect("the export parses as JSON")
+}
+
 fn write_config(sandbox: &Sandbox, contents: &str) {
     std::fs::write(sandbox.data.path().join("config.toml"), contents)
         .expect("the config file is written");
@@ -6314,4 +6361,214 @@ fn export_writes_nothing() {
     let out = export(&world);
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert_eq!(before, counts(), "export must not write any row");
+}
+
+#[test]
+fn import_json_round_trips_an_export_into_an_empty_database() {
+    let src = sandbox(&["alpha", "beta"]);
+    seed_export_source(&src);
+    let exported = export_value(&src);
+
+    let dst = sandbox(&[]);
+    let payload = serde_json::to_string(&exported).expect("the export re-serializes");
+    let out = import_json(&dst, &payload);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stdout.is_empty(), "stdout: {}", text(&out.stdout));
+    let queries = exported["queries"]
+        .as_array()
+        .expect("queries is an array")
+        .len();
+    assert_eq!(
+        text(&out.stderr),
+        format!(
+            "added 2 dirs, 2 visits, {queries} queries, 2 aliases; 0 already present; 0 alias conflicts\n"
+        )
+    );
+
+    let mut src_copy = exported;
+    let mut dst_copy = export_value(&dst);
+    src_copy
+        .as_object_mut()
+        .expect("the export is an object")
+        .remove("exported_at");
+    dst_copy
+        .as_object_mut()
+        .expect("the export is an object")
+        .remove("exported_at");
+    assert_eq!(
+        src_copy, dst_copy,
+        "the merged database exports the same rows"
+    );
+}
+
+#[test]
+fn import_json_twice_adds_nothing_the_second_time() {
+    let src = sandbox(&["alpha", "beta"]);
+    seed_export_source(&src);
+    let exported = export_value(&src);
+    let payload = serde_json::to_string(&exported).expect("the export re-serializes");
+
+    let dst = sandbox(&[]);
+    let first = import_json(&dst, &payload);
+    assert!(first.status.success(), "stderr: {}", text(&first.stderr));
+    let records: Vec<(String, i64)> = ["dirs", "visits", "queries", "aliases"]
+        .into_iter()
+        .map(|table| {
+            (
+                table.to_owned(),
+                scalar(&db(&dst), &format!("SELECT COUNT(*) FROM {table}")),
+            )
+        })
+        .collect();
+    let total: usize = ["dirs", "visits", "queries", "aliases"]
+        .iter()
+        .map(|table| exported[table].as_array().expect("an array").len())
+        .sum();
+
+    let second = import_json(&dst, &payload);
+    assert!(second.status.success(), "stderr: {}", text(&second.stderr));
+    assert!(text(&second.stdout).is_empty());
+    assert_eq!(
+        text(&second.stderr),
+        format!(
+            "added 0 dirs, 0 visits, 0 queries, 0 aliases; {total} already present; 0 alias conflicts\n"
+        )
+    );
+    for (table, count) in records {
+        assert_eq!(
+            scalar(&db(&dst), &format!("SELECT COUNT(*) FROM {table}")),
+            count,
+            "{table} must be unchanged"
+        );
+    }
+}
+
+#[test]
+fn import_json_merges_and_keeps_local_aliases() {
+    let src = sandbox(&["alpha", "beta"]);
+    seed_export_source(&src);
+    let exported = export_value(&src);
+    let payload = serde_json::to_string(&exported).expect("the export re-serializes");
+
+    let dst = sandbox(&["x"]);
+    assert!(
+        add(&dst, &dst.child("x"), "session-1", None, None)
+            .status
+            .success()
+    );
+    assert!(
+        alias(&dst, &["add", "om", "x"], dst.tree.path())
+            .status
+            .success()
+    );
+
+    let out = import_json(&dst, &payload);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let kept_line = format!(
+        "furet: alias 'om' kept: {} (export has {})",
+        paths::canonical(&dst.child("x"))
+            .expect("x canonicalizes")
+            .path,
+        paths::canonical(&src.child("alpha"))
+            .expect("alpha canonicalizes")
+            .path,
+    );
+    assert_eq!(
+        text(&out.stderr)
+            .lines()
+            .filter(|line| *line == kept_line)
+            .count(),
+        1,
+        "exactly one conflict line: {}",
+        text(&out.stderr)
+    );
+    assert!(
+        text(&out.stderr).ends_with("; 1 alias conflicts\n"),
+        "stderr: {}",
+        text(&out.stderr)
+    );
+
+    let conn = db(&dst);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM dirs"), 3);
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM visits"), 3);
+    let queries = exported["queries"]
+        .as_array()
+        .expect("queries is an array")
+        .len();
+    assert_eq!(
+        scalar(&conn, "SELECT COUNT(*) FROM queries") as usize,
+        queries
+    );
+    assert_eq!(scalar(&conn, "SELECT COUNT(*) FROM aliases"), 2);
+    let om_target: String = conn
+        .query_row("SELECT path FROM aliases WHERE key = 'om'", [], |row| {
+            row.get(0)
+        })
+        .expect("the local alias reads back");
+    assert_eq!(
+        om_target,
+        paths::canonical(&dst.child("x"))
+            .expect("x canonicalizes")
+            .path,
+        "om still points to the local target"
+    );
+}
+
+#[test]
+fn import_json_rejects_invalid_input_and_writes_nothing() {
+    let src = sandbox(&["alpha", "beta"]);
+    seed_export_source(&src);
+    let good = export_value(&src);
+    let mut version_2 = good.clone();
+    version_2["version"] = serde_json::Value::from(2);
+    let mut dangling_dir = good.clone();
+    dangling_dir["visits"][0]["dir"] = serde_json::Value::from("nowhere");
+    let mut teleport = good;
+    teleport["visits"][0]["source"] = serde_json::Value::from("teleport");
+    let cases = [
+        ("empty stdin", String::new()),
+        ("not json", "not json".to_owned()),
+        (
+            "version 2",
+            serde_json::to_string(&version_2).expect("the variant serializes"),
+        ),
+        (
+            "dangling dir",
+            serde_json::to_string(&dangling_dir).expect("the variant serializes"),
+        ),
+        (
+            "teleport",
+            serde_json::to_string(&teleport).expect("the variant serializes"),
+        ),
+    ];
+    for (name, payload) in cases {
+        let dst = sandbox(&[]);
+        let setup = run(dst.furet().arg("list"));
+        assert!(setup.status.success(), "stderr: {}", text(&setup.stderr));
+        let out = import_json(&dst, &payload);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{name}: stderr: {}",
+            text(&out.stderr)
+        );
+        assert!(
+            text(&out.stderr).starts_with("furet: "),
+            "{name}: stderr: {}",
+            text(&out.stderr)
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "{name}: stdout: {}",
+            text(&out.stdout)
+        );
+        let conn = db(&dst);
+        for table in ["dirs", "visits", "queries", "aliases"] {
+            assert_eq!(
+                scalar(&conn, &format!("SELECT COUNT(*) FROM {table}")),
+                0,
+                "{name}: {table} must stay empty"
+            );
+        }
+    }
 }

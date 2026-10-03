@@ -2070,3 +2070,33 @@ fn export_redirected_by_pwsh_keeps_an_accented_path() {
         "the accented path round-trips through the pwsh redirection"
     );
 }
+
+#[test]
+fn export_then_import_json_through_pwsh_round_trips_an_accented_path() {
+    let world = sandbox(&["réf"]);
+    seed(&world, &world.child("réf"), "session-1");
+    let other = sandbox(&[]);
+    let backup = world.tree.path().join("backup.json");
+    let body = format!(
+        "furet export > {file}\n$env:FURET_DATA_DIR = {data}\nGet-Content {file} -Raw | furet import json",
+        file = quote(&backup),
+        data = quote(other.data.path()),
+    );
+    let run = run_pwsh(&world, "", "", world.tree.path(), &body);
+    assert!(
+        run.stderr
+            .contains("added 1 dirs, 1 visits, 0 queries, 0 aliases"),
+        "stderr: {}",
+        run.stderr
+    );
+    let stored: String = {
+        let conn = db(&other);
+        conn.query_row("SELECT path FROM dirs", [], |row| row.get(0))
+            .expect("the imported directory reads back")
+    };
+    assert_eq!(
+        stored,
+        canonical(&world.child("réf")),
+        "the accented path is stored byte for byte"
+    );
+}

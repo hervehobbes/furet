@@ -72,3 +72,4 @@
 | 65 | `furet history`: visit history numbered like `f -N` |
 | 66 | pwsh `fh`: session history numbered like `f -N` |
 | 67 | `furet export`: the whole database as versioned JSON |
+| 68 | `furet import json`: idempotent merge of a furet export |

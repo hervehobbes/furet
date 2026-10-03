@@ -13,6 +13,7 @@ Arguments:
           Possible values:
           - zoxide:       Import from `zoxide query -ls` on stdin
           - pwsh-history: Import cd-like lines from a PSReadLine history on stdin
+          - json:         Merge a `furet export` JSON document read from stdin
 
 Options:
   -h, --help

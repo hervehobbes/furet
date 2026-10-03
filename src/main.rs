@@ -271,6 +271,8 @@ enum ImportSource {
     Zoxide,
     /// Import cd-like lines from a PSReadLine history on stdin.
     PwshHistory,
+    /// Merge a `furet export` JSON document read from stdin.
+    Json,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -367,6 +369,7 @@ fn main() {
         Command::Import { source } => report(match source {
             ImportSource::Zoxide => import_zoxide(),
             ImportSource::PwshHistory => import_pwsh_history(),
+            ImportSource::Json => import_json(),
         }),
         Command::Export => report(export_command()),
         Command::Preview { path } => report(preview_command(&path)),
@@ -1215,6 +1218,40 @@ fn import_zoxide() -> Result<(), Box<dyn Error>> {
     );
     eprintln!(
         "imported {imported}, skipped {skipped} (known {known}, not a directory {not_a_directory}, malformed {malformed}, duplicate {duplicate}, excluded {excluded})"
+    );
+    Ok(())
+}
+
+fn import_json() -> Result<(), Box<dyn Error>> {
+    debug!("import json");
+    let mut raw = Vec::new();
+    io::stdin().read_to_end(&mut raw)?;
+    let text = String::from_utf8(raw).map_err(|_| "invalid export: not UTF-8")?;
+    let snapshot: backup::Snapshot =
+        serde_json::from_str(&text).map_err(|error| format!("invalid export: {error}"))?;
+    backup::validate(&snapshot)?;
+    let mut conn = storage::open()?;
+    let report = storage::merge_snapshot(&mut conn, &snapshot)?;
+    for (name, local, exported) in &report.conflicts {
+        eprintln!("furet: alias '{name}' kept: {local} (export has {exported})");
+    }
+    eprintln!(
+        "added {} dirs, {} visits, {} queries, {} aliases; {} already present; {} alias conflicts",
+        report.dirs_added,
+        report.visits_added,
+        report.queries_added,
+        report.aliases_added,
+        report.already_present,
+        report.conflicts.len()
+    );
+    info!(
+        dirs = report.dirs_added,
+        visits = report.visits_added,
+        queries = report.queries_added,
+        aliases = report.aliases_added,
+        already_present = report.already_present,
+        conflicts = report.conflicts.len(),
+        "import json"
     );
     Ok(())
 }

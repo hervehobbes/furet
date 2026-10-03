@@ -1,4 +1,14 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 68 — `furet import json`: `backup::validate` (format/version, then dangling dir
+references, first failure wins), `storage::merge_snapshot` (one transaction; dirs united by
+key with `first_seen` lowered and local `path`/`missing_since` kept, visits and queries
+deduped, alias conflicts keep the local row) and `ImportSource::Json` + `import_json`
+(conflict lines then the summary on stderr, stdout empty). 1 backup + 2 storage unit, 4 cli,
+1 pwsh tests written first (--lib failed to compile pre-change; cli/pwsh on clap's invalid
+value). Mutations A/B/C/D caught; D's dangling-key case = exit 101 panic (validate is the
+guard). Decision: a conflict reports the LOCAL alias name. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 67 — `furet export`: `backup::Snapshot` + `escape_non_ascii` (pretty JSON, every
 non-ASCII char as `\uXXXX`, output pure ASCII), `storage::snapshot` (one transaction, LEFT JOIN
 on dirs, references by key, orders: dirs by key, visits/queries by ts,id, aliases by key) and

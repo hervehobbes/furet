@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 /// The `format` marker every export carries.
@@ -90,6 +92,43 @@ pub fn escape_non_ascii(json: &str) -> String {
     escaped
 }
 
+/// Checks the format, the version and that every directory reference names
+/// a key present in `dirs`; the error is the message after `furet: `.
+pub fn validate(snapshot: &Snapshot) -> Result<(), String> {
+    if snapshot.format != FORMAT || snapshot.version != VERSION {
+        return Err(format!(
+            "unsupported export (format '{}', version {}); expected furet-export version 1",
+            snapshot.format, snapshot.version
+        ));
+    }
+    let keys: HashSet<&str> = snapshot.dirs.iter().map(|dir| dir.key.as_str()).collect();
+    for (index, visit) in snapshot.visits.iter().enumerate() {
+        if !keys.contains(visit.dir.as_str()) {
+            return Err(format!(
+                "invalid export: visit {index} references unknown directory '{}'",
+                visit.dir
+            ));
+        }
+        if let Some(from) = &visit.from_dir
+            && !keys.contains(from.as_str())
+        {
+            return Err(format!(
+                "invalid export: visit {index} references unknown directory '{from}'"
+            ));
+        }
+    }
+    for (index, query) in snapshot.queries.iter().enumerate() {
+        if let Some(result) = &query.result_dir
+            && !keys.contains(result.as_str())
+        {
+            return Err(format!(
+                "invalid export: query {index} references unknown directory '{result}'"
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     // WHY: this is test code exercising the pure renderer.
@@ -97,7 +136,7 @@ mod tests {
 
     use super::{
         AliasRecord, DirRecord, FORMAT, QueryRecord, Snapshot, VERSION, VisitRecord,
-        escape_non_ascii, render,
+        escape_non_ascii, render, validate,
     };
 
     #[test]
@@ -179,5 +218,108 @@ mod tests {
         let parsed: Snapshot =
             serde_json::from_str(&rendered).expect("the rendered JSON parses back");
         assert_eq!(parsed, snapshot);
+    }
+
+    fn consistent_snapshot() -> Snapshot {
+        Snapshot {
+            format: FORMAT.to_owned(),
+            version: VERSION,
+            furet: "0.3.0".to_owned(),
+            exported_at: 1_759_500_000,
+            dirs: vec![
+                DirRecord {
+                    path: "C:\\dev\\alpha".to_owned(),
+                    key: "c:\\dev\\alpha".to_owned(),
+                    first_seen: 1_759_000_000,
+                    missing_since: None,
+                },
+                DirRecord {
+                    path: "C:\\dev\\beta".to_owned(),
+                    key: "c:\\dev\\beta".to_owned(),
+                    first_seen: 1_759_000_100,
+                    missing_since: Some(1_759_100_000),
+                },
+            ],
+            visits: vec![
+                VisitRecord {
+                    dir: "c:\\dev\\alpha".to_owned(),
+                    ts: 10,
+                    source: "hook".to_owned(),
+                    session: "s".to_owned(),
+                    from_dir: None,
+                },
+                VisitRecord {
+                    dir: "c:\\dev\\beta".to_owned(),
+                    ts: 20,
+                    source: "jump".to_owned(),
+                    session: "s".to_owned(),
+                    from_dir: Some("c:\\dev\\alpha".to_owned()),
+                },
+            ],
+            queries: vec![QueryRecord {
+                ts: 30,
+                cwd: "C:\\dev".to_owned(),
+                query: "al".to_owned(),
+                result_dir: Some("c:\\dev\\beta".to_owned()),
+                stage: "1".to_owned(),
+                outcome: "jump".to_owned(),
+            }],
+            aliases: vec![AliasRecord {
+                name: "Ombi".to_owned(),
+                key: "ombi".to_owned(),
+                path: "C:\\dev\\alpha".to_owned(),
+                created: 1_759_000_200,
+            }],
+        }
+    }
+
+    #[test]
+    fn validate_accepts_a_consistent_snapshot_and_names_the_first_problem() {
+        assert_eq!(validate(&consistent_snapshot()), Ok(()));
+
+        let mut wrong_format = consistent_snapshot();
+        wrong_format.format = "furet-backup".to_owned();
+        assert_eq!(
+            validate(&wrong_format),
+            Err("unsupported export (format 'furet-backup', version 1); expected furet-export version 1".to_owned())
+        );
+
+        let mut version_2 = consistent_snapshot();
+        version_2.version = 2;
+        assert_eq!(
+            validate(&version_2),
+            Err("unsupported export (format 'furet-export', version 2); expected furet-export version 1".to_owned())
+        );
+
+        let mut dangling_visit = consistent_snapshot();
+        dangling_visit.visits[1].dir = "nowhere".to_owned();
+        assert_eq!(
+            validate(&dangling_visit),
+            Err("invalid export: visit 1 references unknown directory 'nowhere'".to_owned())
+        );
+
+        let mut dangling_from = consistent_snapshot();
+        dangling_from.visits[0].from_dir = Some("nowhere".to_owned());
+        assert_eq!(
+            validate(&dangling_from),
+            Err("invalid export: visit 0 references unknown directory 'nowhere'".to_owned())
+        );
+
+        let mut dangling_query = consistent_snapshot();
+        dangling_query.queries[0].result_dir = Some("nowhere".to_owned());
+        assert_eq!(
+            validate(&dangling_query),
+            Err("invalid export: query 0 references unknown directory 'nowhere'".to_owned())
+        );
+
+        let mut version_2_and_dangling = dangling_query;
+        version_2_and_dangling.version = 2;
+        assert!(
+            matches!(
+                validate(&version_2_and_dangling),
+                Err(message) if message.starts_with("unsupported export")
+            ),
+            "the version is checked before the references"
+        );
     }
 }

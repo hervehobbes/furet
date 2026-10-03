@@ -722,8 +722,8 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   **ninth** accepted stdout exception (Hervé, 2026-10-03), same
   justification as `furet list`: a reporting tool whose output is never
   piped into `Set-Location`; the user redirects it (`furet export >
-  furet-backup.json`). Lot 68's `furet import json` will read this exact
-  format from stdin. Everything is exported: `dirs`, `visits`, `queries`
+  furet-backup.json`). `furet import json` reads this exact
+  format from stdin (see its entry below). Everything is exported: `dirs`, `visits`, `queries`
   (query memory, SPEC-v2 §24 — it takes part in ranking) and `aliases`
   (marks included). Read-only and write-free: the four tables are read
   inside **one transaction** (`conn.transaction()`), so a hook writing
@@ -983,6 +983,57 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   line (`imported N, skipped M (known K, not a directory D, relative R,
   duplicate Y, excluded E)`) goes to stderr; one transaction for the whole
   import; no `queries` journal entry.
+- `furet import json` — reads a `furet export` JSON document from stdin
+  (`Get-Content furet-backup.json -Raw | furet import json`), parses it
+  into `backup::Snapshot`, validates it (`backup::validate`), and merges
+  it into the database in **one transaction** (`storage::merge_snapshot`)
+  — an **idempotent merge, never a replacement** (Hervé, 2026-10-03).
+  Non-UTF-8 stdin fails with `furet: invalid export: not UTF-8`;
+  unparsable JSON with `furet: invalid export: {serde error}` — both
+  before the database is even opened. Validation stops at the first
+  problem, before anything is written: a format or version mismatch fails
+  with `furet: unsupported export (format '<format>', version
+  <version>); expected furet-export version 1`; a `visits[i].dir`,
+  `visits[i].from_dir` or `queries[i].result_dir` (`i` 0-based, `null`
+  exempt) naming a key absent from `dirs` fails with `furet: invalid
+  export: visit|query <i> references unknown directory '<key>'`. The
+  merge, table by table:
+  - `dirs` are united by key, in file order: an absent key is inserted as
+    exported (`path`, `first_seen`, `missing_since` included — no
+    reconcile, the flag is taken as is) and counts in `dirs_added`; a
+    present key keeps its local `path` and `missing_since`, and only its
+    `first_seen` can move — when the exported one is smaller, the local
+    one is lowered to it. Either way it counts in `already_present`, and
+    the key→local-id map built here resolves the references below.
+  - `visits` are added without duplicates: a row with the same `dir_id`,
+    `ts`, `source` and `session` (references mapped through that key→id
+    map) counts in `already_present`; any other is inserted with its
+    mapped `from_dir_id` and counts in `visits_added`.
+  - `queries` likewise: a row with the same `ts`, `cwd`, `query`, `stage`
+    and `outcome` counts in `already_present`; any other is inserted with
+    its mapped `result_dir_id` and counts in `queries_added`.
+  - `aliases` (marks included): an absent key is inserted and counts in
+    `aliases_added`; a present key with the same `path` counts in
+    `already_present`; a present key with a different `path` keeps the
+    local row untouched and pushes a conflict. Each conflict is reported
+    on stderr, in file order, as `furet: alias '<name>' kept: <local
+    path> (export has <exported path>)` — `<name>` is the kept local
+    row's name — followed by the summary line `added <d> dirs, <v>
+    visits, <q> queries, <a> aliases; <p> already present; <c> alias
+    conflicts`, also on stderr, with the same counts logged through
+    `info!`; stdout stays empty.
+  A CHECK violation, such as an unknown `source` or `stage` in a
+  hand-edited file, is a SQLite error: the transaction rolls back and
+  nothing is written (`import_json_rejects_invalid_input_and_writes_nothing`).
+  The merge does not apply `exclude_dirs`, the retention purge
+  or the soft-delete reconcile — the next `furet add` purges per
+  `retention_days` as usual, and directories imported from another
+  machine that are absent from this one are marked missing like any
+  other. Importing the same file twice adds nothing the second time
+  (`import_json_twice_adds_nothing_the_second_time`,
+  `merge_snapshot_twice_adds_nothing_and_keeps_local_rows`); merging a
+  snapshot into an empty database reproduces the export exactly
+  (`merge_snapshot_into_an_empty_database_reproduces_the_snapshot`).
 - `furet preview <path>` — lists a directory's contents for fzf's preview
   pane (SPEC-v2 §23) **to stdout** — the fourth accepted stdout exception:
   unlike the three reporting exceptions above it is called by `fi`, but
@@ -1042,6 +1093,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `mark next` / `mark prev` | an eligible mark exists and its path is printed (`mark_next_and_prev_follow_the_digits_skipping_holes`, `mark_next_and_prev_wrap_around`, `mark_cycling_from_an_unmarked_directory_starts_at_an_end`, `mark_cycling_to_a_single_mark_from_elsewhere`) | no mark set (`mark_cycling_without_any_mark_fails`), no eligible mark — missing marks skipped with `furet: skipped mark <d>: missing directory` (`mark_cycling_skips_a_missing_directory_with_a_stderr_line`, `mark_cycling_with_nothing_eligible_fails`), or a DB error |
 | `import zoxide` | always once stdin is read and the transaction commits, including empty input or everything skipped (`importing_empty_stdin_exits_zero_and_imports_nothing`, `a_missing_path_a_file_and_a_malformed_line_are_each_skipped_and_counted`) | a stdin read error or a DB error |
 | `import pwsh-history` | always once stdin is read and the transaction commits, including empty input or everything skipped (`import_pwsh_history_of_empty_stdin_imports_nothing`, `import_pwsh_history_counts_relative_and_missing_paths`) | a stdin read error or a DB error |
+| `import json` | always once stdin parses, validates and the transaction commits, including an empty snapshot and nothing new (`import_json_round_trips_an_export_into_an_empty_database`) | input that is not UTF-8 or not valid JSON, an unsupported format or version, a dangling directory reference (`import_json_rejects_invalid_input_and_writes_nothing`), a rolled-back merge (CHECK violation) or a DB error |
 | `preview <path>` | always — a directory lists up to 50 lines plus `… +K more`; a missing path or a file prints `(not a directory)`, an unreadable directory `(unreadable: …)` (`preview_of_a_missing_path_or_a_file_says_not_a_directory`) | — |
 
 ### Accepted spec discrepancies
