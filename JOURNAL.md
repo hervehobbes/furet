@@ -1,4 +1,10 @@
 ## 2026-10-03 — branch main — v0.3.0
+Done: lot 68b — reviewer CHANGES REQUIRED on lot 68: `backup::validate` now checks every
+`visits[i].dir` before any `visits[i].from_dir` (two loops, messages unchanged); one appended
+test case pins the order and failed pre-change. CONTRACTS: `stdout_line` is the only holder of
+the `print_stdout` allow; export entry line re-wrapped. Executor: GLM 5.3 Flash.
+Next: reviewer pass; lots 67, 68, 68b pushed together if approved.
+## 2026-10-03 — branch main — v0.3.0
 Done: lot 68 — `furet import json`: `backup::validate` (format/version, then dangling dir
 references, first failure wins), `storage::merge_snapshot` (one transaction; dirs united by
 key with `first_seen` lowered and local `path`/`missing_since` kept, visits and queries

@@ -109,6 +109,8 @@ pub fn validate(snapshot: &Snapshot) -> Result<(), String> {
                 visit.dir
             ));
         }
+    }
+    for (index, visit) in snapshot.visits.iter().enumerate() {
         if let Some(from) = &visit.from_dir
             && !keys.contains(from.as_str())
         {
@@ -320,6 +322,15 @@ mod tests {
                 Err(message) if message.starts_with("unsupported export")
             ),
             "the version is checked before the references"
+        );
+
+        let mut ghost_order = consistent_snapshot();
+        ghost_order.visits[0].from_dir = Some("ghost1".to_owned());
+        ghost_order.visits[1].dir = "ghost2".to_owned();
+        assert_eq!(
+            validate(&ghost_order),
+            Err("invalid export: visit 1 references unknown directory 'ghost2'".to_owned()),
+            "every dir is checked before any from_dir"
         );
     }
 }

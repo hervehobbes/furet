@@ -308,9 +308,9 @@ exceptions below. Every invocation also writes structured logs to
 `<data dir>/logs/` (SPEC §17) — never to stdout or stderr. The rule is
 compile-time enforced: `clippy::print_stdout` + `disallowed-methods` on
 `std::io::stdout` (`[lints]` in `Cargo.toml`, `clippy.toml`), with every
-write funnelled through `stdout_line` in `src/main.rs`, the only
-`#[allow]` holder. `unsafe_code` is `deny`, not `forbid`, because
-`storage.rs`'s `furet_data_dir_overrides_the_database_location` test
+write funnelled through `stdout_line` in `src/main.rs`, the only holder
+of the `print_stdout` allow. `unsafe_code` is `deny`, not `forbid`,
+because `storage.rs`'s `furet_data_dir_overrides_the_database_location` test
 needs edition-2024 `unsafe` env mutation (one fn-scoped allow). Outside
 the binary, `build.rs` holds the one other `print_stdout` allow —
 fn-scoped on its `main`, for the `cargo:rustc-env` directive a build
@@ -723,9 +723,10 @@ them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
   justification as `furet list`: a reporting tool whose output is never
   piped into `Set-Location`; the user redirects it (`furet export >
   furet-backup.json`). `furet import json` reads this exact
-  format from stdin (see its entry below). Everything is exported: `dirs`, `visits`, `queries`
-  (query memory, SPEC-v2 §24 — it takes part in ranking) and `aliases`
-  (marks included). Read-only and write-free: the four tables are read
+  format from stdin (see its entry below). Everything is exported:
+  `dirs`, `visits`, `queries` (query memory, SPEC-v2 §24 — it takes part
+  in ranking) and `aliases` (marks included). Read-only and write-free:
+  the four tables are read
   inside **one transaction** (`conn.transaction()`), so a hook writing
   concurrently cannot produce a torn export, and there is **no
   reconcile** — `missing_since` is exported exactly as stored. The
