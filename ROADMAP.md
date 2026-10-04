@@ -69,8 +69,11 @@
 | 62 | Release 0.3.0: aliases, home scope, marks (design cycle, lots 51-61) |
 | 63 | `f -N`: go N directories back in the session (`furet back --steps`) |
 | 64 | `furet import pwsh-history` seeds the database from PSReadLine history |
+| 64b | Repeat-free test pins the PSReadLine history line order |
 | 65 | `furet history`: visit history numbered like `f -N` |
 | 66 | pwsh `fh`: session history numbered like `f -N` |
 | 67 | `furet export`: the whole database as versioned JSON |
 | 68 | `furet import json`: idempotent merge of a furet export |
+| 68b | `backup::validate` checks references in the pinned order |
 | 69 | `tests/docs.rs`: docs may only cite code that exists |
+| 70 | CHANGELOG.md; release 0.4.0 (lots 63-69) |

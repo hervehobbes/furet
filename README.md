@@ -307,67 +307,9 @@ breaks a command.
 
 ## Status
 
-Roadmap lots 0 through 21 are shipped: normalization, the two-stage fuzzy
-engine, SQLite storage, `furet add`/`query`/`up`/`back`/`home`, the pwsh
-integration (`f`, `fi`) covered by executed pwsh tests, soft delete,
-`--explain`, disk fallback, and the query journal — plus the database path
-in `--help`, daily-rotated file logging, `config.toml` overrides, the
-configurable `home`, stage-2's query-length rule, and importing zoxide's
-database (`furet import zoxide`). Lot 22 added a 42-case ranking scenario
-suite. Lots 23 through 39 added a tab completer on the jump function's first
-argument, `furet list` (`--all`, `--paths`, ordered by path), `ts` indexes on
-`visits` and `queries` with the `retention_days` purge in `furet add`,
-`furet remove <pattern>`, the `exclude_dirs` config key, and a compile-time
-lint that keeps stdout reserved for the jump target. See [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI
-contracts.
-
-Version 0.2.0 completes `prompts/SPEC-v2.md`: completions for `furet`'s
-subcommands, `--local`, the opt-in `nucleo` engine, `furet remove`'s
-confirmation and `--missing`, `furet stats`, the `fi` preview, and query
-memory; lot 50 shows the binary's UTC build date as the last line of
-`furet --help`. Lot 51 adds the `aliases` table shared by aliases and
-marks (migration 4); lot 52 adds `furet alias add`, `list` and `remove`
-over it; lot 53 resolves them — `f !ombi`, the `alias_prefix` key
-(`!`/`=`) and the `did you mean` hint; lot 54 completes alias words on
-Tab — `f !om<Tab>` lists every matching alias with its path and inserts
-the name. Lot 55 scopes `furet query --home` to the home root (the
-`home` key, else the user profile), from anywhere; lot 56 wires it into
-pwsh — `f -h`, `fi -h`, and Tab after `-h` all scope to the home. Lot 57
-adds numbered marks in the binary — `furet mark set`, `list` and
-`delete` over the shared `aliases` table, with the mark messages in
-alias jumps (`mark 3 not set`). Lot 58 adds mark cycling in the binary —
-`furet mark next` / `furet mark prev` print the next / previous mark's
-path through the pure `alias::cycle` (lowest mark of the current
-directory, wrap 9 → 1, missing marks skipped on stderr), recording
-nothing. Lot 59 wires the pwsh side: the `fm` helper (fixed name, plain
-`$args` so `-d` is never bound — set/list/delete/cycle) and the
-Ctrl+Alt+→/← PSReadLine bindings, which run `fm +` / `fm -` on an empty
-command line and only ding otherwise. Lot 60 adds `fi !`, the interactive
-menu of aliases and marks (fed by `furet alias complete`, fzf-fuzzy or
-strict-prefix, a `jump` visit and no `queries` row) — **closing design
-section 3**: aliases, home scope and marks are complete.
-
-Version 0.3.0 adds the aliases, home-scope and marks cycle (lots 51-61):
-`furet alias` add/list/remove with `f !name` resolution, the `alias_prefix`
-(`!`/`=`) key, Tab completion and the `fi !` menu; the home scope (`f -h`,
-`furet query --home`); and marks — `furet mark`, the `fm` helper, `fm +`/`fm -`
-cycling, and Ctrl+Alt+→/←. French usage examples live in [example.md](example.md).
-Lot 63 generalizes `f -` into `f -N`: go `N` directories back in the
-session's raw visit history (duplicates kept, `f -1` equal to `f -`),
-recorded as a `back` visit — the binary side is `furet back --steps <N>`.
-Lot 64 adds `furet import pwsh-history`: seed the database from PSReadLine
-history — `cd`-like lines with one absolute path (`~` expands to the user
-profile), later lines more recent, re-running it a no-op. Lot 65 adds
-`furet history`: the visit history, newest first, numbered like `f -N`
-per session (`--session <id>`) or listed across every session without
-numbers (`--all`); the `fh` pwsh wrapper is the next lot. Lot 66 wires
-that wrapper: the fixed-name `fh` prints the session history (`fh -a`
-for every session, `fh -n <N>` for a limit) without typing
-`furet history`. Lot 67 adds `furet export`: the whole database as
-versioned JSON on stdout, pure ASCII so a redirect keeps every accented
-path; the import of that file is the next lot. Lot 68 completes the
-backup pair: `furet import json` merges a `furet export` file
-idempotently — directories united by key, visits and queries
-deduplicated, local aliases kept on conflict.
+Version 0.4.0. What each version added is in [CHANGELOG.md](CHANGELOG.md);
+the lot-by-lot history is in [ROADMAP.md](ROADMAP.md). See
+[CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI contracts,
+and [example.md](example.md) for usage examples in French.
 
 Licensed under the MIT License — see [LICENSE](LICENSE).

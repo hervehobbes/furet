@@ -30,3 +30,11 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   of the raw test output. The code was fine; the reviewer's own rerun of
   the mutations was the proof. Rule unchanged: paste raw output by
   copying it, never annotate inside it — comments go outside the block.
+
+- 2026-10-04, lot 69 (GLM 5.3 Flash): the report's DoD paste showed a
+  retyped `Running tests\help.rs (… help-5d87f8d87c3c0c3f04.exe)` line —
+  an 18-hex-char hash, while the real one is 16 (`help-5d87f8d87cf3a44a`)
+  — while claiming every line was copied. Fifth occurrence (lots 43–46,
+  49, 66, 69). Code fine; the reviewer's own DoD run was the proof. Rule:
+  paste only lines copied from the log; never add `Running` lines from
+  memory.

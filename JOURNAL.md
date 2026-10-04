@@ -1,3 +1,9 @@
+## 2026-10-04 — branch main — v0.4.0
+Done: lot 70 — `CHANGELOG.md` (Keep a Changelog layout, four versions, every bullet traced to a
+ROADMAP row; rows 64b, 68b, 70 added), version 0.4.0, README Status replaced by pointers to the
+changelog. Unplaced from the old Status text: the compile-time stdout lint (no ROADMAP row) and
+the example.md pointer (kept in the README). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; the architect tags v0.4.0 after the review.
 ## 2026-10-04 — branch main — v0.3.0
 Done: lot 69 — `tests/docs.rs` guards doc citations: rule A requires long snake_case names
 as whole words in the code corpus, rule B requires `module::item` in `src/<module>.rs`, over
