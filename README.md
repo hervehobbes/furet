@@ -44,11 +44,14 @@ extra profile line.
 - `f -l <query> --explain` — print the scoring report of the project-scoped
   jump on stderr without jumping or recording.
 - `f <path>` — jump straight to `<path>` if it exists on disk.
-- `f ..`, `f ...` — go up 1, 2, ... levels.
+- `f ..`, `f ...` — go up 1, 2, ... levels (`f ....` climbs one more per
+  extra dot); `f .` stays put: no move, nothing recorded.
 - `f -` — jump back to the previous directory in this session.
 - `f -3` — go 3 directories back in this session's raw visit history
   (duplicates kept, `f -1` the same as `f -`); `furet back --steps <N>`
   underneath.
+- `furet up <n>` — print the ancestor `n` levels above the current
+  directory; the binary that `f ..` and `f ...` run underneath.
 - `f` (no argument) — jump home, or the configured `home` directory when set
   and valid.
 - `f <query> --explain` — print the scoring report for `<query>` on stderr
@@ -88,6 +91,9 @@ extra profile line.
   (the `home` key, else the user profile), from anywhere; in pwsh it is
   `f -h <query>` (also `f --home` / `f <query> -h`), `f -h` alone jumps
   to the home root, and `fi -h` / `f -h <Tab>` follow the same scope.
+- `furet home` — print the configured `home` directory, canonicalized, or
+  nothing when unset or invalid (never an error); the pwsh no-argument `f`
+  calls it and falls back to `$HOME` on empty output.
 - `furet query <query> --explain` — print the scoring report for `<query>`
   on stderr without jumping.
 - `furet query <query> --engine <reference|nucleo>` — pick the stage-1
@@ -95,8 +101,18 @@ extra profile line.
   `--list`, `--explain`, `--local`, and the disk fallback. `nucleo` is
   Helix's fuzzy matcher, opt-in; the reference engine stays the default.
   The pwsh `f`/`fi` never pass it: set `engine` in `config.toml` instead.
+- `furet query [<query>] --list` — print every ranked candidate, best
+  first; an empty query lists the known directories by recency instead.
+  This is the list Tab completion and `fi` build on.
+- `furet query <query> --no-ignore` — disable the gitignore rules in the
+  disk-fallback walk (SPEC section 11), so an ignored directory can still
+  be found when nothing known matches; also combines with `--list`.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
+- `furet add <path> --session <s> [--source <src>] [--from <dir>]` —
+  record one visit to a directory; the pwsh hook runs this on every
+  directory change. `--query <text>` (requires `--from`) also journals
+  the query as a pick, feeding query memory.
 - `furet list [--all] [--paths]` — print every known directory as one tab-separated
   line: `path`, `visits`, `last_visit`, `first_seen` (local time); `--all`
   also lists directories missing from disk, with a `present`/`missing`

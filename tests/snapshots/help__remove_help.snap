@@ -7,7 +7,7 @@ Forget known directories matching a name or path pattern
 Usage: furet remove [OPTIONS] [PATTERN]
 
 Arguments:
-  [PATTERN]  
+  [PATTERN]  Name or path pattern; required unless --missing
 
 Options:
       --missing  Target known directories missing from disk; asks before each unless --yes

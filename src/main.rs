@@ -145,6 +145,7 @@ enum Command {
     },
     /// Forget known directories matching a name or path pattern.
     Remove {
+        /// Name or path pattern; required unless --missing.
         #[arg(required_unless_present = "missing")]
         pattern: Option<String>,
         /// Target known directories missing from disk; asks before each unless --yes.
@@ -189,8 +190,9 @@ enum Command {
 #[derive(Subcommand)]
 enum InitShell {
     /// Print the PowerShell integration script.
+    #[command(after_help = PWSH_FUNCTIONS_HELP)]
     Pwsh {
-        /// Name of the generated jump function; the interactive `fi` keeps its name.
+        /// Name of the generated jump function; `fi`, `fm` and `fh` keep their names.
         #[arg(long, default_value = "f")]
         cmd: String,
     },
@@ -301,7 +303,7 @@ impl Source {
 fn main() {
     let guard = logging::init();
     let matches = Cli::command()
-        .after_help(runtime_paths_help())
+        .after_help(format!("{PWSH_FUNCTIONS_HELP}\n\n{}", runtime_paths_help()))
         .get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     let code = match cli.command {
@@ -378,6 +380,23 @@ fn main() {
     drop(guard);
     process::exit(code);
 }
+
+const PWSH_FUNCTIONS_HELP: &str = "\
+PowerShell functions (defined by `furet init pwsh`):
+  f <query>        Jump to the best match; -l scopes to the git project,
+                   -h to the home
+  f                Jump to the home directory
+  f -   f -N       Go back 1 or N directories in this session
+  f ..  f ...      Go up one level per extra dot (.. = 1, ... = 2)
+  f !name          Jump to an alias, or a mark with f !3
+  fi [query]       Pick interactively (fzf, else a numbered menu);
+                   fi ! lists aliases and marks
+  fm               List marks; fm 3 sets, fm -d 3 / fm -d! delete,
+                   fm + / fm - cycle
+  fh [-a] [-n N]   Show the visit history, numbered like f -N; -a lists every
+                   session unnumbered, -n N caps the lines
+`f` is renamed with `--cmd <name>`; `fi`, `fm` and `fh` keep their names.
+Ctrl+Alt+Right / Ctrl+Alt+Left run fm + / fm - on an empty line.";
 
 // WHY: the runtime file locations depend on the environment, so a static clap attribute cannot hold them.
 fn runtime_paths_help() -> String {

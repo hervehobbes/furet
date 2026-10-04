@@ -1,7 +1,7 @@
 # Exemples d'utilisation de furet
 
 Ces exemples supposent que :
-- l'intégration PowerShell est chargée (`Invoke-Expression (& furet init pwsh | Out-String)` dans le `$PROFILE`), ce qui donne les fonctions `f` et `fi` ;
+- l'intégration PowerShell est chargée (`Invoke-Expression (& furet init pwsh | Out-String)` dans le `$PROFILE`), ce qui donne les fonctions `f`, `fi`, `fm` et `fh` ; la fonction `f` peut être renommée (`furet init pwsh --cmd <nom>`), `fi`, `fm` et `fh` gardent toujours leurs noms ;
 - vous partez, par défaut, du répertoire `C:\dev\furet` ;
 - l'arborescence sous `C:\dev` est celle-ci (extrait) :
 
@@ -173,6 +173,9 @@ PS C:\dev\furet\src\snapshots> f ...
 PS C:\dev\furet>
 ```
 
+Chaque point supplémentaire remonte un niveau de plus (`f ....` = trois
+niveaux). `f .` ne fait rien : pas de déplacement, rien d'enregistré.
+
 ### Revenir en arrière
 
 `f -` revient au répertoire précédent **de la session de terminal en
@@ -219,6 +222,22 @@ répertoire courant, et `f -3` va exactement là où la ligne 3 le dit
 les sessions, sans numéros, et `fh -n 50` limite l'affichage à 50 lignes
 (`fh -n 0` les affiche toutes).
 
+Côté binaire, la commande derrière `fh` prend elle-même l'identifiant de
+session (celui du hook pwsh est un GUID interne, `fh` le passe pour
+vous) ; avec la session `$PID` de l'exemple `furet add` plus bas :
+
+```powershell
+PS C:\dev\furet> furet history --session $PID
+0	2026-10-03T15:02:10	hook	C:\dev\sourcier-mesures
+
+PS C:\dev\furet> furet history --all -n 5
+2026-10-03T15:02:10	hook	C:\dev\sourcier-mesures
+2026-10-03T14:20:31	jump	C:\dev\furet
+```
+
+`--all` traverse toutes les sessions (sans les numéros) et `-n <N>` borne
+le nombre de lignes (`20` par défaut, `0` pour tout).
+
 ### Retour à la maison
 
 ```powershell
@@ -230,6 +249,16 @@ La cible peut être personnalisée avec la clé `home` de `config.toml` (chemin
 absolu, `/` accepté) ; sans elle, `f` sans argument va vers `$HOME`. Sans
 argument, `f -h` mène au même endroit, via la requête restreinte à la
 maison plutôt que par `furet home`.
+
+La commande directe `furet home` affiche cette cible, telle que résolue
+sur le disque — ou rien du tout (exit 0) quand `home` n'est pas définie
+ou ne désigne pas un répertoire existant. Avec `home = "C:\\dev"` comme
+dans la section précédente :
+
+```powershell
+PS C:\dev\furet> furet home
+C:\dev
+```
 
 ### Ne jamais enregistrer certains répertoires
 
@@ -276,6 +305,16 @@ répertoire surligné — d'abord les sous-dossiers (terminés par `\`), puis
 les fichiers, tri sans tenir compte de la casse, au plus 50 lignes puis
 `… +<K> more`. Un chemin absent ou un fichier affiche `(not a directory)`.
 Ce panneau n'existe pas dans le menu numéroté de la console.
+
+La commande derrière le panneau fonctionne aussi seule, sans `fi` :
+
+```powershell
+PS C:\dev\furet> furet preview C:\dev\CodeGroups
+CodeGroups.Mcp\
+CodeGroups.Mcp.Tests\
+CodeGroups.Shared\
+CodeGroups.Tests\
+```
 
 ### La mémoire des requêtes
 
@@ -570,6 +609,15 @@ peut être fait à la main (utile en script ou pour importer un historique) :
 
 ```powershell
 PS C:\dev\furet> furet add C:\dev\sourcier-mesures --session $PID
+```
+
+Le drapeau `--query` (qui exige `--from`) journalise en plus la requête
+comme un choix réussi : c'est ce qui nourrit la mémoire des requêtes —
+après la ligne ci-dessous, le prochain `f om` ira directement dans
+`C:\dev\ombi` :
+
+```powershell
+PS C:\dev\furet> furet add C:\dev\ombi --session $PID --from C:\dev\furet --query om
 ```
 
 ### Consulter le journal des requêtes
@@ -891,3 +939,39 @@ nommé ne compte pas) et `furet: no other mark` quand aucune n'est
 
 La fonction `fm`, qui encapsule ces commandes côté pwsh, est décrite
 plus haut dans [Les marques](#les-marques).
+
+## Les autres clés de `config.toml`
+
+Les clés déjà vues plus haut ont leur section : `home` ([Retour à la
+maison](#retour-a-la-maison)), `exclude_dirs` ([Ne jamais enregistrer
+certains répertoires](#ne-jamais-enregistrer-certains-répertoires)),
+`query_memory` ([La mémoire des requêtes](#la-mémoire-des-requêtes)),
+`engine` ([Essayer le moteur nucleo](#essayer-le-moteur-nucleo)) et
+`alias_prefix` ([Les alias](#les-alias)). Les dernières :
+
+```toml
+typo_min_length = 4
+retention_days = 365
+
+[fallback]
+depth = 1
+up = 1
+no_ignore = false
+exclude = ['node_modules', 'bin', 'obj', '.git', 'target']
+```
+
+- `typo_min_length` — longueur minimale, en caractères normalisés, d'une
+  requête pour que l'étape 2 (tolérance aux fautes de frappe) s'en mêle
+  (`4` par défaut) ;
+- `retention_days` — jours d'historique conservés : chaque `furet add`
+  supprime les visites et lignes du journal plus vieilles (`365` par
+  défaut, `0` garde tout) ;
+- `fallback.depth` — profondeur de descente dans les sous-répertoires
+  lors du repli disque (`1`) ;
+- `fallback.up` — niveaux d'ancêtres remontés au-dessus du répertoire
+  courant (`1`) ;
+- `fallback.no_ignore` — ignorer les règles `.gitignore` pendant le
+  repli disque, comme le drapeau `--no-ignore` (`false`) ;
+- `fallback.exclude` — noms de répertoires jamais proposés par le repli
+  disque ; la liste **remplace** celle par défaut (`exclude = []`
+  désactive toute exclusion).

@@ -1,4 +1,15 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 79 — docs and CLI help audit: `PWSH_FUNCTIONS_HELP` (f/fi/fm/fh + key chords) in
+`furet --help` before the runtime lines and as `furet init pwsh --help`'s footer, guard test
+`help_block_names_only_functions_the_script_defines`, remove's PATTERN and `--cmd` help fixed
+(draft corrected: `f ...` climbs one level per extra dot, fh's `-a` unnumbers), example.md gaps
+filled (furet home/history/preview/add --query, remaining config keys, --cmd, `f .`, intro now
+names fm/fh), README gains add/up/home/--list/--no-ignore lines, ARCHITECTURE rewritten as a
+module map + query path, 3 delivered BACKLOG bullets removed. No behavior change.
+Decisions: none beyond the prompt (Hervé, 2026-10-04). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 78 — mutation testing, core engine part 3 (MUTANTS.md procedure): `src/rank.rs` 23
 mutants and `src/decision.rs` 11 — missed 0 before and 0 after in all four runs, no test change,
 no equivalents, no timeouts. The stage-1 tie rule made official (Hervé, 2026-10-04): on equal

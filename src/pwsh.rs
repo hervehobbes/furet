@@ -436,4 +436,26 @@ mod tests {
         assert!(renamed.contains("function global:fh "));
         assert!(!renamed.contains("function global:jh "));
     }
+
+    #[test]
+    fn help_block_names_only_functions_the_script_defines() {
+        let names: std::collections::BTreeSet<&str> = crate::PWSH_FUNCTIONS_HELP
+            .lines()
+            .filter_map(|line| line.strip_prefix("  "))
+            .filter(|rest| !rest.starts_with(' '))
+            .filter_map(|rest| rest.split(|c: char| !c.is_ascii_alphabetic()).next())
+            .filter(|name| !name.is_empty())
+            .collect();
+        assert!(
+            names.contains("f"),
+            "the help block must still name the `f` function"
+        );
+        let rendered = script("f");
+        for name in names {
+            assert!(
+                rendered.contains(&format!("function global:{name} ")),
+                "the help block names `{name}`, which the default-`--cmd` script does not define"
+            );
+        }
+    }
 }

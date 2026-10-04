@@ -330,7 +330,12 @@ directive, so cargo reruns it whenever a package file changes and the date
 tracks the last real compilation; a no-op rebuild keeps the old date.
 `storage::config_path`/`storage::logs_dir` are the single
 source of truth for those locations (`load_settings` and `logging::init` call
-them too). Pinned by `help_prints_the_database_file_path_resolved_at_runtime`,
+them too). Both `furet --help` and `furet init pwsh --help` also list the
+PowerShell functions the integration defines, through the shared
+`PWSH_FUNCTIONS_HELP` constant in `src/main.rs`: the top-level page puts the
+block before the trailer lines with one blank line between, and the
+`init pwsh` page repeats it as its own footer (lot 79). Pinned by
+`help_prints_the_database_file_path_resolved_at_runtime`,
 `help_ends_with_the_utc_build_date`, and the `tests/help.rs` insta snapshots
 (data dir redacted to `<DATA_DIR>`, build date to `<BUILD_DATE>`).
 
