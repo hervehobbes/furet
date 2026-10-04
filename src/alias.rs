@@ -145,6 +145,12 @@ mod tests {
     }
 
     #[test]
+    fn suggestion_breaks_an_exact_key_tie_on_the_first_name() {
+        let names = ["Ombi".to_owned(), "ombi".to_owned()];
+        assert_eq!(suggestion("mbi", &names), Some("Ombi"));
+    }
+
+    #[test]
     fn mark_digit_accepts_only_one_char_from_one_to_nine() {
         assert_eq!(mark_digit("1"), Some(1));
         assert_eq!(mark_digit("9"), Some(9));
@@ -260,5 +266,16 @@ mod tests {
         ];
         assert_eq!(cycle(&ordered, true), cycle(&shuffled, true));
         assert_eq!(cycle(&ordered, false), cycle(&shuffled, false));
+    }
+
+    #[test]
+    fn cycle_skips_a_duplicate_of_the_current_digit() {
+        let slots = [
+            slot(3, true, true),
+            slot(3, false, true),
+            slot(5, false, false),
+        ];
+        assert_eq!(cycle(&slots, true), (None, vec![5]));
+        assert_eq!(cycle(&slots, false), (None, vec![5]));
     }
 }

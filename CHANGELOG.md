@@ -37,6 +37,7 @@ lot numbers refer to [ROADMAP.md](ROADMAP.md).
 - `config::parse` and `explain::render` split (Sonar S3776), no behavior change (lot 49).
 - Migration 4 adds the `aliases` table shared by aliases and marks (lot 51).
 - Letter-free sandbox names end the folder-bonus test flake (lot 61).
+- Release 0.3.0 (lot 62).
 
 ## [0.2.0] — 2026-09-27
 
@@ -57,6 +58,10 @@ lot numbers refer to [ROADMAP.md](ROADMAP.md).
 - pwsh: `-l` is a declared switch on `f`/`fi`; the `-Native` completer fallback removed (lot 40b).
 - The query-memory lookup is skipped on the disk-fallback path; the explain output keeps showing it (lot 47b).
 
+### Internal
+
+- stdout reserved for jump targets, enforced at compile time (`clippy::print_stdout` and `disallowed-methods`) (lot 39).
+
 ## [0.1.1] — 2026-09-26
 
 ### Added
@@ -64,8 +69,8 @@ lot numbers refer to [ROADMAP.md](ROADMAP.md).
 - Normalization and stage 1, the optimal-subsequence fuzzy match (lot 1).
 - Stage 2, fault tolerance for typos (lot 2).
 - Ranking, plus the complete scenario runner (lot 3).
-- Path handling, with `furet add`, `furet query`, `furet up` and `furet back` (lot 5).
-- `init pwsh`, the hook, `f`, `f -`, dots and slashes (lot 6).
+- Path handling, with `furet add` and `furet query` (lot 5).
+- `furet up` and `furet back`, `init pwsh`, the hook, `f`, `f -`, dots and slashes (lot 6).
 - The ambiguity decision and menu (lot 7).
 - Soft delete (lot 8).
 - `--explain` (lot 9).

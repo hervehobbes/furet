@@ -40,3 +40,11 @@ Standalone `//` comments in Rust code must be `// WHY: ...` lines, and
 `///` doc-comment blocks are limited to 2 lines. `tools/Strip-Comments.ps1`
 repairs violations in place when wired as a Claude Code `PostToolUse`
 hook on `Edit`/`Write`.
+
+## Mutation testing
+
+The mutation-testing campaign runs [cargo-mutants](https://mutants.rs) one module at a
+time: install it with `cargo install --locked cargo-mutants`, then kill every missed
+mutant of `cargo mutants -f src/<module>.rs --cargo-test-arg=--lib` with a new or stronger
+test; the procedure and the results table live in `MUTANTS.md`. The DoD does not run
+mutation testing, because it is too slow.

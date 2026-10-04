@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 71 — mutation testing opens with cargo-mutants 27.1.0 (`MUTANTS.md`, `.gitignore`
+gains `/mutants.out*`): `src/alias.rs` ran 58 mutants — before 5 missed / 46 caught / 7 unviable,
+after 0 missed / 51 caught; 3 behavior-named tests added (exact-key tie in `suggestion`, duplicate
+of the current digit in `cycle`), no production change, no equivalent mutant. CHANGELOG
+lot-5/39/62 follow-ups from the lot 70 review. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next module `src/import.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 70 — `CHANGELOG.md` (Keep a Changelog layout, four versions, every bullet traced to a
 ROADMAP row; rows 64b, 68b, 70 added), version 0.4.0, README Status replaced by pointers to the
 changelog. Unplaced from the old Status text: the compile-time stdout lint (no ROADMAP row) and
