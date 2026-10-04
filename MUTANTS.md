@@ -53,6 +53,10 @@ For `src/<module>.rs`, in order:
 | `src/memory.rs` | 73 | 2026-10-04 | 20 | 19 | 1 | 0 | 0 | 0 | 0 |
 | `src/config.rs` | 74 | 2026-10-04 | 17 | 16 | 1 | 0 | 0 | 0 | 0 |
 | `src/paths.rs` | 74 | 2026-10-04 | 14 | 11 | 3 | 0 | 0 | 0 | 0 |
+| `src/stats.rs` | 75 | 2026-10-04 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
+| `src/preview.rs` | 75 | 2026-10-04 | 35 | 26 | 0 | 5 | 4 | 4 | 5 |
+| `src/soft_delete.rs` | 75 | 2026-10-04 | 3 | 2 | 1 | 2 | 0 | 0 | 0 |
+| `src/project.rs` | 75 | 2026-10-04 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 
 A timeout is a mutant whose test run hangs (cargo-mutants' 20 s cap): it is
 detected without a test failing, and it stays a timeout in the confirmation
@@ -66,6 +70,14 @@ run.
 - `src/import.rs:72:23: replace < with <= in parse_history_line` — the same reasoning for
   the double-quoted branch: the added input `""` reaches the same `None` through the
   empty-path check.
+- `src/preview.rs:32:5: replace char_width -> usize with 1` and the three deleted arms
+  (`:33:9` `0xc0..=0xdf`, `:34:9` `0xe0..=0xef`, `:35:9` `0xf0..=0xf7`) — `char_width` only
+  advances `strip_sgr`'s scan, and `sgr_end` strips only at a `0x1b` byte, which valid UTF-8
+  holds solely as a one-byte char at a char boundary (every byte of a multibyte char is
+  `0x80..=0xbf` or `0xc2..=0xf4`, never `0x1b`); visiting or skipping those continuation bytes
+  cannot change which strips are found nor make a slice land mid-char, so every input yields
+  the same output with no new panic (brute-forced for each mutant over all 22 625 inputs of
+  length ≤ 4 over `ESC [ m 0 ; 1 é € 😀 a \x7f Â`: zero differences, zero panics).
 
 ## Campaign order
 

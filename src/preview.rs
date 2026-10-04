@@ -77,6 +77,12 @@ mod tests {
     }
 
     #[test]
+    fn an_sgr_tail_without_the_escape_prefix_is_kept_as_text() {
+        assert_eq!(strip_sgr("x[31mred"), "x[31mred");
+        assert_eq!(strip_sgr("\x1b31mred"), "\x1b31mred");
+    }
+
+    #[test]
     fn render_lists_directories_first_then_files_ignoring_case() {
         let lines = render(vec![
             ("Zulu.txt".to_owned(), false),

@@ -56,9 +56,10 @@ pub fn reconcile(entries: Vec<DirEntry>, fs: &dyn Filesystem, now: Timestamp) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{Filesystem, reconcile};
+    use super::{Filesystem, RealFilesystem, reconcile};
     use crate::clock::Timestamp;
     use crate::storage::DirEntry;
+    use assert_fs::TempDir;
     use std::collections::HashSet;
 
     struct FakeFilesystem(HashSet<String>);
@@ -148,5 +149,13 @@ mod tests {
         let result = reconcile(Vec::new(), &fs, now());
         assert!(result.entries.is_empty());
         assert!(result.updates.is_empty());
+    }
+
+    #[test]
+    fn the_real_filesystem_true_only_for_an_existing_directory() {
+        let scratch = TempDir::new().expect("a fresh scratch root");
+        let fs = RealFilesystem;
+        assert!(fs.exists(&scratch.path().to_string_lossy()));
+        assert!(!fs.exists(&scratch.path().join("absent").to_string_lossy()));
     }
 }

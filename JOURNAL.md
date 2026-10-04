@@ -1,4 +1,12 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 75 — mutation testing modules 9-12 (MUTANTS.md procedure), closing the non-core part:
+`src/stats.rs` 6 and `src/project.rs` 8 mutants — 0 missed in both runs; `src/preview.rs` 35 —
+before 5 missed, after 4 (all equivalent, brute-force-verified, see MUTANTS.md) / 5 timeouts;
+`src/soft_delete.rs` 3 — before 2 missed, after 0. Two tests added (preview SGR tails without the
+escape prefix; RealFilesystem via assert_fs TempDir, like project.rs's RealGitMarker test).
+Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next up, the core engine modules.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 74 — mutation testing modules 7-8 (MUTANTS.md procedure): `src/config.rs` 17 mutants —
 16 caught / 1 unviable, 0 missed; `src/paths.rs` 14 mutants — 11 caught / 3 unviable, 0 missed;
 both runs per module, no test change, no equivalent mutant. Executor: GLM 5.3 Flash.
