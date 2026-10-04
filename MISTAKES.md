@@ -38,3 +38,10 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   49, 66, 69). Code fine; the reviewer's own DoD run was the proof. Rule:
   paste only lines copied from the log; never add `Running` lines from
   memory.
+
+- 2026-10-04, lot 76 (GLM 5.3 Flash): two background brute-force
+  searches for a distinguishing input (the second spawning hundreds of
+  threads) saturated the CPU; Hervé had to reboot twice. The mutant was
+  finally solved by analysis plus one verified input pair. Rule: helper
+  searches run in the foreground, single-threaded, bounded (≤ 100 000
+  inputs, `timeout 60`), outside the repo — see `MUTANTS.md`.

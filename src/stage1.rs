@@ -272,6 +272,7 @@ mod tests {
         assert_eq!(placement("tz", "txz").0, 17);
         assert_eq!(placement("tz", "txxz").0, 16);
         assert_eq!(placement("tz", "txxxz").0, 15);
+        assert_eq!(placement("ok", "toxk").0, -1);
     }
 
     #[test]
@@ -318,6 +319,20 @@ mod tests {
     #[test]
     fn the_optimal_placement_beats_the_first_greedy_one() {
         assert_eq!(placement("ab", "a-ab"), (18, 2));
+        assert_eq!(placement("ab", "axb b"), (25, 0));
+    }
+
+    // WHY: SPEC §7.2, the DP carries the current maximum (prev[k] + k) for the gap penalty.
+    #[test]
+    fn the_gapped_carry_keeps_the_best_prior_placement() {
+        assert_eq!(placement("ab", "xaxa-b"), (9, 3));
+    }
+
+    // WHY: SPEC §7.2, the DP retains the placement that maximizes the bonuses.
+    #[test]
+    fn tied_placements_keep_the_leftmost_start() {
+        assert_eq!(placement("ab", "a---x---a-b"), (19, 0));
+        assert_eq!(placement("ab", "a--------xab"), (8, 0));
     }
 
     #[test]
@@ -330,6 +345,7 @@ mod tests {
     fn the_order_bonus_needs_strictly_increasing_token_starts() {
         assert_eq!(score("neo vim", "neovim", None), Some(101));
         assert_eq!(score("vim neo", "neovim", None), Some(96));
+        assert_eq!(score("t t", "tokio", None), Some(82));
     }
 
     #[test]
@@ -397,6 +413,8 @@ mod tests {
         let plain = explain("tk", "tokei", Some("dev\\helix")).expect("the token matches");
         assert_eq!(plain.total, 38);
         assert_eq!(plain.folder_bonus, 0);
+        let repeated = explain("t t", "tokio", None).expect("both tokens still match");
+        assert_eq!(repeated.order_bonus, 0);
     }
 
     #[test]

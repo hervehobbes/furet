@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 77 — mutation testing, core engine part 2 (MUTANTS.md procedure): `src/stage1.rs` 81
+mutants — before 10 missed, after 2 (both classified equivalent, see MUTANTS.md);
+`src/stage1_nucleo.rs` 7 — 0 missed in both runs. Three example tests added around the DP carry,
+the leftmost tie-break and the order bonus; no production change, no timeouts.
+Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next core modules `src/rank.rs`, `src/decision.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 76 — mutation testing, core engine part 1 (MUTANTS.md procedure): `src/normalize.rs` 19
 mutants — 0 missed in both runs; `src/stage2.rs` 74 — before 1 missed, after 0 (1 unviable, no
 equivalents, no timeouts). One test added, `windows_longer_than_the_query_slack_never_lower_the_distance`

@@ -40,6 +40,14 @@ For `src/<module>.rs`, in order:
   with a duplicated digit, `alias::suggestion` with two names sharing a
   key). A mutant such an input exposes is killed by a test, never
   classified as equivalent.
+- A helper program hunting a distinguishing input runs in the foreground —
+  never in the background, never in parallel (one thread, one process) —
+  is bounded (at most 100 000 candidate inputs, stops by itself), is
+  wrapped in a 60-second limit (`timeout 60 <program>`), lives outside the
+  repo and is deleted afterwards; reason first, use a search only to check
+  a hypothesis, and report the mutant as unresolved when 60 seconds are
+  not enough (lot 76: two background searches saturated the CPU and Hervé
+  had to reboot twice).
 
 ## Results
 
@@ -59,6 +67,8 @@ For `src/<module>.rs`, in order:
 | `src/project.rs` | 75 | 2026-10-04 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | `src/normalize.rs` | 76 | 2026-10-04 | 19 | 19 | 0 | 0 | 0 | 0 | 0 |
 | `src/stage2.rs` | 76 | 2026-10-04 | 74 | 73 | 1 | 1 | 0 | 0 | 0 |
+| `src/stage1.rs` | 77 | 2026-10-04 | 81 | 76 | 3 | 10 | 2 | 2 | 0 |
+| `src/stage1_nucleo.rs` | 77 | 2026-10-04 | 7 | 6 | 1 | 0 | 0 | 0 | 0 |
 
 A timeout is a mutant whose test run hangs (cargo-mutants' 20 s cap): it is
 detected without a test failing, and it stays a timeout in the confirmation
@@ -80,6 +90,19 @@ run.
   cannot change which strips are found nor make a slice land mid-char, so every input yields
   the same output with no new panic (brute-forced for each mutant over all 22 625 inputs of
   length ≤ 4 over `ESC [ m 0 ; 1 é € 😀 a \x7f Â`: zero differences, zero panics).
+- `src/stage1.rs:122:58: replace || with && in match_token` — the conjunction only skips the early
+  return in two new cases, both ending at the same `None`: a non-subsequence non-empty token
+  reaches `best_placement`, which returns `Some` exactly when the token is a subsequence (every
+  placed character requires a placement of the previous one at a strictly smaller index, and a
+  subsequence embedding drives the DP to place every character), so a non-subsequence yields no
+  placement of the last character and the fold returns `None`; and an empty token reaches
+  `best_placement`'s `split_first()?`, which is `None`. Every input returns the same `Option`,
+  with no new panic.
+- `src/stage1.rs:186:22: replace > with >= in best_placement` — `index` is a `usize` from the scan,
+  so `index >= 0` is always true and the mutant only deletes the `index > 0` gate; at index 0
+  `checked_sub(1)` makes `earlier` `None`, so `running` (only ever assigned from `earlier`) and the
+  consecutive branch (which requires `earlier`) are both `None` and `placed` stays `None` with or
+  without the gate; for every index ≥ 1 the two guards coincide. No input can tell them apart.
 
 ## Campaign order
 
