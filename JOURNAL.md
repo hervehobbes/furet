@@ -1,3 +1,9 @@
+## 2026-10-04 — branch main — v0.3.0
+Done: lot 69 — `tests/docs.rs` guards doc citations: rule A requires long snake_case names
+as whole words in the code corpus, rule B requires `module::item` in `src/<module>.rs`, over
+CONTRACTS/DATABASE/ARCHITECTURE/README; 235 (document, token) pairs checked, 0 misses today.
+Mutations A/B/C caught. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
 ## 2026-10-03 — branch main — v0.3.0
 Done: lot 68b — reviewer CHANGES REQUIRED on lot 68: `backup::validate` now checks every
 `visits[i].dir` before any `visits[i].from_dir` (two loops, messages unchanged); one appended

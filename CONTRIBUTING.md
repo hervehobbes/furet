@@ -30,6 +30,10 @@ the release binary. It stops at the first failing step and names it.
 The cargo-deny step needs network access: it fetches the RustSec
 advisory database.
 
+`tests/docs.rs` fails when a doc cites a test or a `module::item` that
+no longer exists. A rename therefore updates the docs in the same
+commit.
+
 ## Comment policy
 
 Standalone `//` comments in Rust code must be `// WHY: ...` lines, and
