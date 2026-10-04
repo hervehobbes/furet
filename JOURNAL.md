@@ -1,4 +1,9 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 74 — mutation testing modules 7-8 (MUTANTS.md procedure): `src/config.rs` 17 mutants —
+16 caught / 1 unviable, 0 missed; `src/paths.rs` 14 mutants — 11 caught / 3 unviable, 0 missed;
+both runs per module, no test change, no equivalent mutant. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next module `src/stats.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 73 — mutation testing modules 4-6 (MUTANTS.md procedure): `src/remove.rs` 59 mutants —
 before 1 missed / 53 caught / 2 unviable / 3 timeouts, after 0 missed; `src/calibration.rs` 25 and
 `src/memory.rs` 20 mutants — 0 missed in all four runs. One test added, `backtracking_resumes_after_the_star`

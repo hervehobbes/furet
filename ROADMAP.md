@@ -80,3 +80,4 @@
 | 71 | Mutation testing campaign: setup, `MUTANTS.md`, `src/alias.rs` |
 | 72 | Mutation testing: `src/import.rs`, `src/backup.rs` |
 | 73 | Mutation testing: `src/remove.rs`, `src/calibration.rs`, `src/memory.rs` |
+| 74 | Mutation testing: `src/config.rs`, `src/paths.rs` |
