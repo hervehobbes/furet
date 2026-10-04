@@ -7,6 +7,7 @@
 - **Scope par alias (`-in`)** : `f -in !ombi src` cherche `src` uniquement sous la cible de `!ombi`, sans y être ni que ce soit un dépôt git ; `-h` en deviendrait un cas particulier. Gardé pour plus tard (design §4).
 - **Fuite de `complete` dans Tab** : `clap_complete` 4.6.11 ne filtre pas les sous-commandes cachées dans son script PowerShell, donc `furet alias <Tab>` propose `complete`. Limite acceptée le 2026-10-02 ; à revoir si clap corrige en amont.
 - **Latence du hook `add`** : seul morceau de l'idée `furet stats` encore non livré (aucune mesure continue).
+- **`furet queries` sans option** : afficher le journal des requêtes lui-même, pas seulement `--failures` (proposé au lot 79). Nouvelle exception stdout (décision d'Hervé), avec un format et une limite à définir comme pour `furet history`.
 
 ## idées
 Hors ce qui est déjà dans les cartons (import historique PowerShell, `--history, boost contexte git, yazi, bash/zsh), voici ce que je vois, trié par rapport valeur/coût :
