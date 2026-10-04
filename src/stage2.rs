@@ -253,6 +253,16 @@ mod tests {
     }
 
     #[test]
+    fn windows_longer_than_the_query_slack_never_lower_the_distance() {
+        // WHY: SPEC §7.3, stage 2 measures against sliding windows of length |q| ± 2, never longer ones.
+        assert_eq!(window_distance("abcdefgh", "abxcdyefzgh"), 4);
+        assert_eq!(
+            explain("abcdefgh", "abxcdyefzgh", TYPO_MIN_QUERY_LEN),
+            Some(4)
+        );
+    }
+
+    #[test]
     fn an_accented_name_is_normalized_before_the_distance() {
         assert_eq!(score("reunoins", "Réunions", TYPO_MIN_QUERY_LEN), Some(2));
         assert_eq!(score("réunoins", "Reunions", TYPO_MIN_QUERY_LEN), Some(2));

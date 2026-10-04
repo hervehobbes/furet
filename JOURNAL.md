@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 76 — mutation testing, core engine part 1 (MUTANTS.md procedure): `src/normalize.rs` 19
+mutants — 0 missed in both runs; `src/stage2.rs` 74 — before 1 missed, after 0 (1 unviable, no
+equivalents, no timeouts). One test added, `windows_longer_than_the_query_slack_never_lower_the_distance`
+(`explain("abcdefgh", "abxcdyefzgh")` = Some(4): the full-string window sits at distance 3, one past
+the |q| ± 2 range, and no window inside the range does better). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next core module `src/stage1.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 75 — mutation testing modules 9-12 (MUTANTS.md procedure), closing the non-core part:
 `src/stats.rs` 6 and `src/project.rs` 8 mutants — 0 missed in both runs; `src/preview.rs` 35 —
 before 5 missed, after 4 (all equivalent, brute-force-verified, see MUTANTS.md) / 5 timeouts;

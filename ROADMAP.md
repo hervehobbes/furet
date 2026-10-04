@@ -82,3 +82,4 @@
 | 73 | Mutation testing: `src/remove.rs`, `src/calibration.rs`, `src/memory.rs` |
 | 74 | Mutation testing: `src/config.rs`, `src/paths.rs` |
 | 75 | Mutation testing: `src/stats.rs`, `src/preview.rs`, `src/soft_delete.rs`, `src/project.rs` |
+| 76 | Mutation testing (core): `src/normalize.rs`, `src/stage2.rs` |
