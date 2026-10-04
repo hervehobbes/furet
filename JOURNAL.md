@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 72 — mutation testing modules 2-3 (MUTANTS.md procedure): `src/import.rs` 54 mutants —
+before 8 missed / 38 caught / 8 unviable, after 2 missed (both classified equivalent, see
+MUTANTS.md); `src/backup.rs` 16 mutants — 0 missed in both runs. 3 killing changes in the import
+tests (lone and unterminated quotes, dedupe tie-breaks). Executor: GLM 5.3 Flash.
+Correction: lot 71 added 2 tests, not 3.
+Next: reviewer pass from a Claude Code session; next module `src/remove.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 71 — mutation testing opens with cargo-mutants 27.1.0 (`MUTANTS.md`, `.gitignore`
 gains `/mutants.out*`): `src/alias.rs` ran 58 mutants — before 5 missed / 46 caught / 7 unviable,
 after 0 missed / 51 caught; 3 behavior-named tests added (exact-key tie in `suggestion`, duplicate

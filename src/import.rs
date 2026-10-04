@@ -316,6 +316,44 @@ mod tests {
     }
 
     #[test]
+    fn the_best_score_wins_even_when_its_path_sorts_last() {
+        let candidates = vec![(9.0, dir("c:\\dev\\fOO")), (3.0, dir("c:\\dev\\Foo"))];
+        let (deduped, duplicates) = dedupe_by_key(candidates);
+        assert_eq!(duplicates, 1);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].0, 9.0);
+        assert_eq!(deduped[0].1.path, "c:\\dev\\fOO");
+    }
+
+    #[test]
+    fn duplicates_with_identical_paths_keep_the_first_candidate() {
+        let candidates = vec![
+            (
+                5.0,
+                CanonicalDir {
+                    path: "c:\\dev\\Foo".to_owned(),
+                    key: "c:\\dev\\foo".to_owned(),
+                    name: "first".to_owned(),
+                    folder: None,
+                },
+            ),
+            (
+                5.0,
+                CanonicalDir {
+                    path: "c:\\dev\\Foo".to_owned(),
+                    key: "c:\\dev\\foo".to_owned(),
+                    name: "second".to_owned(),
+                    folder: None,
+                },
+            ),
+        ];
+        let (deduped, duplicates) = dedupe_by_key(candidates);
+        assert_eq!(duplicates, 1);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].1.name, "first");
+    }
+
+    #[test]
     fn known_keys_are_excluded_from_the_plan() {
         let candidates = vec![(9.0, dir("c:\\dev\\z")), (5.0, dir("c:\\dev\\a"))];
         let mut known = HashSet::new();
@@ -375,6 +413,9 @@ mod tests {
             "cd 'a' 'b'",
             "cd \"a\"b\"",
             "cd ''",
+            "cd '",
+            "cd \"",
+            "cd \"C:\\dev",
         ] {
             assert_eq!(parse_history_line(line), None, "line: {line:?}");
         }

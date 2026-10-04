@@ -78,3 +78,4 @@
 | 69 | `tests/docs.rs`: docs may only cite code that exists |
 | 70 | CHANGELOG.md; release 0.4.0 (lots 63-69) |
 | 71 | Mutation testing campaign: setup, `MUTANTS.md`, `src/alias.rs` |
+| 72 | Mutation testing: `src/import.rs`, `src/backup.rs` |

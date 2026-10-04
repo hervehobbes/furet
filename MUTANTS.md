@@ -35,15 +35,28 @@ For `src/<module>.rs`, in order:
 4. **Confirmation.** Re-run the Step 1 command. `missed.txt` must then be
    empty, or list only the mutants classified as equivalent in Step 3.
 
+- A `pub` function's contract covers every input its signature accepts,
+  including inputs the CLI cannot produce today (lot 71: `alias::cycle`
+  with a duplicated digit, `alias::suggestion` with two names sharing a
+  key). A mutant such an input exposes is killed by a test, never
+  classified as equivalent.
+
 ## Results
 
 | Module | Lot | Date | Mutants | Caught | Unviable | Missed before | Missed after | Equivalent |
 |---|---|---|---|---|---|---|---|---|
 | `src/alias.rs` | 71 | 2026-10-04 | 58 | 51 | 7 | 5 | 0 | 0 |
+| `src/import.rs` | 72 | 2026-10-04 | 54 | 44 | 8 | 8 | 2 | 2 |
+| `src/backup.rs` | 72 | 2026-10-04 | 16 | 14 | 2 | 0 | 0 | 0 |
 
 ## Accepted equivalent mutants
 
-None.
+- `src/import.rs: 67:23: replace < with <= in parse_history_line` — the only input the
+  widened guard adds to the early return is `''`, an empty single-quoted path, which the
+  empty-path check after the branch also rejects; every input returns the same `Option`.
+- `src/import.rs: 72:23: replace < with <= in parse_history_line` — the same reasoning for
+  the double-quoted branch: the added input `""` reaches the same `None` through the
+  empty-path check.
 
 ## Campaign order
 
