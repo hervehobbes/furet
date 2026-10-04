@@ -282,6 +282,11 @@ mod tests {
     }
 
     #[test]
+    fn backtracking_resumes_after_the_star() {
+        assert!(wildcard_match("*?", "a*"));
+    }
+
+    #[test]
     fn a_separator_a_colon_or_a_dot_form_selects_path_mode() {
         for pattern in ["a\\b", "a/b", "c:", ".", ".."] {
             assert!(is_path_pattern(pattern), "{pattern} must select path mode");

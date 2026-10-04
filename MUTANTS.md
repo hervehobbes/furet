@@ -43,18 +43,25 @@ For `src/<module>.rs`, in order:
 
 ## Results
 
-| Module | Lot | Date | Mutants | Caught | Unviable | Missed before | Missed after | Equivalent |
-|---|---|---|---|---|---|---|---|---|
-| `src/alias.rs` | 71 | 2026-10-04 | 58 | 51 | 7 | 5 | 0 | 0 |
-| `src/import.rs` | 72 | 2026-10-04 | 54 | 44 | 8 | 8 | 2 | 2 |
-| `src/backup.rs` | 72 | 2026-10-04 | 16 | 14 | 2 | 0 | 0 | 0 |
+| Module | Lot | Date | Mutants | Caught | Unviable | Missed before | Missed after | Equivalent | Timeouts |
+|---|---|---|---|---|---|---|---|---|---|
+| `src/alias.rs` | 71 | 2026-10-04 | 58 | 51 | 7 | 5 | 0 | 0 | 0 |
+| `src/import.rs` | 72 | 2026-10-04 | 54 | 44 | 8 | 8 | 2 | 2 | 0 |
+| `src/backup.rs` | 72 | 2026-10-04 | 16 | 14 | 2 | 0 | 0 | 0 | 0 |
+| `src/remove.rs` | 73 | 2026-10-04 | 59 | 54 | 2 | 1 | 0 | 0 | 3 |
+| `src/calibration.rs` | 73 | 2026-10-04 | 25 | 23 | 2 | 0 | 0 | 0 | 0 |
+| `src/memory.rs` | 73 | 2026-10-04 | 20 | 19 | 1 | 0 | 0 | 0 | 0 |
+
+A timeout is a mutant whose test run hangs (cargo-mutants' 20 s cap): it is
+detected without a test failing, and it stays a timeout in the confirmation
+run.
 
 ## Accepted equivalent mutants
 
-- `src/import.rs: 67:23: replace < with <= in parse_history_line` — the only input the
+- `src/import.rs:67:23: replace < with <= in parse_history_line` — the only input the
   widened guard adds to the early return is `''`, an empty single-quoted path, which the
   empty-path check after the branch also rejects; every input returns the same `Option`.
-- `src/import.rs: 72:23: replace < with <= in parse_history_line` — the same reasoning for
+- `src/import.rs:72:23: replace < with <= in parse_history_line` — the same reasoning for
   the double-quoted branch: the added input `""` reaches the same `None` through the
   empty-path check.
 

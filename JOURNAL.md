@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 73 — mutation testing modules 4-6 (MUTANTS.md procedure): `src/remove.rs` 59 mutants —
+before 1 missed / 53 caught / 2 unviable / 3 timeouts, after 0 missed; `src/calibration.rs` 25 and
+`src/memory.rs` 20 mutants — 0 missed in all four runs. One test added, `backtracking_resumes_after_the_star`
+(`wildcard_match("*?", "a*")` pins the star-resume point); no equivalent mutants. MUTANTS.md gains a
+Timeouts column. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; next module `src/config.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 72 — mutation testing modules 2-3 (MUTANTS.md procedure): `src/import.rs` 54 mutants —
 before 8 missed / 38 caught / 8 unviable, after 2 missed (both classified equivalent, see
 MUTANTS.md); `src/backup.rs` 16 mutants — 0 missed in both runs. 3 killing changes in the import
