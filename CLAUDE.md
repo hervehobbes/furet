@@ -51,7 +51,10 @@ the machine. Write comments correctly the first time; don't rely on the hook.
 ## Proof
 Only raw command output is proof of anything. An agent's prose summary of
 what it did is not evidence. Definition of Done for every lot:
-`tools/Run-DoD.ps1` green, its raw output pasted into the report.
+`tools/Run-DoD.ps1` green before the commit. The executor does not paste
+its output: it reports "DoD green" and the log path, and the reviewer's
+own DoD run is the proof (Hervé, 2026-10-04, after repeated retyped
+pastes — see `MISTAKES.md`).
 
 ## Routing — one lot = one mechanism, one executor
 State the choice and a one-line reason in the lot prompt:
