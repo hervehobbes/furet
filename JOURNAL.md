@@ -1,4 +1,11 @@
 ## 2026-10-04 — branch main — v0.4.0
+Done: lot 78 — mutation testing, core engine part 3 (MUTANTS.md procedure): `src/rank.rs` 23
+mutants and `src/decision.rs` 11 — missed 0 before and 0 after in all four runs, no test change,
+no equivalents, no timeouts. The stage-1 tie rule made official (Hervé, 2026-10-04): on equal
+scores the leftmost start wins, documented in CONTRACTS.md and pinned by
+`tied_placements_keep_the_leftmost_start`. Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; then `src/storage.rs` and `src/main.rs`.
+## 2026-10-04 — branch main — v0.4.0
 Done: lot 77 — mutation testing, core engine part 2 (MUTANTS.md procedure): `src/stage1.rs` 81
 mutants — before 10 missed, after 2 (both classified equivalent, see MUTANTS.md);
 `src/stage1_nucleo.rs` 7 — 0 missed in both runs. Three example tests added around the DP carry,

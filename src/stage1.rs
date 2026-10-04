@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(placement("ab", "xaxa-b"), (9, 3));
     }
 
-    // WHY: SPEC §7.2, the DP retains the placement that maximizes the bonuses.
+    // WHY: CONTRACTS stage 1, tied placements keep the leftmost start (Hervé, 2026-10-04).
     #[test]
     fn tied_placements_keep_the_leftmost_start() {
         assert_eq!(placement("ab", "a---x---a-b"), (19, 0));

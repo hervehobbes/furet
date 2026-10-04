@@ -69,6 +69,8 @@ For `src/<module>.rs`, in order:
 | `src/stage2.rs` | 76 | 2026-10-04 | 74 | 73 | 1 | 1 | 0 | 0 | 0 |
 | `src/stage1.rs` | 77 | 2026-10-04 | 81 | 76 | 3 | 10 | 2 | 2 | 0 |
 | `src/stage1_nucleo.rs` | 77 | 2026-10-04 | 7 | 6 | 1 | 0 | 0 | 0 | 0 |
+| `src/rank.rs` | 78 | 2026-10-04 | 23 | 15 | 8 | 0 | 0 | 0 | 0 |
+| `src/decision.rs` | 78 | 2026-10-04 | 11 | 10 | 1 | 0 | 0 | 0 | 0 |
 
 A timeout is a mutant whose test run hangs (cargo-mutants' 20 s cap): it is
 detected without a test failing, and it stays a timeout in the confirmation

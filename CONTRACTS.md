@@ -53,7 +53,9 @@ query is split on whitespace; every token must be a subsequence of `name`
 (logical AND) or the whole match is `None`
 (`rejects_a_token_that_is_not_a_subsequence`). Each token's placement is the
 maximum-scoring one found by a two-row O(|query|×|name|) DP, not the first
-greedy one (`the_optimal_placement_beats_the_first_greedy_one`).
+greedy one (`the_optimal_placement_beats_the_first_greedy_one`). On equal
+scores the leftmost start wins
+(`tied_placements_keep_the_leftmost_start`; Hervé, 2026-10-04).
 
 Per-token score = `TOKEN_BASE + length + placement + prefix + density`,
 where:
