@@ -109,8 +109,8 @@ extra profile line.
   be found when nothing known matches; also combines with `--list`.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
-- `furet queries [-n N]` — list the query journal, newest first (the `fq`
-  wrapper comes in lot 81).
+- `furet queries [-n N]` — list the query journal, newest first (`fq`,
+  next clause, is its pwsh wrapper).
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` —
   record one visit to a directory; the pwsh hook runs this on every
   directory change. `--query <text>` (requires `--from`) also journals
@@ -147,6 +147,11 @@ extra profile line.
   numbers, `fh -n 50` caps the output at 50 lines (`0` prints it all).
   Fixed name, like `fi` and `fm` — `furet init pwsh --cmd j` still
   defines `fh`, never `jh`.
+- `fq` — the query journal in one word: list the queries furet has
+  journaled, newest first. `fq -n 50` caps the output at 50 lines,
+  `fq --failures` lists the probable mistakes. Fixed name, like `fi`,
+  `fm` and `fh` — `furet init pwsh --cmd j` still defines `fq`, never
+  `jq`.
 - `furet remove [<pattern>] [--missing] [--confirm | --yes] [--dry-run]` —
   forget known directories matching
   `<pattern>`. Without `\`, `/` or `:`, the pattern matches directory

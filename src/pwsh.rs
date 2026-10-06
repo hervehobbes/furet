@@ -266,6 +266,11 @@ function global:fh {
     furet history --session $global:__furet_session @args
 }
 
+# WHY: fq has no param() block, like fh, so --failures and -n reach furet queries untouched.
+function global:fq {
+    furet queries @args
+}
+
 # WHY: Ctrl+Alt+arrows because Windows Terminal takes Alt+arrows for pane focus, PSReadLine takes Alt+digits and brackets are impractical on AZERTY; they act only on an empty line, so typed text is never lost.
 if (Get-Module PSReadLine) {
     Set-PSReadLineKeyHandler -Chord 'Ctrl+Alt+RightArrow' -BriefDescription FuretNextMark -Description 'furet: jump to the next mark (fm +)' -ScriptBlock {
@@ -435,6 +440,15 @@ mod tests {
         let renamed = script("j");
         assert!(renamed.contains("function global:fh "));
         assert!(!renamed.contains("function global:jh "));
+    }
+
+    #[test]
+    fn script_defines_fq_whatever_the_cmd() {
+        let rendered = script("f");
+        assert!(rendered.contains("function global:fq "));
+        let renamed = script("j");
+        assert!(renamed.contains("function global:fq "));
+        assert!(!renamed.contains("function global:jq "));
     }
 
     #[test]

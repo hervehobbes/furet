@@ -1,4 +1,12 @@
 ## 2026-10-06 — branch main — v0.4.0
+Done: lot 81 — pwsh `fq`, a fixed-name one-word wrapper over `furet
+queries`: `furet queries @args`, no `param()` block, placed after `fh`;
+help block and `--cmd` doc now name `fi`/`fm`/`fh`/`fq`. 4 CLI tests + 1
+unit test; mutations A (`@args` dropped) and B (rename to `fj`) killed.
+Decisions: none beyond the prompt (Hervé, 2026-10-06). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-06 — branch main — v0.4.0
 Done: lot 80 — a bare `furet queries` lists the query journal newest first
 (`ORDER BY ts DESC, id DESC`), tab-separated
 time/outcome/stage/cwd/query/result, `(none)` for a `NULL` result (`LEFT

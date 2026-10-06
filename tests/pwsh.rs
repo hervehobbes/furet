@@ -1860,6 +1860,75 @@ fn fh_is_fixed_whatever_the_cmd() {
 }
 
 #[test]
+fn fq_lists_the_query_journal_newest_first() {
+    let world = sandbox(&["tokio", "helix"]);
+    seed(&world, &world.child("tokio"), "seed");
+    seed(&world, &world.child("helix"), "seed");
+    let run = run_pwsh(&world, "", "", world.tree.path(), "f tok\nf hel\nfq");
+    let lines = history_lines(&run.stdout, 6);
+    assert_eq!(lines.len(), 2, "stdout: {}", run.stdout);
+    assert_eq!(lines[0][1], "jump", "stdout: {}", run.stdout);
+    assert_eq!(lines[0][4], "hel", "stdout: {}", run.stdout);
+    assert_eq!(
+        lines[0][5],
+        canonical(&world.child("helix")),
+        "stdout: {}",
+        run.stdout
+    );
+    assert_eq!(lines[1][4], "tok", "stdout: {}", run.stdout);
+    assert_eq!(
+        lines[1][5],
+        canonical(&world.child("tokio")),
+        "stdout: {}",
+        run.stdout
+    );
+}
+
+#[test]
+fn fq_dash_n_limits_the_lines() {
+    let world = sandbox(&["tokio", "helix"]);
+    seed(&world, &world.child("tokio"), "seed");
+    seed(&world, &world.child("helix"), "seed");
+    let run = run_pwsh(&world, "", "", world.tree.path(), "f tok\nf hel\nfq -n 1");
+    let lines = history_lines(&run.stdout, 6);
+    assert_eq!(lines.len(), 1, "stdout: {}", run.stdout);
+    assert_eq!(lines[0][4], "hel", "stdout: {}", run.stdout);
+}
+
+#[test]
+fn fq_passes_failures_through() {
+    let world = sandbox(&["tokio"]);
+    seed(&world, &world.child("tokio"), "seed");
+    let run = run_pwsh(&world, "", "", world.tree.path(), "f tok\nfq --failures");
+    assert!(run.stderr.is_empty(), "stderr: {}", run.stderr);
+    assert!(
+        history_lines(&run.stdout, 6).is_empty(),
+        "stdout: {}",
+        run.stdout
+    );
+}
+
+#[test]
+fn fq_is_fixed_whatever_the_cmd() {
+    let world = sandbox(&["a"]);
+    let body = "Write-Output ('FURET_TEST_FQ=' + [bool](Get-Command fq -CommandType Function -ErrorAction SilentlyContinue))\n\
+                Write-Output ('FURET_TEST_JQ=' + [bool](Get-Command jq -CommandType Function -ErrorAction SilentlyContinue))";
+    let run = run_pwsh(&world, "", "--cmd j", world.tree.path(), body);
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_FQ="),
+        "True",
+        "stderr: {}",
+        run.stderr
+    );
+    assert_eq!(
+        extract(&run.stdout, "FURET_TEST_JQ="),
+        "False",
+        "stderr: {}",
+        run.stderr
+    );
+}
+
+#[test]
 fn init_binds_ctrl_alt_arrows_when_psreadline_is_loaded() {
     let world = sandbox(&[]);
     let body = "Write-Output ('FURET_TEST_NEXT=' + (Get-PSReadLineKeyHandler -Chord 'Ctrl+Alt+RightArrow').Function)\n\

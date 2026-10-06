@@ -195,7 +195,7 @@ enum InitShell {
     /// Print the PowerShell integration script.
     #[command(after_help = PWSH_FUNCTIONS_HELP)]
     Pwsh {
-        /// Name of the generated jump function; `fi`, `fm` and `fh` keep their names.
+        /// Name of the generated jump function; `fi`, `fm`, `fh` and `fq` keep their names.
         #[arg(long, default_value = "f")]
         cmd: String,
     },
@@ -398,7 +398,9 @@ PowerShell functions (defined by `furet init pwsh`):
                    fm + / fm - cycle
   fh [-a] [-n N]   Show the visit history, numbered like f -N; -a lists every
                    session unnumbered, -n N caps the lines
-`f` is renamed with `--cmd <name>`; `fi`, `fm` and `fh` keep their names.
+  fq [-n N]        Show the query journal, newest first; --failures lists
+                   the probable mistakes
+`f` is renamed with `--cmd <name>`; `fi`, `fm`, `fh` and `fq` keep their names.
 Ctrl+Alt+Right / Ctrl+Alt+Left run fm + / fm - on an empty line.";
 
 // WHY: the runtime file locations depend on the environment, so a static clap attribute cannot hold them.

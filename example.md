@@ -1,7 +1,7 @@
 # Exemples d'utilisation de furet
 
 Ces exemples supposent que :
-- l'intégration PowerShell est chargée (`Invoke-Expression (& furet init pwsh | Out-String)` dans le `$PROFILE`), ce qui donne les fonctions `f`, `fi`, `fm` et `fh` ; la fonction `f` peut être renommée (`furet init pwsh --cmd <nom>`), `fi`, `fm` et `fh` gardent toujours leurs noms ;
+- l'intégration PowerShell est chargée (`Invoke-Expression (& furet init pwsh | Out-String)` dans le `$PROFILE`), ce qui donne les fonctions `f`, `fi`, `fm`, `fh` et `fq` ; la fonction `f` peut être renommée (`furet init pwsh --cmd <nom>`), `fi`, `fm`, `fh` et `fq` gardent toujours leurs noms ;
 - vous partez, par défaut, du répertoire `C:\dev\furet` ;
 - l'arborescence sous `C:\dev` est celle-ci (extrait) :
 
@@ -253,7 +253,7 @@ maison plutôt que par `furet home`.
 La commande directe `furet home` affiche cette cible, telle que résolue
 sur le disque — ou rien du tout (exit 0) quand `home` n'est pas définie
 ou ne désigne pas un répertoire existant. Avec `home = "C:\\dev"` comme
-dans la section précédente :
+dans [Rester sous la maison](#rester-sous-la-maison) :
 
 ```powershell
 PS C:\dev\furet> furet home
@@ -622,8 +622,28 @@ PS C:\dev\furet> furet add C:\dev\ombi --session $PID --from C:\dev\furet --quer
 
 ### Consulter le journal des requêtes
 
+`fq` affiche le journal des requêtes, du plus récent au plus ancien :
+chaque requête passée à `f` ou `fi` y laisse une ligne, qu'elle ait mené
+quelque part ou non :
+
 ```powershell
-PS C:\dev\furet> furet queries --failures
+PS C:\dev\furet> fq
+2026-10-06T15:02:31	jump	1	C:\dev\furet	clypher	C:\dev\clypher
+2026-10-06T15:02:12	menu	menu	C:\dev\furet	mcp	(none)
+2026-10-06T15:01:48	pick	menu	C:\dev\furet	banque	C:\dev\formation_dotnet\BanqueDLL
+```
+
+Chaque ligne porte, dans l'ordre : l'heure de la requête ; le résultat
+(`jump` la requête a sauté, `none` elle n'a rien trouvé, `menu` le menu a
+été ouvert sans choix, `pick` un choix a été confirmé) ; l'étape du moteur
+qui a tranché (`1`, `2`, `menu` ou `fallback`) ; le répertoire de départ ;
+la requête ; et la cible visée (`(none)` quand rien n'a été choisi).
+
+`fq -n 50` limite l'affichage à 50 lignes (`fq -n 0` les affiche toutes).
+Côté binaire, la commande derrière `fq` est `furet queries` :
+
+```powershell
+PS C:\dev\furet> fq --failures
 ```
 
 `--failures` liste les sauts qui étaient probablement des erreurs
@@ -943,7 +963,7 @@ plus haut dans [Les marques](#les-marques).
 ## Les autres clés de `config.toml`
 
 Les clés déjà vues plus haut ont leur section : `home` ([Retour à la
-maison](#retour-a-la-maison)), `exclude_dirs` ([Ne jamais enregistrer
+maison](#retour-à-la-maison)), `exclude_dirs` ([Ne jamais enregistrer
 certains répertoires](#ne-jamais-enregistrer-certains-répertoires)),
 `query_memory` ([La mémoire des requêtes](#la-mémoire-des-requêtes)),
 `engine` ([Essayer le moteur nucleo](#essayer-le-moteur-nucleo)) et
