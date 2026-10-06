@@ -12,23 +12,18 @@
 ## idées
 Hors ce qui est déjà dans les cartons (import historique PowerShell, `--history, boost contexte git, yazi, bash/zsh), voici ce que je vois, trié par rapport valeur/coût :
 
-**Petit coût, gain immédiat**
-- **Lecteurs lents ou débranchés** : un `stat` sur un chemin UNC ou un disque réseau hors ligne peut geler la réconciliation. Un timeout ou une exclusion des lecteurs réseau évite un `f` qui fige 30 s.
 **Moyen coût, utile au quotidien**
-- **`furet stats`** : top dossiers, taux d'échecs (§15), et surtout **latence du hook `add`**. C'était le risque n°1 identifié sous Windows, et tu n'as aucune mesure en continu.
 **Touche au classement, donc ta décision**
 **Pour la publication**
 - Release GitHub CI + manifeste **scoop/winget** : sans ça, personne ne l'installera.
 
 Mon top 3 : **stats avec latence du hook**, **mémoire des requêtes**. Laquelle veux-tu creuser en premier ?
 
-- import historique PowerShell, --history, boost contexte git, yazi, bash/zsh
+- boost contexte git, yazi, bash/zsh
 - **Contexte** : boost des dossiers du même dépôt git ou du même parent que le cwd.
 - **Découverte** : scan optionnel de racines (`c:\dev` en profondeur 2, ou détection `.git` / `.sln` / `Cargo.toml`) pour que le premier saut marche sans visite préalable.
 - **Mode interactif intégré** avec ratatui, sans dépendance à fzf, qui est pénible sous Windows. Pour le moteur, tu peux porter le tien (plus formateur) ou comparer avec `nucleo`, le matcher de Helix.
 
 Comment remplacer z par f ? » est déjà couverte par `furet init pwsh --cmd z`.
-
-Agents may propose entries here, but only Hervé writes them.
 
 - Arrow-key and Esc support for the SPEC §9 console menu (decision.rs/fi's no-fzf branch). Today only digit-then-Enter selects, and Enter-on-anything-else cancels; there's no raw-keypress reader. Would need a small terminal-raw-mode dependency or a custom ReadKey loop in the pwsh script.
