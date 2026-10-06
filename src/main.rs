@@ -124,9 +124,12 @@ enum Command {
     },
     /// Inspect the query journal (SPEC section 15).
     Queries {
-        /// List queries whose jump was probably a mistake; mandatory today.
-        #[arg(long)]
+        /// List queries whose jump was probably a mistake.
+        #[arg(long, conflicts_with = "limit")]
         failures: bool,
+        /// Maximum number of journal lines; 0 prints them all.
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: u32,
     },
     /// List known directories as tab-separated lines.
     List {
@@ -349,7 +352,7 @@ fn main() {
         Command::Init { shell } => match shell {
             InitShell::Pwsh { cmd } => report(init_pwsh(&cmd)),
         },
-        Command::Queries { failures } => report(queries_command(failures)),
+        Command::Queries { failures, limit } => report(queries_command(failures, limit)),
         Command::List { all, paths } => report(list_command(all, paths)),
         Command::Stats { top } => report(stats_command(top)),
         Command::Remove {
@@ -1411,31 +1414,41 @@ fn export_command() -> Result<(), Box<dyn Error>> {
 }
 
 // WHY: stdout output goes through `stdout_line`, the binary's only stdout writer.
-fn queries_command(failures: bool) -> Result<(), Box<dyn Error>> {
-    debug!(failures, "queries");
-    if !failures {
-        return Err("furet queries requires --failures".into());
-    }
+fn queries_command(failures: bool, limit: u32) -> Result<(), Box<dyn Error>> {
+    debug!(failures, limit, "queries");
     let conn = storage::open()?;
-    let queries = storage::query_log(&conn)?;
-    let visits = storage::visit_log(&conn)?;
-    let mut lines = Vec::new();
-    for failure in calibration::probable_failures(&queries, &visits) {
-        let result_path = match failure.query.result_dir_id {
-            Some(dir_id) => {
-                storage::dir_path_by_id(&conn, dir_id)?.unwrap_or_else(|| "(unknown)".to_owned())
-            }
-            None => "(unknown)".to_owned(),
-        };
-        let reason = match failure.reason {
-            FailureReason::Backtrack => "backtrack",
-            FailureReason::MovedElsewhere => "moved",
-        };
-        lines.push(format!(
-            "{}\t{}\t{}\t{}",
-            failure.query.cwd, failure.query.query, result_path, reason
-        ));
-    }
+    let lines = if failures {
+        let queries = storage::query_log(&conn)?;
+        let visits = storage::visit_log(&conn)?;
+        let mut lines = Vec::new();
+        for failure in calibration::probable_failures(&queries, &visits) {
+            let result_path = match failure.query.result_dir_id {
+                Some(dir_id) => storage::dir_path_by_id(&conn, dir_id)?
+                    .unwrap_or_else(|| "(unknown)".to_owned()),
+                None => "(unknown)".to_owned(),
+            };
+            let reason = match failure.reason {
+                FailureReason::Backtrack => "backtrack",
+                FailureReason::MovedElsewhere => "moved",
+            };
+            lines.push(format!(
+                "{}\t{}\t{}\t{}",
+                failure.query.cwd, failure.query.query, result_path, reason
+            ));
+        }
+        lines
+    } else {
+        storage::query_journal(&conn, limit)?
+            .iter()
+            .map(|row| {
+                let result = row.result.as_deref().unwrap_or("(none)");
+                format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    row.time, row.outcome, row.stage, row.cwd, row.query, result
+                )
+            })
+            .collect()
+    };
     print_lines(&lines);
     Ok(())
 }

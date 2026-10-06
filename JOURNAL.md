@@ -1,3 +1,15 @@
+## 2026-10-06 — branch main — v0.4.0
+Done: lot 80 — a bare `furet queries` lists the query journal newest first
+(`ORDER BY ts DESC, id DESC`), tab-separated
+time/outcome/stage/cwd/query/result, `(none)` for a `NULL` result (`LEFT
+JOIN` on dirs), `-n/--limit` capped at 20 by default with `0` = all;
+`--failures` unchanged, now refusing `--limit` (clap exit 2).
+`storage::query_journal` mirrors `visit_history`; 5 new CLI tests + 1 unit
+test, four mutations killed.
+Decisions: the first stdout exception widens to the whole command, no new
+one (Hervé, 2026-10-06). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; lot 81 adds the `fq` wrapper.
+
 ## 2026-10-04 — branch main — v0.4.0
 Done: lot 79 — docs and CLI help audit: `PWSH_FUNCTIONS_HELP` (f/fi/fm/fh + key chords) in
 `furet --help` before the runtime lines and as `furet init pwsh --help`'s footer, guard test

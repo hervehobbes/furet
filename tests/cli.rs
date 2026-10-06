@@ -2375,12 +2375,150 @@ fn queries_failures_flags_a_pick_followed_by_a_quick_back() {
 }
 
 #[test]
-fn queries_without_failures_fails_on_stderr() {
+fn queries_prints_the_journal_newest_first() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let tokio_canonical = canonical_child(&world, "tokio");
+    db(&world)
+        .execute("DELETE FROM queries", [])
+        .expect("the add's own journal rows are deleted");
+    journal_row(
+        &world,
+        1_700_000_000,
+        "tok",
+        Some(&tokio_canonical),
+        "1",
+        "jump",
+    );
+    journal_row(&world, 1_700_000_010, "hel", None, "menu", "menu");
+    journal_row(&world, 1_700_000_010, "zzz", None, "fallback", "none");
+    let expected_time = |ts: i64| -> String {
+        db(&world)
+            .query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch', 'localtime')",
+                params![ts],
+                |row| row.get(0),
+            )
+            .expect("the expected time formats")
+    };
+    let t0 = expected_time(1_700_000_000);
+    let t10 = expected_time(1_700_000_010);
+    let out = run(world.furet().arg("queries"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    assert!(out.stderr.is_empty());
+    assert_eq!(
+        text(&out.stdout),
+        format!(
+            "{t10}\tnone\tfallback\tc:\\dev\tzzz\t(none)\n\
+             {t10}\tmenu\tmenu\tc:\\dev\thel\t(none)\n\
+             {t0}\tjump\t1\tc:\\dev\ttok\t{tokio_canonical}\n"
+        )
+    );
+}
+
+#[test]
+fn queries_limit_caps_the_lines_and_zero_prints_all() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    for i in 0..22 {
+        journal_row(
+            &world,
+            1_700_000_000 + i,
+            &format!("q{i}"),
+            None,
+            "fallback",
+            "none",
+        );
+    }
+    let default = run(world.furet().arg("queries"));
+    assert!(
+        default.status.success(),
+        "stderr: {}",
+        text(&default.stderr)
+    );
+    let default_stdout = text(&default.stdout);
+    let lines: Vec<&str> = default_stdout.lines().collect();
+    assert_eq!(lines.len(), 20);
+    assert_eq!(lines[0].split('\t').nth(4), Some("q21"));
+    let two = run(world.furet().arg("queries").arg("-n").arg("2"));
+    assert!(two.status.success(), "stderr: {}", text(&two.stderr));
+    let two_stdout = text(&two.stdout);
+    let two_lines: Vec<&str> = two_stdout.lines().collect();
+    assert_eq!(two_lines.len(), 2);
+    assert_eq!(two_lines[0].split('\t').nth(4), Some("q21"));
+    assert_eq!(two_lines[1].split('\t').nth(4), Some("q20"));
+    let zero = run(world.furet().arg("queries").arg("--limit").arg("0"));
+    assert!(zero.status.success(), "stderr: {}", text(&zero.stderr));
+    assert_eq!(text(&zero.stdout).lines().count(), 22);
+}
+
+#[test]
+fn queries_failures_refuses_a_limit() {
+    let world = sandbox(&[]);
+    let out = run(world
+        .furet()
+        .arg("queries")
+        .arg("--failures")
+        .arg("-n")
+        .arg("5"));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn queries_on_an_empty_journal_prints_nothing_and_exits_zero() {
     let world = sandbox(&[]);
     let out = run(world.furet().arg("queries"));
-    assert!(!out.status.success());
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     assert!(out.stdout.is_empty());
-    assert!(!out.stderr.is_empty());
+    assert!(out.stderr.is_empty());
+}
+
+#[test]
+fn queries_writes_nothing() {
+    let world = sandbox(&["tokio"]);
+    assert!(
+        add(&world, &world.child("tokio"), "session-1", None, None)
+            .status
+            .success()
+    );
+    let tokio_canonical = canonical_child(&world, "tokio");
+    db(&world)
+        .execute("DELETE FROM queries", [])
+        .expect("the add's own journal rows are deleted");
+    journal_row(
+        &world,
+        1_700_000_000,
+        "tok",
+        Some(&tokio_canonical),
+        "1",
+        "jump",
+    );
+    journal_row(&world, 1_700_000_010, "hel", None, "menu", "menu");
+    journal_row(&world, 1_700_000_010, "zzz", None, "fallback", "none");
+    let before = (
+        scalar(&db(&world), "SELECT COUNT(*) FROM visits"),
+        scalar(&db(&world), "SELECT COUNT(*) FROM queries"),
+        scalar(&db(&world), "SELECT COUNT(*) FROM dirs"),
+    );
+    let out = run(world.furet().arg("queries"));
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let zero = run(world.furet().arg("queries").arg("-n").arg("0"));
+    assert!(zero.status.success(), "stderr: {}", text(&zero.stderr));
+    let after = (
+        scalar(&db(&world), "SELECT COUNT(*) FROM visits"),
+        scalar(&db(&world), "SELECT COUNT(*) FROM queries"),
+        scalar(&db(&world), "SELECT COUNT(*) FROM dirs"),
+    );
+    assert_eq!(after, before);
 }
 
 #[test]

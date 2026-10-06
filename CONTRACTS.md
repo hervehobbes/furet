@@ -653,12 +653,27 @@ block before the trailer lines with one blank line between, and the
   `f -l cl <Tab>` returns nothing. The generated script is covered by
   executed integration tests in `tests/pwsh.rs`, which run it in a real
   `pwsh` process; these tests require pwsh 7.
-- `furet queries --failures` — prints tab-separated probable-mistake rows
-  **to stdout**, not stderr. Calibration (SPEC-v2 §24) considers
+- `furet queries [--failures | -n <limit>]` — prints tab-separated rows
+  **to stdout**, not stderr. With `--failures`, calibration (SPEC-v2 §24)
+  considers
   `outcome IN ('jump', 'pick')` — a menu choice followed by a quick back is
-  flagged like a jump — and the output format is unchanged. Accepted exception to the stdout-discipline
+  flagged like a jump — and the output format is unchanged. Without
+  `--failures`, the bare form lists the query journal itself, one
+  tab-separated line per `queries` row — `time`, `outcome`, `stage`,
+  `cwd`, `query`, `result` — newest first (`ORDER BY ts DESC, id DESC`,
+  so two rows sharing a timestamp list last-inserted first), `time` in
+  local time formatted by SQLite itself, exactly as `history` does; a
+  `NULL` result prints `(none)` (a `LEFT JOIN` on `dirs`, so a row whose
+  result directory is no longer known is still listed). `--limit` (`-n`)
+  caps the lines, 20 by default, `0` prints them all; `--failures` refuses
+  `--limit` (clap exits 2). Read-only: no reconcile, no write of any kind;
+  an empty journal prints nothing, exit 0
+  (`src/storage.rs`, `query_journal`; `main::queries_command`).
+  Accepted exception to the stdout-discipline
   rule: it is a standalone reporting tool, never invoked by `f`/`fi`, so
-  nothing pipes its output into `Set-Location`. `furet list` below is the
+  nothing pipes its output into `Set-Location`; the bare form (lot 80,
+  Hervé 2026-10-06) widens this first accepted exception to the whole
+  command and adds no new one. `furet list` below is the
   second accepted stdout exception, `furet stats` below the third, for
   the same reason, and `furet preview` below the fourth — its output is
   read by fzf's preview pane, never by `Set-Location` — and `furet alias
@@ -1085,7 +1100,7 @@ a conflicting pair of flags, e.g. `furet remove x --confirm --yes`
 | `back --session` | the session has at least 2 visits | fewer than 2 visits for that session (`back_fails_when_the_session_has_fewer_than_two_visits`) |
 | `init pwsh` | always — pure string rendering, no fallible step | — |
 | `queries --failures` | always, even with an empty journal (`queries_failures_with_an_empty_journal_prints_nothing_and_exits_zero`) | — |
-| `queries` (no `--failures`) | — | always (`queries_without_failures_fails_on_stderr`) — the flag is mandatory today, SPEC does not define a bare `queries` command |
+| `queries [-n <n>]` | always, even with an empty journal (`queries_on_an_empty_journal_prints_nothing_and_exits_zero`) | a DB error; `--failures` with `--limit` is refused by clap, exit 2 (`queries_failures_refuses_a_limit`) |
 | `list [--all] [--paths]` | always, even with an empty database (`list_on_an_empty_database_prints_nothing_and_exits_zero`) | a DB error |
 | `stats [--top <n>]` | always, even with an empty database (`stats_on_an_empty_database_prints_zeros_and_no_top_line`) | a DB error |
 | `history (--session <id> \| --all) [-n <n>]` | always, even with an unknown session or an empty database (`history_of_an_unknown_session_or_an_empty_database_prints_nothing`) | a DB error; a bare `furet history` and `--session` with `--all` are refused by clap, exit 2 (`history_needs_a_session_or_all_but_not_both`) |

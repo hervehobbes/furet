@@ -521,6 +521,55 @@ pub fn visit_history(
     Ok(rows)
 }
 
+/// One `queries` row as listed by a bare `furet queries`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JournalRow {
+    /// Query time in local time, `YYYY-MM-DDTHH:MM:SS`.
+    pub time: String,
+    /// What the query ended in (`jump`, `menu`, `none`, ...).
+    pub outcome: String,
+    /// Which stage produced the result (`1`, `2`, `menu`, `fallback`).
+    pub stage: String,
+    /// Working directory the query was typed in.
+    pub cwd: String,
+    /// Query text as typed.
+    pub query: String,
+    /// Path of the result directory, `None` when the query had none.
+    pub result: Option<String>,
+}
+
+/// The newest `limit` journal rows, newest first; `limit = 0` returns them all.
+pub fn query_journal(conn: &Connection, limit: u32) -> Result<Vec<JournalRow>, StorageError> {
+    // WHY: the LEFT JOIN keeps rows whose result directory is gone (`result_dir_id` NULL) listed with no result.
+    let mut stmt = conn.prepare(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%S', queries.ts, 'unixepoch', 'localtime'),
+                queries.outcome,
+                queries.stage,
+                queries.cwd,
+                queries.query,
+                dirs.path
+         FROM queries
+         LEFT JOIN dirs ON dirs.id = queries.result_dir_id
+         ORDER BY queries.ts DESC, queries.id DESC
+         LIMIT ?1",
+    )?;
+    // WHY: SQLite treats a negative LIMIT as no limit, so 0 maps to -1.
+    let bound = if limit == 0 { -1_i64 } else { i64::from(limit) };
+    let rows = stmt
+        .query_map(params![bound], |row| {
+            Ok(JournalRow {
+                time: row.get(0)?,
+                outcome: row.get(1)?,
+                stage: row.get(2)?,
+                cwd: row.get(3)?,
+                query: row.get(4)?,
+                result: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Inserts one `queries` row, journaling a real query decision (SPEC section 15).
 pub fn insert_query(
     conn: &Connection,
@@ -977,9 +1026,9 @@ mod tests {
         alias_by_key, alias_listing, config_path, db_path, dir_entries, dir_id_by_key, dir_listing,
         dir_path_by_id, format_local_time, insert_query, insert_visit, known_keys,
         last_visited_dir, logs_dir, merge_snapshot, missing_since_by_id, open, open_at,
-        purge_before, query_log, recall, remove_alias, remove_dirs, resolve_data_dir,
-        set_missing_since, snapshot, stats_counts, top_dirs, upsert_alias, upsert_dir,
-        visit_history, visit_log, visited_dir_back,
+        purge_before, query_journal, query_log, recall, remove_alias, remove_dirs,
+        resolve_data_dir, set_missing_since, snapshot, stats_counts, top_dirs, upsert_alias,
+        upsert_dir, visit_history, visit_log, visited_dir_back,
     };
     use crate::backup;
     use crate::clock::Timestamp;
@@ -1895,6 +1944,38 @@ mod tests {
         assert_eq!(records[1].result_dir_id, None);
         assert_eq!(records[1].stage, "fallback");
         assert_eq!(records[1].outcome, "none");
+    }
+
+    #[test]
+    fn query_journal_lists_newest_first_with_null_results() {
+        let (_dir, path) = temp_db();
+        let conn = opened(&path);
+        assert!(
+            query_journal(&conn, 0)
+                .expect("the empty journal reads")
+                .is_empty()
+        );
+        let d = upsert_dir(&conn, "c:\\dev\\tokio", "c:\\dev\\tokio", at(100))
+            .expect("the fixture dir upserts");
+        insert_query(&conn, at(100), "c:\\dev", "tok", Some(d), "1", "jump")
+            .expect("the tok query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "hel", None, "menu", "menu")
+            .expect("the hel query inserts");
+        insert_query(&conn, at(200), "c:\\dev", "zzz", None, "fallback", "none")
+            .expect("the zzz query inserts");
+        let all = query_journal(&conn, 0).expect("the journal reads");
+        let queries: Vec<&str> = all.iter().map(|row| row.query.as_str()).collect();
+        assert_eq!(queries, ["zzz", "hel", "tok"]);
+        let limited = query_journal(&conn, 2).expect("the limited journal reads");
+        let limited_queries: Vec<&str> = limited.iter().map(|row| row.query.as_str()).collect();
+        assert_eq!(limited_queries, ["zzz", "hel"]);
+        assert_eq!(all[2].result, Some("c:\\dev\\tokio".to_owned()));
+        assert_eq!(all[0].result, None);
+        assert_eq!(all[1].result, None);
+        assert_eq!(
+            all[2].time,
+            format_local_time(&conn, at(100)).expect("the tok time formats")
+        );
     }
 
     #[test]

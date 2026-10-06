@@ -7,5 +7,6 @@ Inspect the query journal (SPEC section 15)
 Usage: furet queries [OPTIONS]
 
 Options:
-      --failures  List queries whose jump was probably a mistake; mandatory today
-  -h, --help      Print help
+      --failures       List queries whose jump was probably a mistake
+  -n, --limit <LIMIT>  Maximum number of journal lines; 0 prints them all [default: 20]
+  -h, --help           Print help

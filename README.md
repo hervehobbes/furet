@@ -109,6 +109,8 @@ extra profile line.
   be found when nothing known matches; also combines with `--list`.
 - `furet queries --failures` — list jumps that were probably mistakes
   (SPEC §15).
+- `furet queries [-n N]` — list the query journal, newest first (the `fq`
+  wrapper comes in lot 81).
 - `furet add <path> --session <s> [--source <src>] [--from <dir>]` —
   record one visit to a directory; the pwsh hook runs this on every
   directory change. `--query <text>` (requires `--from`) also journals

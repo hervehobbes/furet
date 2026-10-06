@@ -86,3 +86,4 @@
 | 77 | Mutation testing (core): `src/stage1.rs`, `src/stage1_nucleo.rs` |
 | 78 | Mutation testing (core): `src/rank.rs`, `src/decision.rs`; stage-1 tie rule documented |
 | 79 | Docs and help audit: pwsh functions in --help, example.md/README/ARCHITECTURE completed, delivered BACKLOG entries removed |
+| 80 | Bare `furet queries`: the query journal, newest first |
