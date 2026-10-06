@@ -3,6 +3,26 @@
 All notable changes to furet. Versions follow [Semantic Versioning](https://semver.org/);
 lot numbers refer to [ROADMAP.md](ROADMAP.md).
 
+## [0.4.1] — 2026-10-06
+
+### Added
+
+- `furet --help` and `furet init pwsh --help` list the PowerShell functions (`f`, `fi`, `fm`, `fh`) and the Ctrl+Alt+→/← bindings (lot 79).
+- A bare `furet queries` prints the query journal newest first, one tab-separated line per query (time, outcome, stage, starting directory, query, target — `(none)` when nothing was chosen), `-n <N>` caps it at 20 by default, `0` prints it all; the pwsh `fq` wrapper passes every argument through, `fq --failures` included (lots 80, 81).
+
+### Internal
+
+- The mutation testing campaign opens with its setup, the `MUTANTS.md` ledger and `src/alias.rs` (lot 71).
+- Mutation testing covers `src/import.rs` and `src/backup.rs` (lot 72).
+- Mutation testing covers `src/remove.rs`, `src/calibration.rs` and `src/memory.rs` (lot 73).
+- Mutation testing covers `src/config.rs` and `src/paths.rs` (lot 74).
+- Mutation testing covers `src/stats.rs`, `src/preview.rs`, `src/soft_delete.rs` and `src/project.rs` (lot 75).
+- Mutation testing covers the core engine's `src/normalize.rs` and `src/stage2.rs` (lot 76).
+- Mutation testing covers the core engine's `src/stage1.rs` and `src/stage1_nucleo.rs` (lot 77).
+- Mutation testing covers the core engine's `src/rank.rs` and `src/decision.rs`; the stage-1 tie rule is documented: on equal scores, the leftmost start wins (lot 78).
+- The docs audit completes example.md, README and ARCHITECTURE (lot 79).
+- Release 0.4.1 (lot 82).
+
 ## [0.4.0] — 2026-10-04
 
 ### Added
@@ -115,6 +135,7 @@ lot numbers refer to [ROADMAP.md](ROADMAP.md).
 - A single ranking pass in `furet query`; `upsert_dir` via `INSERT ... RETURNING` (lot 30).
 - Migration 3: `ts` indexes on `visits` and `queries` (lot 32).
 
+[0.4.1]: https://github.com/hervehobbes/furet/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hervehobbes/furet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/hervehobbes/furet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/hervehobbes/furet/compare/v0.1.1...v0.2.0

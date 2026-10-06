@@ -88,3 +88,4 @@
 | 79 | Docs and help audit: pwsh functions in --help, example.md/README/ARCHITECTURE completed, delivered BACKLOG entries removed |
 | 80 | Bare `furet queries`: the query journal, newest first |
 | 81 | pwsh `fq`: the query journal in one word |
+| 82 | Release 0.4.1 (lots 71-81) |

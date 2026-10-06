@@ -330,7 +330,7 @@ breaks a command.
 
 ## Status
 
-Version 0.4.0. What each version added is in [CHANGELOG.md](CHANGELOG.md);
+Version 0.4.1. What each version added is in [CHANGELOG.md](CHANGELOG.md);
 the lot-by-lot history is in [ROADMAP.md](ROADMAP.md). See
 [CONTRACTS.md](CONTRACTS.md) for the engine, storage, and CLI contracts,
 and [example.md](example.md) for usage examples in French.

@@ -1,3 +1,13 @@
+## 2026-10-06 — branch main — v0.4.1
+Done: lot 82 — release 0.4.1 (lots 71-81): CHANGELOG gains the 0.4.1 section
+(Added: the pwsh functions in `--help`, bare `furet queries` + `fq`;
+Internal: the lots 71-78 mutation campaign, lot 79's docs part, the release
+line), version 0.4.1 in Cargo.toml (Cargo.lock's furet entry follows), README
+Status bumped, ROADMAP row 82. No behavior change; no test or snapshot pins
+0.4.0.
+Decisions: none beyond the prompt (Hervé, 2026-10-06). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; the architect tags v0.4.1 after.
+
 ## 2026-10-06 — branch main — v0.4.0
 Done: lot 81 — pwsh `fq`, a fixed-name one-word wrapper over `furet
 queries`: `furet queries @args`, no `param()` block, placed after `fh`;
