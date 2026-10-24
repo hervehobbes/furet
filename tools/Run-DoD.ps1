@@ -6,8 +6,9 @@
 #   3. cargo deny check
 #   4. cargo test
 #   5. cargo build --release
-#   6. the release binary with --version (its output is printed)
-# Exits 0 only when all six steps succeed.
+#   6. gitleaks git --redact --exit-code 1 (secret scan of the full history)
+#   7. the release binary with --version (its output is printed)
+# Exits 0 only when all seven steps succeed.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -25,21 +26,32 @@ try {
     $stepNumber = 0
     foreach ($step in $steps) {
         $stepNumber++
-        Write-Host "==> Step $stepNumber/6: $($step.Name)"
+        Write-Host "==> Step $stepNumber/7: $($step.Name)"
         & cargo @($step.Args)
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "FAILED at step $stepNumber/6: $($step.Name)"
+            Write-Host "FAILED at step $stepNumber/7: $($step.Name)"
             exit $LASTEXITCODE
         }
     }
 
     $stepNumber++
-    Write-Host "==> Step $stepNumber/6: run the release binary with --version"
+    Write-Host "==> Step $stepNumber/7: gitleaks git --redact --exit-code 1"
+    $gitleaksTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    & gitleaks git --redact --no-banner --exit-code 1
+    $gitleaksExit = $LASTEXITCODE
+    Write-Host ("gitleaks step took {0:N1}s" -f $gitleaksTimer.Elapsed.TotalSeconds)
+    if ($gitleaksExit -ne 0) {
+        Write-Host "FAILED at step $stepNumber/7: gitleaks git"
+        exit $gitleaksExit
+    }
+
+    $stepNumber++
+    Write-Host "==> Step $stepNumber/7: run the release binary with --version"
     $binary = Join-Path $repoRoot 'target/release/furet'
     if ($IsWindows) { $binary += '.exe' }
     $versionOutput = & $binary '--version'
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "FAILED at step $stepNumber/6: running the release binary"
+        Write-Host "FAILED at step $stepNumber/7: running the release binary"
         exit $LASTEXITCODE
     }
     Write-Host "furet --version output:"

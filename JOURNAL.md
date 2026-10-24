@@ -1,3 +1,11 @@
+## 2026-10-24 — branch main — v0.4.2
+Done: `tools/Run-DoD.ps1` gains a blocking step 6/7, `gitleaks git --redact
+--no-banner --exit-code 1` over the full history (public repo); the binary
+check is now step 7/7. Probe with a fake `ghp_` token in a throwaway clone: red.
+Decisions: pre-push and pre-commit are not edited by agents; the gitleaks
+lines are proposed to Hervé. Executor: Claude subagent (Sonnet).
+Next: Hervé adds the gitleaks lines to the hooks.
+
 ## 2026-10-06 — branch main — v0.4.1
 Done: lot 82 — release 0.4.1 (lots 71-81): CHANGELOG gains the 0.4.1 section
 (Added: the pwsh functions in `--help`, bare `furet queries` + `fq`;
