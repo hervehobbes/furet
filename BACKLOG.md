@@ -1,5 +1,7 @@
 # Backlog
 
+27 octobre 2026
+
 ## Remontées des agents
 
 - Quand une requête Tab ne donne aucun résultat, pwsh propose à la place les fichiers et dossiers du répertoire courant. Ce comportement est peut-être voulu, peut-être pas.
@@ -7,6 +9,8 @@
 - **Scope par alias (`-in`)** : `f -in !ombi src` cherche `src` uniquement sous la cible de `!ombi`, sans y être ni que ce soit un dépôt git ; `-h` en deviendrait un cas particulier. Gardé pour plus tard (design §4).
 - **Fuite de `complete` dans Tab** : `clap_complete` 4.6.11 ne filtre pas les sous-commandes cachées dans son script PowerShell, donc `furet alias <Tab>` propose `complete`. Limite acceptée le 2026-10-02 ; à revoir si clap corrige en amont.
 - **Latence du hook `add`** : seul morceau de l'idée `furet stats` encore non livré (aucune mesure continue).
+- **Mises à jour compatibles des crates** : une vingtaine en attente au 2026-10-27 (étape 7 de `tools/Run-Security.ps1`). Un lot dédié : `cargo update`, puis DoD verte.
+- **Passage à `rusqlite` 0.41** : accepté par Hervé le 2026-10-27 (0.40.2 verrouillé aujourd'hui). Un lot dédié : relever la contrainte dans `Cargo.toml`, lire le changelog (une 0.x peut casser l'API), DoD verte.
 
 ## idées
 Hors ce qui est déjà dans les cartons (import historique PowerShell, `--history, boost contexte git, yazi, bash/zsh), voici ce que je vois, trié par rapport valeur/coût :
