@@ -65,3 +65,8 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   times without checking line 1; the architect caught it while reading
   lot 90's diff. Rule: "at the top" means line 1 of `JOURNAL.md`; the
   reviewer checks it with `head -2 JOURNAL.md`.
+- 2026-10-27, lots 90–91 (GLM 5.3 Flash, effort low): the executor saved
+  its scratch logs (`lot90-*.log`, `lot91-*.log`) in the user's home
+  directory, outside the repo; nothing asked for them and nothing cleaned
+  them up. Caught by the architect reading the reports. Rule: every lot
+  prompt states that scratch and log files go under `target/` only.
