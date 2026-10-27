@@ -27,6 +27,9 @@ quality gates (`cargo fmt --check`, `cargo clippy --all-targets --
 `cargo deny check` (advisories, licenses, bans, sources — configured by
 `deny.toml` at the repo root), tests, release build, and a smoke run of
 the release binary. It stops at the first failing step and names it.
+It writes its full output to `target/dod/dod-<timestamp>.log` and
+prints that path first and last; that path is the one a lot report
+cites.
 The cargo-deny step needs network access: it fetches the RustSec
 advisory database.
 

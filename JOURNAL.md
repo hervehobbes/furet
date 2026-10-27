@@ -1,4 +1,14 @@
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 84 — `tools/Run-DoD.ps1` writes its full output to
+`target/dod/dod-<yyyyMMdd-HHmmss>.log`: `Write-Log` doubles console lines
+into the file, `Invoke-Logged` (2>&1 + `"$_"` + Tee-Object) captures cargo's
+stderr without tripping `$ErrorActionPreference`; the log path is printed
+first and last (finally) on every path. CONTRIBUTING names the log as the
+path a report cites.
+Decisions: none beyond the prompt (Hervé, 2026-10-27). Executor: GLM 5.3.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 83 — `a_failing_query_logs_an_error_line` and
 `typo_min_length_from_config_disables_short_typo_queries` now query from an
 isolated `world.tree/cwd` (idiom of tests/cli.rs:642), keeping the `up = 1`

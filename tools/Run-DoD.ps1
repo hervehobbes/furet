@@ -8,12 +8,28 @@
 #   5. cargo build --release
 #   6. gitleaks git --redact --exit-code 1 (secret scan of the full history)
 #   7. the release binary with --version (its output is printed)
+# Writes the full output to target/dod/dod-<timestamp>.log and prints its path first and last.
 # Exits 0 only when all seven steps succeed.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
+$logDir = Join-Path $repoRoot 'target/dod'
+New-Item -ItemType Directory -Force $logDir | Out-Null
+$log = Join-Path $logDir ("dod-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+
+function Write-Log([string] $Text) {
+    Write-Host $Text
+    Add-Content -Path $log -Value $Text
+}
+
+# WHY: 2>&1 plus "$_" turns cargo's stderr records into plain text, so they reach the log without tripping ErrorActionPreference.
+function Invoke-Logged([string] $Command, [string[]] $Arguments) {
+    & $Command @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log -Append
+}
+
 try {
+    Write-Log "DoD log: $log"
     $steps = @(
         @{ Name = 'cargo fmt --check';     Args = @('fmt', '--check') },
         @{ Name = 'cargo clippy --all-targets -- -D warnings';
@@ -26,42 +42,43 @@ try {
     $stepNumber = 0
     foreach ($step in $steps) {
         $stepNumber++
-        Write-Host "==> Step $stepNumber/7: $($step.Name)"
-        & cargo @($step.Args)
+        Write-Log "==> Step $stepNumber/7: $($step.Name)"
+        Invoke-Logged 'cargo' $step.Args
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "FAILED at step $stepNumber/7: $($step.Name)"
+            Write-Log "FAILED at step $stepNumber/7: $($step.Name)"
             exit $LASTEXITCODE
         }
     }
 
     $stepNumber++
-    Write-Host "==> Step $stepNumber/7: gitleaks git --redact --exit-code 1"
+    Write-Log "==> Step $stepNumber/7: gitleaks git --redact --exit-code 1"
     $gitleaksTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    & gitleaks git --redact --no-banner --exit-code 1
+    Invoke-Logged 'gitleaks' @('git', '--redact', '--no-banner', '--exit-code', '1')
     $gitleaksExit = $LASTEXITCODE
-    Write-Host ("gitleaks step took {0:N1}s" -f $gitleaksTimer.Elapsed.TotalSeconds)
+    Write-Log ("gitleaks step took {0:N1}s" -f $gitleaksTimer.Elapsed.TotalSeconds)
     if ($gitleaksExit -ne 0) {
-        Write-Host "FAILED at step $stepNumber/7: gitleaks git"
+        Write-Log "FAILED at step $stepNumber/7: gitleaks git"
         exit $gitleaksExit
     }
 
     $stepNumber++
-    Write-Host "==> Step $stepNumber/7: run the release binary with --version"
+    Write-Log "==> Step $stepNumber/7: run the release binary with --version"
     $binary = Join-Path $repoRoot 'target/release/furet'
     if ($IsWindows) { $binary += '.exe' }
     $versionOutput = & $binary '--version'
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "FAILED at step $stepNumber/7: running the release binary"
+        Write-Log "FAILED at step $stepNumber/7: running the release binary"
         exit $LASTEXITCODE
     }
-    Write-Host "furet --version output:"
-    Write-Host $versionOutput
+    Write-Log "furet --version output:"
+    Write-Log $versionOutput
 
-    Write-Host 'All DoD steps passed.'
+    Write-Log 'All DoD steps passed.'
     exit 0
 } catch {
-    Write-Host "FAILED: unexpected error: $_"
+    Write-Log "FAILED: unexpected error: $_"
     exit 1
 } finally {
+    Write-Host "DoD log: $log"
     Pop-Location
 }
