@@ -8,6 +8,14 @@ included). Executor: Claude Haiku.
 Next: none planned.
 
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 90 — cargo update: 51 semver-compatible changes in
+Cargo.lock, Cargo.toml untouched. DoD green; cargo deny warnings
+unchanged (license-not-encountered x4, duplicate hashbrown and syn).
+Decisions: rusqlite 0.41 left to its own lot (outside the 0.40
+requirement). Executor: GLM 5.3 Flash.
+Next: lot 91 (rusqlite 0.41).
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 89 — tools/Run-Security.ps1 step 7/7, report only:
 cargo update --dry-run --verbose lists outdated crates without
 writing Cargo.lock. CONTRIBUTING.md documents it.
