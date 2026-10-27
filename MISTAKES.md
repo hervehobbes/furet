@@ -58,3 +58,10 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   expects the fallback to find nothing runs from an isolated
   `world.tree/cwd`; a poisoned-`TMP` run of the suite finds the
   offenders.
+- 2026-10-27, lots 87–90 (GLM 5.3 Flash, effort low): each "new entry at
+  the top" of `JOURNAL.md` was inserted above the previous lot's entry,
+  so all four landed below the hooks entry (6e3ecac), which has no lot
+  number. The reviewer subagent (Claude) reported "at the top" three
+  times without checking line 1; the architect caught it while reading
+  lot 90's diff. Rule: "at the top" means line 1 of `JOURNAL.md`; the
+  reviewer checks it with `head -2 JOURNAL.md`.

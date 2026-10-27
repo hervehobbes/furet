@@ -1,13 +1,4 @@
 ## 2026-10-27 — branch main — v0.4.2
-Done: pre-push now runs `tools/Run-DoD.ps1` (was fmt/clippy/test only);
-pre-commit scans staged changes with gitleaks (warns and skips if
-gitleaks is absent). Hooks changed by Hervé; CONTRIBUTING.md documents
-them, gitleaks setup, and the DoD's gitleaks step.
-Decisions: a push now costs a full DoD (~1.5 min, release build
-included). Executor: Claude Haiku.
-Next: none planned.
-
-## 2026-10-27 — branch main — v0.4.2
 Done: lot 90 — cargo update: 51 semver-compatible changes in
 Cargo.lock, Cargo.toml untouched. DoD green; cargo deny warnings
 unchanged (license-not-encountered x4, duplicate hashbrown and syn).
@@ -45,6 +36,15 @@ Decisions: rule rust.lang.security.unsafe-usage.unsafe-usage excluded
 env mutation in a storage test). The step needs network (registry
 rulesets). Executor: GLM 5.3 Flash.
 Next: lot 88 (Trivy + Grype script).
+
+## 2026-10-27 — branch main — v0.4.2
+Done: pre-push now runs `tools/Run-DoD.ps1` (was fmt/clippy/test only);
+pre-commit scans staged changes with gitleaks (warns and skips if
+gitleaks is absent). Hooks changed by Hervé; CONTRIBUTING.md documents
+them, gitleaks setup, and the DoD's gitleaks step.
+Decisions: a push now costs a full DoD (~1.5 min, release build
+included). Executor: Claude Haiku.
+Next: none planned.
 
 ## 2026-10-27 — branch main — v0.4.2
 Done: lot 86 — the DoD sets `[Console]::OutputEncoding` to UTF-8 (no
