@@ -7,6 +7,7 @@
 #   4. trivy fs, gate         (blocking: any HIGH/CRITICAL secret, misconfiguration, or vulnerability with a fix)
 #   5. grype dir, full report (report only)
 #   6. grype dir, gate        (blocking: any vulnerability rated high or above with a fix)
+#   7. cargo update --dry-run --verbose (report only: outdated crates; Cargo.lock is not written)
 # Writes the full output to target/security/security-<timestamp>.log and prints its path first and last.
 # Exits 0 only when every blocking step succeeds.
 
@@ -40,7 +41,9 @@ $steps = @(
        Args = $trivyFs + @('--severity', 'HIGH,CRITICAL', '--ignore-unfixed', '--exit-code', '1'); Blocking = $true },
     @{ Name = 'grype dir (report)'; Command = 'grype'; Args = $grypeDir + @('-o', 'table'); Blocking = $false },
     @{ Name = 'grype dir (gate)';   Command = 'grype';
-       Args = $grypeDir + @('--only-fixed', '--fail-on', 'high'); Blocking = $true }
+       Args = $grypeDir + @('--only-fixed', '--fail-on', 'high'); Blocking = $true },
+    @{ Name = 'outdated crates (report)'; Command = 'cargo';
+       Args = @('update', '--dry-run', '--verbose'); Blocking = $false }
 )
 
 $savedOutputEncoding = [Console]::OutputEncoding

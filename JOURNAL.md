@@ -8,6 +8,16 @@ included). Executor: Claude Haiku.
 Next: none planned.
 
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 89 — tools/Run-Security.ps1 step 7/7, report only:
+cargo update --dry-run --verbose lists outdated crates without
+writing Cargo.lock. CONTRIBUTING.md documents it.
+Decisions: no cargo-outdated, same command as Hervé's other Rust
+project. First run: about twenty semver-compatible updates pending,
+and rusqlite 0.41.0 outside the requirement (0.40.2 locked).
+Executor: GLM 5.3 Flash.
+Next: none planned.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 88 — tools/Run-Security.ps1, run by hand: grype db update and
 status, then Trivy fs and Grype dir, each as a report and a gate
 (HIGH/CRITICAL with a fix). All steps run; the summary names the

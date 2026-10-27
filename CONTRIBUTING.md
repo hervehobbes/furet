@@ -70,6 +70,11 @@ tool fails its blocking steps. The full output goes to
 `target/security/security-<timestamp>.log`, whose path is printed
 first and last.
 
+Its last step, report only, runs `cargo update --dry-run --verbose`:
+it lists the semver-compatible updates `cargo update` would apply and,
+as `Unchanged <crate> (available: <version>)`, the newer versions that
+the `Cargo.toml` requirements exclude. It never writes `Cargo.lock`.
+
 ## Comment policy
 
 Standalone `//` comments in Rust code must be `// WHY: ...` lines, and
