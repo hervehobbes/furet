@@ -1,4 +1,13 @@
 ## 2026-10-27 — branch main — v0.4.2
+Done: pre-push now runs `tools/Run-DoD.ps1` (was fmt/clippy/test only);
+pre-commit scans staged changes with gitleaks (warns and skips if
+gitleaks is absent). Hooks changed by Hervé; CONTRIBUTING.md documents
+them, gitleaks setup, and the DoD's gitleaks step.
+Decisions: a push now costs a full DoD (~1.5 min, release build
+included). Executor: Claude Haiku.
+Next: none planned.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 86 — the DoD sets `[Console]::OutputEncoding` to UTF-8 (no
 BOM) for the run and restores it in `finally`, so cargo-deny's
 box-drawing characters reach the log as `┌`/`│`, not `ÔöîÔöÇ` mojibake

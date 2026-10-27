@@ -10,26 +10,26 @@ After a fresh clone, activate the git hooks:
 git config core.hooksPath tools/hooks
 ```
 
-and install cargo-deny, which the DoD's dependency gate runs:
+and install cargo-deny, which the DoD's dependency gate runs, and put [gitleaks](https://github.com/gitleaks/gitleaks) on `PATH` for the secret scans:
 
 ```
 cargo install --locked cargo-deny
 ```
 
 `pre-commit` checks the staged content (comment policy in `.rs` files,
-forbidden words from `tools/forbidden-words.txt`); `pre-push` runs the
-quality gates (`cargo fmt --check`, `cargo clippy --all-targets --
--D warnings`, `cargo test`).
+forbidden words from `tools/forbidden-words.txt`, secrets with
+`gitleaks git --pre-commit --staged`); `pre-push` runs the full DoD,
+`tools/Run-DoD.ps1`, so nothing is pushed unless it is green.
 
 ## Before every commit
 
 `tools/Run-DoD.ps1` (PowerShell 7) must run green: format, clippy,
 `cargo deny check` (advisories, licenses, bans, sources — configured by
-`deny.toml` at the repo root), tests, release build, and a smoke run of
-the release binary. It stops at the first failing step and names it.
-It writes its full output to `target/dod/dod-<timestamp>.log` and
-prints that path first and last; that path is the one a lot report
-cites.
+`deny.toml` at the repo root), tests, release build, a `gitleaks` scan
+of the full history, and a smoke run of the release binary. It stops at
+the first failing step and names it. It writes its full output to
+`target/dod/dod-<timestamp>.log` and prints that path first and last;
+that path is the one a lot report cites.
 Its test step runs `cargo test` with `TMP`/`TEMP` pointing at a
 throwaway directory holding a decoy that matches almost any query, so
 a test whose sandbox lets the disk fallback reach the temp dir fails on

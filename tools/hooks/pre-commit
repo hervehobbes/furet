@@ -136,6 +136,15 @@ EOF
     rm -f "$patfile"
 fi
 
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks git --pre-commit --staged --redact --no-banner; then
+        echo "gitleaks: secret found in the staged changes" >&2
+        exit_code=1
+    fi
+else
+    echo "gitleaks not found: staged secret scan skipped" >&2
+fi
+
 if [ "$exit_code" -ne 0 ]; then
     echo "pre-commit: blocking checks failed, commit rejected" >&2
 fi
