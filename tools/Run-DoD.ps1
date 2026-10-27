@@ -4,12 +4,13 @@
 #   1. cargo fmt --check
 #   2. cargo clippy --all-targets -- -D warnings
 #   3. cargo deny check
-#   4. cargo test, with TMP/TEMP pointing at a throwaway dir holding a decoy
-#   5. cargo build --release
-#   6. gitleaks git --redact --exit-code 1 (secret scan of the full history)
-#   7. the release binary with --version (its output is printed)
+#   4. semgrep scan (p/rust, p/security-audit, p/secrets on src, build.rs, tests)
+#   5. cargo test, with TMP/TEMP pointing at a throwaway dir holding a decoy
+#   6. cargo build --release
+#   7. gitleaks git --redact --exit-code 1 (secret scan of the full history)
+#   8. the release binary with --version (its output is printed)
 # Writes the full output to target/dod/dod-<timestamp>.log and prints its path first and last.
-# Exits 0 only when all seven steps succeed.
+# Exits 0 only when all eight steps succeed.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -58,6 +59,12 @@ try {
         @{ Name = 'cargo clippy --all-targets -- -D warnings';
                                          Args = @('clippy', '--all-targets', '--', '-D', 'warnings') },
         @{ Name = 'cargo deny check';    Args = @('deny', 'check') },
+        # WHY: unsafe_code = "deny" already gates unsafe at compile time; each exception is an audited #[allow].
+        @{ Name = 'semgrep scan'; Command = 'semgrep';
+           Args = @('scan', '--config', 'p/rust', '--config', 'p/security-audit', '--config', 'p/secrets',
+                    '--metrics=off', '--disable-version-check', '--error',
+                    '--exclude-rule', 'rust.lang.security.unsafe-usage.unsafe-usage',
+                    'src', 'build.rs', 'tests') },
         @{ Name = 'cargo test (decoy temp dir)'; Args = @('test'); DecoyTemp = $true },
         @{ Name = 'cargo build --release'; Args = @('build', '--release') }
     )
@@ -65,36 +72,36 @@ try {
     $stepNumber = 0
     foreach ($step in $steps) {
         $stepNumber++
-        Write-Log "==> Step $stepNumber/7: $($step.Name)"
+        Write-Log "==> Step $stepNumber/8: $($step.Name)"
         if ($step.DecoyTemp) {
-            Invoke-WithDecoyTemp { Invoke-Logged 'cargo' $step.Args }
+            Invoke-WithDecoyTemp { Invoke-Logged ($step.Command ?? 'cargo') $step.Args }
         } else {
-            Invoke-Logged 'cargo' $step.Args
+            Invoke-Logged ($step.Command ?? 'cargo') $step.Args
         }
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "FAILED at step $stepNumber/7: $($step.Name)"
+            Write-Log "FAILED at step $stepNumber/8: $($step.Name)"
             exit $LASTEXITCODE
         }
     }
 
     $stepNumber++
-    Write-Log "==> Step $stepNumber/7: gitleaks git --redact --exit-code 1"
+    Write-Log "==> Step $stepNumber/8: gitleaks git --redact --exit-code 1"
     $gitleaksTimer = [System.Diagnostics.Stopwatch]::StartNew()
     Invoke-Logged 'gitleaks' @('git', '--redact', '--no-banner', '--exit-code', '1')
     $gitleaksExit = $LASTEXITCODE
     Write-Log ("gitleaks step took {0:N1}s" -f $gitleaksTimer.Elapsed.TotalSeconds)
     if ($gitleaksExit -ne 0) {
-        Write-Log "FAILED at step $stepNumber/7: gitleaks git"
+        Write-Log "FAILED at step $stepNumber/8: gitleaks git"
         exit $gitleaksExit
     }
 
     $stepNumber++
-    Write-Log "==> Step $stepNumber/7: run the release binary with --version"
+    Write-Log "==> Step $stepNumber/8: run the release binary with --version"
     $binary = Join-Path $repoRoot 'target/release/furet'
     if ($IsWindows) { $binary += '.exe' }
     $versionOutput = & $binary '--version'
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "FAILED at step $stepNumber/7: running the release binary"
+        Write-Log "FAILED at step $stepNumber/8: running the release binary"
         exit $LASTEXITCODE
     }
     Write-Log "furet --version output:"

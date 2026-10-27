@@ -10,10 +10,11 @@ After a fresh clone, activate the git hooks:
 git config core.hooksPath tools/hooks
 ```
 
-and install cargo-deny, which the DoD's dependency gate runs, and put [gitleaks](https://github.com/gitleaks/gitleaks) on `PATH` for the secret scans:
+and install cargo-deny, which the DoD's dependency gate runs, and put [gitleaks](https://github.com/gitleaks/gitleaks) (secret scans) and [Semgrep](https://semgrep.dev/docs/getting-started/) (code scan) on `PATH`:
 
 ```
 cargo install --locked cargo-deny
+python -m pip install semgrep
 ```
 
 `pre-commit` checks the staged content (comment policy in `.rs` files,
@@ -25,7 +26,9 @@ forbidden words from `tools/forbidden-words.txt`, secrets with
 
 `tools/Run-DoD.ps1` (PowerShell 7) must run green: format, clippy,
 `cargo deny check` (advisories, licenses, bans, sources — configured by
-`deny.toml` at the repo root), tests, release build, a `gitleaks` scan
+`deny.toml` at the repo root), a Semgrep scan of `src`, `build.rs` and
+`tests` (`p/rust`, `p/security-audit`, `p/secrets`; any finding fails
+it), tests, release build, a `gitleaks` scan
 of the full history, and a smoke run of the release binary. It stops at
 the first failing step and names it. It writes its full output to
 `target/dod/dod-<timestamp>.log` and prints that path first and last;
@@ -37,6 +40,12 @@ every machine; such a test runs its queries from an isolated
 `world.tree/cwd`.
 The cargo-deny step needs network access: it fetches the RustSec
 advisory database.
+
+The Semgrep step needs network access too: it downloads its rulesets
+from the Semgrep registry. It excludes
+`rust.lang.security.unsafe-usage.unsafe-usage`, because
+`unsafe_code = "deny"` in `Cargo.toml` already gates `unsafe` at
+compile time and each exception is an audited `#[allow(unsafe_code)]`.
 
 `tests/docs.rs` fails when a doc cites a test or a `module::item` that
 no longer exists. A rename therefore updates the docs in the same

@@ -8,6 +8,16 @@ included). Executor: Claude Haiku.
 Next: none planned.
 
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 87 — the DoD runs Semgrep (p/rust, p/security-audit, p/secrets
+on src, build.rs, tests) as step 4/8; any finding fails it, so it blocks
+the push. CONTRIBUTING.md documents the setup and the step.
+Decisions: rule rust.lang.security.unsafe-usage.unsafe-usage excluded
+(unsafe_code = "deny" already gates unsafe; the two hits were the audited
+env mutation in a storage test). The step needs network (registry
+rulesets). Executor: GLM 5.3 Flash.
+Next: lot 88 (Trivy + Grype script).
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 86 — the DoD sets `[Console]::OutputEncoding` to UTF-8 (no
 BOM) for the run and restores it in `finally`, so cargo-deny's
 box-drawing characters reach the log as `┌`/`│`, not `ÔöîÔöÇ` mojibake
