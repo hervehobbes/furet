@@ -1,4 +1,13 @@
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 85 — the DoD's test step now runs `cargo test` under
+`Invoke-WithDecoyTemp`: TMP/TEMP point at a throwaway temp dir holding a
+decoy matching almost any query, so a leaky sandbox fails on every
+machine (lot 83's class); env restored and decoy removed after the run.
+CONTRIBUTING documents the rule (isolated `world.tree/cwd`).
+Decisions: none beyond the prompt (Hervé, 2026-10-27). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 84 — `tools/Run-DoD.ps1` writes its full output to
 `target/dod/dod-<yyyyMMdd-HHmmss>.log`: `Write-Log` doubles console lines
 into the file, `Invoke-Logged` (2>&1 + `"$_"` + Tee-Object) captures cargo's

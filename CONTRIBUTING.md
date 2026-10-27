@@ -30,6 +30,11 @@ the release binary. It stops at the first failing step and names it.
 It writes its full output to `target/dod/dod-<timestamp>.log` and
 prints that path first and last; that path is the one a lot report
 cites.
+Its test step runs `cargo test` with `TMP`/`TEMP` pointing at a
+throwaway directory holding a decoy that matches almost any query, so
+a test whose sandbox lets the disk fallback reach the temp dir fails on
+every machine; such a test runs its queries from an isolated
+`world.tree/cwd`.
 The cargo-deny step needs network access: it fetches the RustSec
 advisory database.
 

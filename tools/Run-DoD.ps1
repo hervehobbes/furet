@@ -4,7 +4,7 @@
 #   1. cargo fmt --check
 #   2. cargo clippy --all-targets -- -D warnings
 #   3. cargo deny check
-#   4. cargo test
+#   4. cargo test, with TMP/TEMP pointing at a throwaway dir holding a decoy
 #   5. cargo build --release
 #   6. gitleaks git --redact --exit-code 1 (secret scan of the full history)
 #   7. the release binary with --version (its output is printed)
@@ -28,6 +28,25 @@ function Invoke-Logged([string] $Command, [string[]] $Arguments) {
     & $Command @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log -Append
 }
 
+# WHY: tests create their sandboxes in the temp dir and the disk fallback walks it; a decoy matching almost any query makes that leak fail on every machine.
+function Invoke-WithDecoyTemp([scriptblock] $Action) {
+    $alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    $decoyTemp = Join-Path ([System.IO.Path]::GetTempPath()) "furet-dod-$PID"
+    if (Test-Path $decoyTemp) { Remove-Item -Recurse -Force $decoyTemp }
+    $decoyName = "decoy-$alphabet-$alphabet-$alphabet-$alphabet"
+    New-Item -ItemType Directory -Force (Join-Path $decoyTemp $decoyName) | Out-Null
+    Write-Log "Tests run with TMP/TEMP = $decoyTemp"
+    $saved = $env:TMP, $env:TEMP
+    try {
+        $env:TMP = $decoyTemp
+        $env:TEMP = $decoyTemp
+        & $Action
+    } finally {
+        $env:TMP, $env:TEMP = $saved
+        Remove-Item -Recurse -Force $decoyTemp
+    }
+}
+
 try {
     Write-Log "DoD log: $log"
     $steps = @(
@@ -35,7 +54,7 @@ try {
         @{ Name = 'cargo clippy --all-targets -- -D warnings';
                                          Args = @('clippy', '--all-targets', '--', '-D', 'warnings') },
         @{ Name = 'cargo deny check';    Args = @('deny', 'check') },
-        @{ Name = 'cargo test';          Args = @('test') },
+        @{ Name = 'cargo test (decoy temp dir)'; Args = @('test'); DecoyTemp = $true },
         @{ Name = 'cargo build --release'; Args = @('build', '--release') }
     )
 
@@ -43,7 +62,11 @@ try {
     foreach ($step in $steps) {
         $stepNumber++
         Write-Log "==> Step $stepNumber/7: $($step.Name)"
-        Invoke-Logged 'cargo' $step.Args
+        if ($step.DecoyTemp) {
+            Invoke-WithDecoyTemp { Invoke-Logged 'cargo' $step.Args }
+        } else {
+            Invoke-Logged 'cargo' $step.Args
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Log "FAILED at step $stepNumber/7: $($step.Name)"
             exit $LASTEXITCODE
