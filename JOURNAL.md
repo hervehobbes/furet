@@ -1,4 +1,12 @@
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 86 — the DoD sets `[Console]::OutputEncoding` to UTF-8 (no
+BOM) for the run and restores it in `finally`, so cargo-deny's
+box-drawing characters reach the log as `┌`/`│`, not `ÔöîÔöÇ` mojibake
+(pwsh decodes piped native output with the OEM console code page).
+Decisions: none beyond the prompt (Hervé, 2026-10-27). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 85 — the DoD's test step now runs `cargo test` under
 `Invoke-WithDecoyTemp`: TMP/TEMP point at a throwaway temp dir holding a
 decoy matching almost any query, so a leaky sandbox fails on every

@@ -47,7 +47,11 @@ function Invoke-WithDecoyTemp([scriptblock] $Action) {
     }
 }
 
+$savedOutputEncoding = [Console]::OutputEncoding
+
 try {
+    # WHY: pwsh decodes piped native output with the console code page (OEM on Windows); cargo writes UTF-8.
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
     Write-Log "DoD log: $log"
     $steps = @(
         @{ Name = 'cargo fmt --check';     Args = @('fmt', '--check') },
@@ -102,6 +106,7 @@ try {
     Write-Log "FAILED: unexpected error: $_"
     exit 1
 } finally {
+    [Console]::OutputEncoding = $savedOutputEncoding
     Write-Host "DoD log: $log"
     Pop-Location
 }
