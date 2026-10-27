@@ -17,6 +17,10 @@ cargo install --locked cargo-deny
 python -m pip install semgrep
 ```
 
+For the security scan (below), also put
+[Trivy](https://trivy.dev/) and [Grype](https://github.com/anchore/grype)
+on `PATH`.
+
 `pre-commit` checks the staged content (comment policy in `.rs` files,
 forbidden words from `tools/forbidden-words.txt`, secrets with
 `gitleaks git --pre-commit --staged`); `pre-push` runs the full DoD,
@@ -50,6 +54,21 @@ compile time and each exception is an audited `#[allow(unsafe_code)]`.
 `tests/docs.rs` fails when a doc cites a test or a `module::item` that
 no longer exists. A rename therefore updates the docs in the same
 commit.
+
+## Security scan
+
+`tools/Run-Security.ps1` (PowerShell 7) is run by hand, not by the DoD
+or a hook: it needs network access and refreshes the Grype
+vulnerability database first. It runs Trivy (`trivy fs`: dependencies,
+secrets, misconfigurations) and Grype (`grype dir`) on the repo,
+skipping `target`, `prompts`, `mutants.out*` and `.sonar`, each once as
+a full report and once as a gate. A gate fails on any HIGH or CRITICAL
+finding that has a fix (Trivy also fails on HIGH or CRITICAL secrets
+and misconfigurations). Every step runs even when an earlier one
+fails; the summary names the failing blocking steps, and a missing
+tool fails its blocking steps. The full output goes to
+`target/security/security-<timestamp>.log`, whose path is printed
+first and last.
 
 ## Comment policy
 

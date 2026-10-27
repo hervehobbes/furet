@@ -8,6 +8,17 @@ included). Executor: Claude Haiku.
 Next: none planned.
 
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 88 — tools/Run-Security.ps1, run by hand: grype db update and
+status, then Trivy fs and Grype dir, each as a report and a gate
+(HIGH/CRITICAL with a fix). All steps run; the summary names the
+failing blocking ones. Log in target/security/. CONTRIBUTING.md
+documents it.
+Decisions: kept out of the DoD (network, Grype database pull). On
+furet both scanners only see Cargo.lock (155 crates, 0 findings), so
+they overlap cargo deny; Hervé kept them. Executor: GLM 5.3 Flash.
+Next: lot 89 (outdated-crates report in the same script).
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 87 — the DoD runs Semgrep (p/rust, p/security-audit, p/secrets
 on src, build.rs, tests) as step 4/8; any finding fails it, so it blocks
 the push. CONTRIBUTING.md documents the setup and the step.
