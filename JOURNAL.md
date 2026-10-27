@@ -1,4 +1,12 @@
 ## 2026-10-27 — branch main — v0.4.2
+Done: lot 91 — rusqlite 0.40.2 -> 0.41.0 (libsqlite3-sys 0.38.2 ->
+0.39.1, bundled SQLite 3.53.2 -> 3.54.1). No source change; DoD green,
+cargo deny warnings unchanged.
+Decisions: approved by Hervé on 2026-10-27; the 0.41 API changes touch
+nothing furet uses. Executor: GLM 5.3 Flash.
+Next: none planned.
+
+## 2026-10-27 — branch main — v0.4.2
 Done: lot 90 — cargo update: 51 semver-compatible changes in
 Cargo.lock, Cargo.toml untouched. DoD green; cargo deny warnings
 unchanged (license-not-encountered x4, duplicate hashbrown and syn).
