@@ -89,3 +89,4 @@
 | 80 | Bare `furet queries`: the query journal, newest first |
 | 81 | pwsh `fq`: the query journal in one word |
 | 82 | Release 0.4.1 (lots 71-81) |
+| 83 | Isolate two fallback-sensitive tests from the OS temp dir |

@@ -45,3 +45,16 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   finally solved by analysis plus one verified input pair. Rule: helper
   searches run in the foreground, single-threaded, bounded (≤ 100 000
   inputs, `timeout 60`), outside the repo — see `MUTANTS.md`.
+
+- 2026-09-20, SPEC 16 and SPEC 17 tests (executor not recorded):
+  `typo_min_length_from_config_disables_short_typo_queries` and
+  `a_failing_query_logs_an_error_line` asserted a failed query from
+  `world.tree.path()`, which sits directly under the OS temp dir, so the
+  disk fallback (`up = 1`) walked all of `%TEMP%`. A stray
+  `rfk-gate-broken-dockerfile` there matched `tokoi` in stage 1 and
+  blocked `git push` on 2026-10-27. The trap was known since lot 10
+  (the isolated cwd at `tests/cli.rs:642`) but not applied to later
+  tests. Rule: a CLI test that
+  expects the fallback to find nothing runs from an isolated
+  `world.tree/cwd`; a poisoned-`TMP` run of the suite finds the
+  offenders.

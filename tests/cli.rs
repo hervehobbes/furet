@@ -3163,7 +3163,10 @@ fn add_writes_a_log_file_under_the_data_dir() {
 #[test]
 fn a_failing_query_logs_an_error_line() {
     let world = sandbox(&[]);
-    let out = query(&world, "nothing", world.tree.path(), false);
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
+    let out = query(&world, "nothing", &cwd, false);
     assert!(!out.status.success(), "nothing matches an empty database");
     assert!(out.stdout.is_empty());
     let log = log_contents(&world);
@@ -3244,19 +3247,22 @@ fn logging_never_writes_to_stdout_or_stderr() {
 fn typo_min_length_from_config_disables_short_typo_queries() {
     let world = sandbox(&["tokio"]);
     let tokio = world.child("tokio");
+    // WHY: an isolated cwd keeps the fallback ancestor walk off the shared OS temp dir.
+    let cwd = world.tree.path().join("cwd");
+    std::fs::create_dir_all(&cwd).expect("the isolated cwd exists");
     assert!(
         add(&world, &tokio, "session-1", None, None)
             .status
             .success()
     );
-    let lenient = query(&world, "tokoi", world.tree.path(), false);
+    let lenient = query(&world, "tokoi", &cwd, false);
     assert!(
         lenient.status.success(),
         "stderr: {}",
         text(&lenient.stderr)
     );
     write_config(&world, "typo_min_length = 6");
-    let strict = query(&world, "tokoi", world.tree.path(), false);
+    let strict = query(&world, "tokoi", &cwd, false);
     assert!(!strict.status.success());
     assert!(strict.stdout.is_empty());
 }

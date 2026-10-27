@@ -1,3 +1,12 @@
+## 2026-10-27 — branch main — v0.4.2
+Done: lot 83 — `a_failing_query_logs_an_error_line` and
+`typo_min_length_from_config_disables_short_typo_queries` now query from an
+isolated `world.tree/cwd` (idiom of tests/cli.rs:642), keeping the `up = 1`
+fallback out of `%TEMP%`; the poisoned-`TMP` audit exposes exactly those 2
+tests, all other suites green. MISTAKES entry; ROADMAP row 83. No production code.
+Decisions: none beyond the prompt (Hervé, 2026-10-27). Executor: GLM 5.3 Flash.
+Next: reviewer pass from a Claude Code session; then `git push`.
+
 ## 2026-10-24 — branch main — v0.4.2
 Done: `tools/Run-DoD.ps1` gains a blocking step 6/7, `gitleaks git --redact
 --no-banner --exit-code 1` over the full history (public repo); the binary
