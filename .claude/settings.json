@@ -1,10 +1,10 @@
 {
   "permissions": {
     "deny": [
-      "Edit(tools/hooks/**)",
-      "Write(tools/hooks/**)",
-      "Edit(.claude/**)",
-      "Write(.claude/**)",
+      "Edit(/tools/hooks/**)",
+      "Write(/tools/hooks/**)",
+      "Edit(/.claude/**)",
+      "Write(/.claude/**)",
       "Bash(git commit --no-verify:*)",
       "Bash(git commit --no-verify)",
       "Bash(git push --force:*)",

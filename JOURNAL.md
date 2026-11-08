@@ -1,4 +1,9 @@
 ## 2026-11-08 — branch main — v0.4.2
+Done: deny rules in `.claude/settings.json` anchored with a leading `/` (`Edit(/tools/hooks/**)`, `Write(/.claude/**)`, etc.): a relative pattern is resolved against the session's folder, an anchored one against the folder holding the settings file.
+Decisions: this file only covers Claude Code sessions started in C:\dev\furet; sessions started from C:\dev are covered by C:\dev\.claude\settings.json (absolute paths).
+Next: none.
+
+## 2026-11-08 — branch main — v0.4.2
 Done: cliff.toml forced to LF in `.gitattributes`; without it a Windows clone duplicated the CHANGELOG header on prepend (found at review).
 Decisions: same rule as CHANGELOG.md, `text eol=lf`, so the header search matches on every clone.
 Next: none.
