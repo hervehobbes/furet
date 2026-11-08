@@ -4,6 +4,9 @@
 # Hook scripts must keep LF endings so Git's bundled sh can run them.
 *.sh text eol=lf
 
+# commit-msg runs under sh too: LF in the working copy, like the other hooks.
+tools/hooks/commit-msg text eol=lf
+
 # PowerShell sources are native to Windows.
 *.ps1 text eol=crlf
 

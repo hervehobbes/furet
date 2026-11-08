@@ -1,5 +1,7 @@
 # Contributing
 
+2026-11-08
+
 Solo project, single branch (`main`), sequential commits.
 
 ## Required one-time setup
@@ -25,6 +27,8 @@ on `PATH`.
 forbidden words from `tools/forbidden-words.txt`, secrets with
 `gitleaks git --pre-commit --staged`); `pre-push` runs the full DoD,
 `tools/Run-DoD.ps1`, so nothing is pushed unless it is green.
+
+`commit-msg` rejects a subject that is not Conventional Commits (`type(scope): subject`). `tools/New-Release.ps1` generates `CHANGELOG.md` with git-cliff and tags the release; only Hervé runs it.
 
 ## Before every commit
 

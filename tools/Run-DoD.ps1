@@ -6,11 +6,12 @@
 #   3. cargo deny check
 #   4. semgrep scan (p/rust, p/security-audit, p/secrets on src, build.rs, tests)
 #   5. cargo test, with TMP/TEMP pointing at a throwaway dir holding a decoy
-#   6. cargo build --release
-#   7. gitleaks git --redact --exit-code 1 (secret scan of the full history)
-#   8. the release binary with --version (its output is printed)
+#   6. Pester tests (tools/tests)
+#   7. cargo build --release
+#   8. gitleaks git --redact --exit-code 1 (secret scan of the full history)
+#   9. the release binary with --version (its output is printed)
 # Writes the full output to target/dod/dod-<timestamp>.log and prints its path first and last.
-# Exits 0 only when all eight steps succeed.
+# Exits 0 only when all nine steps succeed.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -66,42 +67,45 @@ try {
                     '--exclude-rule', 'rust.lang.security.unsafe-usage.unsafe-usage',
                     'src', 'build.rs', 'tests') },
         @{ Name = 'cargo test (decoy temp dir)'; Args = @('test'); DecoyTemp = $true },
+        @{ Name = 'Pester tests (tools/tests)'; Command = 'pwsh';
+          Args = @('-NoProfile', '-NonInteractive', '-Command',
+                   'Import-Module Pester -MinimumVersion 5.0; $c = New-PesterConfiguration; $c.Run.Path = "tools/tests"; $c.Run.Exit = $true; Invoke-Pester -Configuration $c')},
         @{ Name = 'cargo build --release'; Args = @('build', '--release') }
     )
 
     $stepNumber = 0
     foreach ($step in $steps) {
         $stepNumber++
-        Write-Log "==> Step $stepNumber/8: $($step.Name)"
+        Write-Log "==> Step $stepNumber/9: $($step.Name)"
         if ($step.DecoyTemp) {
             Invoke-WithDecoyTemp { Invoke-Logged ($step.Command ?? 'cargo') $step.Args }
         } else {
             Invoke-Logged ($step.Command ?? 'cargo') $step.Args
         }
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "FAILED at step $stepNumber/8: $($step.Name)"
+            Write-Log "FAILED at step $stepNumber/9: $($step.Name)"
             exit $LASTEXITCODE
         }
     }
 
     $stepNumber++
-    Write-Log "==> Step $stepNumber/8: gitleaks git --redact --exit-code 1"
+    Write-Log "==> Step $stepNumber/9: gitleaks git --redact --exit-code 1"
     $gitleaksTimer = [System.Diagnostics.Stopwatch]::StartNew()
     Invoke-Logged 'gitleaks' @('git', '--redact', '--no-banner', '--exit-code', '1')
     $gitleaksExit = $LASTEXITCODE
     Write-Log ("gitleaks step took {0:N1}s" -f $gitleaksTimer.Elapsed.TotalSeconds)
     if ($gitleaksExit -ne 0) {
-        Write-Log "FAILED at step $stepNumber/8: gitleaks git"
+        Write-Log "FAILED at step $stepNumber/9: gitleaks git"
         exit $gitleaksExit
     }
 
     $stepNumber++
-    Write-Log "==> Step $stepNumber/8: run the release binary with --version"
+    Write-Log "==> Step $stepNumber/9: run the release binary with --version"
     $binary = Join-Path $repoRoot 'target/release/furet'
     if ($IsWindows) { $binary += '.exe' }
     $versionOutput = & $binary '--version'
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "FAILED at step $stepNumber/8: running the release binary"
+        Write-Log "FAILED at step $stepNumber/9: running the release binary"
         exit $LASTEXITCODE
     }
     Write-Log "furet --version output:"

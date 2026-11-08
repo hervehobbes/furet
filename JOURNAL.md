@@ -1,3 +1,8 @@
+## 2026-11-08 — branch main — v0.4.2
+Done: commit-msg hook (tools/hooks/commit-msg, tools/Test-CommitMessage.ps1, tools/CommitMessage.psm1; 23 Pester tests, seen red with 0 passed / 23 failed before the module existed); Pester step added to the DoD (now 9 steps); tools/New-Release.ps1 and cliff.toml (git-cliff --prepend keeps the hand-written CHANGELOG up to 0.4.1).
+Decisions: version unchanged (0.4.2); baseline tag v0.4.2 on the build commit, not pushed; cliff.toml header copied from CHANGELOG.md; .gitattributes forces LF on tools/hooks/commit-msg.
+Next: Hervé reviews the tag and pushes it (git push origin v0.4.2); New-Release.ps1 runs by hand at the next X or Y release.
+
 ## 2026-10-27 — branch main — v0.4.2
 Done: lot 91 — rusqlite 0.40.2 -> 0.41.0 (libsqlite3-sys 0.38.2 ->
 0.39.1, bundled SQLite 3.53.2 -> 3.54.1). No source change; DoD green,

@@ -1,0 +1,5 @@
+#!/bin/sh
+# commit-msg hook of furet: rejects a commit whose subject is not Conventional Commits.
+# Runs tools/Test-CommitMessage.ps1 on the message file and propagates its exit code.
+pwsh -NoProfile -File "$(dirname "$0")/../Test-CommitMessage.ps1" "$1"
+exit $?
