@@ -4,11 +4,13 @@ header = """
 
 All notable changes to furet. Versions follow [Semantic Versioning](https://semver.org/);
 lot numbers refer to [ROADMAP.md](ROADMAP.md).
+
 """
 body = """
-{% if version %}## {{ version | trim_start_matches(pat="v") }} — {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
+{% if version %}## [{{ version | trim_start_matches(pat="v") }}] — {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | striptags | trim }}
+
 {% for commit in commits %}- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message | split(pat="\n") | first | upper_first }}
 {% endfor %}{% endfor %}
 """
@@ -22,7 +24,7 @@ commit_preprocessors = [
   { pattern = '\s*(\([^)]*\b(lot|prompts?)\b[^)]*\)|[—-]\s*(relecture )?prompt \S+)', replace = "" },
 ]
 commit_parsers = [
-  { message = "(?i)\\b(lot|relecture)\\b", skip = true },
+  { message = "(?i)\b(lot|relecture)\b", skip = true },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
