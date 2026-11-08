@@ -1,5 +1,7 @@
 # Mistakes
 
+2026-11-08
+
 Record here anything an agent got wrong and how it was caught, so it doesn't recur.
 
 - 2026-09-20, lot 24 (GLM): added a second unit test mutating
@@ -70,3 +72,13 @@ Record here anything an agent got wrong and how it was caught, so it doesn't rec
   directory, outside the repo; nothing asked for them and nothing cleaned
   them up. Caught by the architect reading the reports. Rule: every lot
   prompt states that scratch and log files go under `target/` only.
+- 2026-11-08, changelog template (agent: Claude subagent Haiku 5.5, default
+  effort): `cliff.toml` wrote the `lot|relecture` skip filter as a basic
+  TOML string with a single backslash, `\b`, which TOML reads as a
+  backspace, so the filter never matched. Caught at review, fixed in the
+  template. Rule: regex escapes in a TOML basic string need a double
+  backslash.
+- 2026-11-08, changelog baseline (agent: Claude subagent Haiku 5.5, default
+  effort): a baseline tag `v0.4.2` was created on the build commit, against
+  the spec, which has no start tag in furet. Caught at review, tag deleted,
+  never pushed. Rule: a tag is only created by Hervé, per the spec.

@@ -1,7 +1,12 @@
 ## 2026-11-08 — branch main — v0.4.2
+Done: changelog template fix: `\\b` in the lot|relecture filter, `trim = false`, header without its trailing blank line, body without its final newline; `.gitattributes` forces LF on CHANGELOG.md. Checked in a throwaway clone: one blank line between blocks, one header, additions only.
+Decisions: header bytes kept except the trailing blank line (git-cliff adds its own separator); no start tag, as the spec requires.
+Next: New-Release.ps1 by hand at the next X or Y release.
+
+## 2026-11-08 — branch main — v0.4.2
 Done: commit-msg hook (tools/hooks/commit-msg, tools/Test-CommitMessage.ps1, tools/CommitMessage.psm1; 23 Pester tests, seen red with 0 passed / 23 failed before the module existed); Pester step added to the DoD (now 9 steps); tools/New-Release.ps1 and cliff.toml (git-cliff --prepend keeps the hand-written CHANGELOG up to 0.4.1).
-Decisions: version unchanged (0.4.2); baseline tag v0.4.2 on the build commit, not pushed; cliff.toml header copied from CHANGELOG.md; .gitattributes forces LF on tools/hooks/commit-msg.
-Next: Hervé reviews the tag and pushes it (git push origin v0.4.2); New-Release.ps1 runs by hand at the next X or Y release.
+Decisions: version unchanged (0.4.2); no start tag (the spec has none, the v0.4.2 baseline tag was deleted before any push); cliff.toml header copied from CHANGELOG.md; .gitattributes forces LF on tools/hooks/commit-msg.
+Next: New-Release.ps1 runs by hand at the next X or Y release.
 
 ## 2026-10-27 — branch main — v0.4.2
 Done: lot 91 — rusqlite 0.40.2 -> 0.41.0 (libsqlite3-sys 0.38.2 ->
