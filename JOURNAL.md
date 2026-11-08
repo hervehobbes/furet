@@ -1,5 +1,10 @@
 ## 2026-11-08 — branch main — v0.4.2
-Done: changelog template fix: `\\b` in the lot|relecture filter, `trim = false`, header without its trailing blank line, body without its final newline; `.gitattributes` forces LF on CHANGELOG.md. Checked in a throwaway clone: one blank line between blocks, one header, additions only.
+Done: cliff.toml forced to LF in `.gitattributes`; without it a Windows clone duplicated the CHANGELOG header on prepend (found at review).
+Decisions: same rule as CHANGELOG.md, `text eol=lf`, so the header search matches on every clone.
+Next: none.
+
+## 2026-11-08 — branch main — v0.4.2
+Done: changelog template fix: `\\b` in the lot|relecture filter, `trim = false`, header without its trailing blank line, body without its final newline; `.gitattributes` forces LF on CHANGELOG.md. Checked in a throwaway clone (with an LF cliff.toml): one blank line between blocks, one header, additions only.
 Decisions: header bytes kept except the trailing blank line (git-cliff adds its own separator); no start tag, as the spec requires.
 Next: New-Release.ps1 by hand at the next X or Y release.
 

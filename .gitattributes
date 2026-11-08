@@ -10,8 +10,9 @@ tools/hooks/commit-msg text eol=lf
 # PowerShell sources are native to Windows.
 *.ps1 text eol=crlf
 
-# git-cliff --prepend finds the header only in an LF CHANGELOG.md.
+# git-cliff --prepend finds the header only in LF CHANGELOG.md and cliff.toml.
 CHANGELOG.md text eol=lf
+cliff.toml text eol=lf
 
 # Binaries.
 *.exe binary
